@@ -1,0 +1,16 @@
+graph LR
+    A["Technique Markdown<br/>e.g. Kapalbhati.md"] --> B["Claude API<br/>Script Generation"]
+    B --> C["Timed Script<br/>JSON with segments"]
+    C --> D["TTS API<br/>Voice Synthesis"]
+    C --> E["Sound Effects<br/>Breath cues, chimes"]
+    C --> F["Silence<br/>Pauses, rest periods"]
+    D --> G["Audio Assembly<br/>pydub"]
+    E --> G
+    F --> G
+    G --> H[Final MP3]
+
+    subgraph Config
+        I["Duration<br/>Rounds<br/>Pace<br/>Tone"]
+    end
+
+    I --> B
