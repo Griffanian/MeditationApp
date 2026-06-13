@@ -59,6 +59,42 @@ export default function Editor() {
         </div>
         {!instructionsCollapsed && (
           <div className="instructions-structured">
+            <div className="instr-pdf">
+              <label className="instr-label">Instructions PDF</label>
+              {hasPdf && (
+                <div className="instr-pdf-row">
+                  <button className="btn-pdf" onClick={() => window.open(`/pdf/meditation/${name}/instructions.pdf`, '_blank')}>View PDF</button>
+                  <label className="btn-pdf btn-pdf-replace">
+                    Replace
+                    <input type="file" accept=".pdf" hidden onChange={async e => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      await uploadInstructionsPdf(name, file);
+                      setHasPdf(true);
+                      e.target.value = '';
+                    }} />
+                  </label>
+                  <button className="btn-pdf btn-pdf-delete" onClick={async () => {
+                    if (!confirm('Remove the instructions PDF?')) return;
+                    await deleteInstructionsPdf(name);
+                    setHasPdf(false);
+                  }}>Remove</button>
+                </div>
+              )}
+            </div>
+            {!hasPdf && (
+              <label className="btn-pdf btn-pdf-upload">
+                Upload PDF
+                <input type="file" accept=".pdf" hidden onChange={async e => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+                  await uploadInstructionsPdf(name, file);
+                  setHasPdf(true);
+                  e.target.value = '';
+                }} />
+              </label>
+            )}
+
             <label className="instr-label">Explanation</label>
             <div className="instr-stage">
               <MarkdownField
@@ -132,40 +168,6 @@ export default function Editor() {
               ))}
             </div>
 
-            <div className="instr-pdf">
-              <label className="instr-label">Instructions PDF</label>
-              {hasPdf ? (
-                <div className="instr-pdf-row">
-                  <a href={`/pdf/meditation/${name}/instructions.pdf`} target="_blank" rel="noreferrer" className="btn-pdf">View PDF</a>
-                  <label className="btn-pdf btn-pdf-replace">
-                    Replace
-                    <input type="file" accept=".pdf" hidden onChange={async e => {
-                      const file = e.target.files[0];
-                      if (!file) return;
-                      await uploadInstructionsPdf(name, file);
-                      setHasPdf(true);
-                      e.target.value = '';
-                    }} />
-                  </label>
-                  <button className="btn-pdf btn-pdf-delete" onClick={async () => {
-                    if (!confirm('Remove the instructions PDF?')) return;
-                    await deleteInstructionsPdf(name);
-                    setHasPdf(false);
-                  }}>Remove</button>
-                </div>
-              ) : (
-                <label className="btn-pdf btn-pdf-upload">
-                  Upload PDF
-                  <input type="file" accept=".pdf" hidden onChange={async e => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    await uploadInstructionsPdf(name, file);
-                    setHasPdf(true);
-                    e.target.value = '';
-                  }} />
-                </label>
-              )}
-            </div>
           </div>
         )}
       </div>

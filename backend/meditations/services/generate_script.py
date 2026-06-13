@@ -1,4 +1,5 @@
 import json
+
 import anthropic
 
 
@@ -58,14 +59,4 @@ Generate the guided meditation script as a JSON array."""
         response_text = response_text.split("\n", 1)[1]
         response_text = response_text.rsplit("```", 1)[0]
 
-    script = json.loads(response_text)
-    return script
-
-
-if __name__ == "__main__":
-    from pathlib import Path
-
-    technique = Path("Kapalbhati.md").read_text()
-    config = {"duration_minutes": 5, "rounds": 3, "tone": "calm and grounding"}
-    script = generate_script(technique, config)
-    print(json.dumps(script, indent=2))
+    return json.loads(response_text)

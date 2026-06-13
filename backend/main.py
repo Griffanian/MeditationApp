@@ -1,12 +1,16 @@
 import json
+import os
 from pathlib import Path
 
+import django
 from dotenv import load_dotenv
 
-from generate_script import generate_script
-from synthesize import generate_components, assemble
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+django.setup()
 
-load_dotenv()
+from meditations.services.generate_script import generate_script
+from meditations.services.synthesize import generate_components, assemble
 
 
 def main():

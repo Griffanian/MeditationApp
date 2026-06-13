@@ -29,5 +29,11 @@ venv/
 __pycache__/
 *.pyc
 
+# Django
+db.sqlite3
+
 # Output
 output/
+
+# Supabase agent skills
+.agents/

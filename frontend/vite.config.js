@@ -8,6 +8,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:5555',
       '/audio': 'http://localhost:5555',
+      '/pdf': 'http://localhost:5555',
     },
   },
 })

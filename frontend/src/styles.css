@@ -138,7 +138,7 @@ h1 { color: #a0c4ff; margin-bottom: 20px; font-size: 24px; }
   background: rgba(255,255,255,0.06); color: #a0c4ff; text-decoration: none;
 }
 .btn-pdf:hover { background: rgba(255,255,255,0.1); }
-.btn-pdf-upload { margin-top: 6px; }
+.btn-pdf-upload { margin-top: 6px; align-self: flex-start; }
 .btn-pdf-delete { color: #ff6b6b; border-color: #553333; }
 .btn-pdf-delete:hover { background: rgba(255,100,100,0.12); }
 .btn-pdf-replace { color: #ccc; }
