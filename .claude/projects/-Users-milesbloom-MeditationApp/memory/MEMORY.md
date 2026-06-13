@@ -1,0 +1,2 @@
+- [Architecture](project_architecture.md) — stages, variables, timelines structure and current design thinking
+- [Approach](feedback_approach.md) — variables are standalone entities that connect to loops, speech, pauses
