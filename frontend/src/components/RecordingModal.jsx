@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js';
+import { stopPlayback, registerExternalStop, unregisterExternalStop } from '../playback';
 
 const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
   'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
@@ -65,6 +66,17 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
         ? `/audio/meditation/${meditationName}/stage/${stageId}/component/${seg.id}.mp3`
         : `/audio/meditation/${meditationName}/component/${seg.id}.mp3`)
     : null;
+
+  // Register WaveSurfer stop so other audio sources can stop us
+  useEffect(() => {
+    const stopWs = () => {
+      if (wavesurferRef.current) {
+        wavesurferRef.current.pause();
+      }
+    };
+    registerExternalStop(stopWs);
+    return () => unregisterExternalStop(stopWs);
+  }, []);
 
   // Load existing trim metadata
   useEffect(() => {
@@ -158,11 +170,15 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
 
   function togglePlay() {
     if (!wavesurferRef.current) return;
-    if (savedTrim && !trimMode) {
-      if (playing) wavesurferRef.current.pause();
-      else wavesurferRef.current.play(savedTrim.start, savedTrim.end);
+    if (playing) {
+      wavesurferRef.current.pause();
     } else {
-      wavesurferRef.current.playPause();
+      stopPlayback(); // stop timeline, assembled audio, and any other sources
+      if (savedTrim && !trimMode) {
+        wavesurferRef.current.play(savedTrim.start, savedTrim.end);
+      } else {
+        wavesurferRef.current.play();
+      }
     }
   }
 

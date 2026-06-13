@@ -1,68 +1,131 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { fetchMeditations, updateLoops, assembleAudio } from '../api';
-
-const CATEGORIES = {
-  pranayama: { label: 'Pranayama', icon: '🌬️' },
-  pratyahara: { label: 'Pratyahara', icon: '👁️' },
-  uncategorised: { label: 'Other', icon: '🧘' },
-};
-
-function LoopInputs({ loops, onChange }) {
-  if (!loops || loops.length === 0) return null;
-
-  return loops.map((loop, i) => (
-    <span key={i} className="loop-input-group">
-      {loop.variable && <span className="loop-var-label">{loop.displayName || loop.variable}: </span>}
-      <input
-        className="dash-loop-input"
-        type="number"
-        value={loop.repeat}
-        min="1"
-        onClick={e => e.preventDefault()}
-        onChange={e => {
-          const val = parseInt(e.target.value);
-          if (isNaN(val) || val < 1) return;
-          const updated = loops.map((l, j) => j === i ? { ...l, repeat: val } : l);
-          onChange(updated);
-        }}
-      />
-      {loop.children && loop.children.length > 0 && (
-        <>
-          <span className="loop-input-sep">×</span>
-          <LoopInputs
-            loops={loop.children}
-            onChange={newChildren => {
-              const updated = loops.map((l, j) =>
-                j === i ? { ...l, children: newChildren } : l
-              );
-              onChange(updated);
-            }}
-          />
-        </>
-      )}
-    </span>
-  ));
-}
+import { Link, useNavigate } from 'react-router-dom';
+import { fetchCategories, createCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveStageVariables, assembleStage } from '../api';
 
 export default function Dashboard() {
+  const [categories, setCategories] = useState([]);
   const [meditations, setMeditations] = useState([]);
   const [assembling, setAssembling] = useState(null);
   const [playing, setPlaying] = useState(null);
+  const [openMenu, setOpenMenu] = useState(null);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editCatName, setEditCatName] = useState('');
   const audioRef = useRef(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
+    fetchCategories().then(setCategories);
     fetchMeditations().then(setMeditations);
   }, []);
 
-  function updateMedLoops(name, newLoops) {
-    setMeditations(meds =>
-      meds.map(m => m.name === name ? { ...m, loops: newLoops } : m)
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!openMenu) return;
+    function handleClick() { setOpenMenu(null); }
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, [openMenu]);
+
+  // --- Category actions ---
+  function startEditCategory(cat) {
+    setEditingCategory(cat.name);
+    setEditCatName(cat.display_name);
+  }
+
+  async function saveEditCategory(cat) {
+    setEditingCategory(null);
+    const trimmed = editCatName.trim();
+    if (!trimmed || trimmed === cat.display_name) return;
+    await renameCategory(cat.name, trimmed);
+    setCategories(cats =>
+      cats.map(c => c.name === cat.name ? { ...c, display_name: trimmed } : c)
     );
   }
 
-  async function handlePlay(med) {
-    if (playing === med.name) {
+  async function handleNewSection() {
+    const name = prompt('Section name:');
+    if (!name || !name.trim()) return;
+    try {
+      const cat = await createCategory(name.trim());
+      setCategories(prev => [...prev, cat]);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function handleDeleteCategory(cat) {
+    const meds = meditations.filter(m => m.category === cat.name);
+    const msg = meds.length > 0
+      ? `Delete "${cat.display_name}"? Its ${meds.length} practice(s) will be moved to "Other".`
+      : `Delete "${cat.display_name}"?`;
+    if (!confirm(msg)) return;
+    await deleteCategory(cat.name);
+    setCategories(cats => cats.filter(c => c.name !== cat.name));
+    if (meds.length > 0) {
+      setMeditations(prev =>
+        prev.map(m => m.category === cat.name ? { ...m, category: 'uncategorised' } : m)
+      );
+    }
+  }
+
+  // --- Meditation actions ---
+  async function handleRename(med) {
+    const newName = prompt('Rename practice:', med.display_name);
+    if (!newName || !newName.trim() || newName.trim() === med.display_name) return;
+    await renameMeditation(med.name, newName.trim());
+    setMeditations(meds =>
+      meds.map(m => m.name === med.name ? { ...m, display_name: newName.trim() } : m)
+    );
+  }
+
+  async function handleDelete(med) {
+    if (!confirm(`Delete "${med.display_name}"? This cannot be undone.`)) return;
+    await deleteMeditation(med.name);
+    setMeditations(meds => meds.filter(m => m.name !== med.name));
+  }
+
+  async function handleNewPractice(category) {
+    const displayName = prompt('Practice name:');
+    if (!displayName || !displayName.trim()) return;
+    try {
+      const data = await createMeditation(displayName.trim(), category);
+      navigate(`/edit/${data.name}`);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  // --- Stage variable editing ---
+  function updateStageVar(medName, stageId, varName, newValue) {
+    setMeditations(meds =>
+      meds.map(m => {
+        if (m.name !== medName) return m;
+        return {
+          ...m,
+          stages: m.stages.map(s => {
+            if (s.id !== stageId) return s;
+            return {
+              ...s,
+              variables: {
+                ...s.variables,
+                [varName]: { ...s.variables[varName], value: newValue },
+              },
+            };
+          }),
+        };
+      })
+    );
+  }
+
+  // --- Playback ---
+  function stageKey(medName, stageId) {
+    return `${medName}/${stageId}`;
+  }
+
+  async function handlePlayStage(med, stage) {
+    const key = stageKey(med.name, stage.id);
+
+    if (playing === key) {
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -77,15 +140,17 @@ export default function Dashboard() {
     }
     setPlaying(null);
 
-    await updateLoops(med.name, med.loops);
+    if (Object.keys(stage.variables).length > 0) {
+      await saveStageVariables(med.name, stage.id, stage.variables);
+    }
 
-    setAssembling(med.name);
-    const data = await assembleAudio(med.name);
+    setAssembling(key);
+    const data = await assembleStage(med.name, stage.id);
     setAssembling(null);
 
-    const audio = new Audio(`/audio/meditation/${med.name}/output/${data.filename}?t=${Date.now()}`);
+    const audio = new Audio(`/audio/meditation/${med.name}/stage/${stage.id}/output/${data.filename}?t=${Date.now()}`);
     audioRef.current = audio;
-    setPlaying(med.name);
+    setPlaying(key);
     audio.onended = () => {
       setPlaying(null);
       audioRef.current = null;
@@ -93,13 +158,14 @@ export default function Dashboard() {
     audio.play();
   }
 
-  function buttonLabel(med) {
-    if (assembling === med.name) return 'Assembling...';
-    if (playing === med.name) return '■ Playing';
+  function stageButtonLabel(medName, stageId) {
+    const key = stageKey(medName, stageId);
+    if (assembling === key) return 'Assembling...';
+    if (playing === key) return '■ Stop';
     return '▶ Play';
   }
 
-  // Group meditations by category
+  // --- Group meditations by category ---
   const grouped = {};
   for (const med of meditations) {
     const cat = med.category || 'uncategorised';
@@ -107,53 +173,119 @@ export default function Dashboard() {
     grouped[cat].push(med);
   }
 
-  // Render categories in defined order, then any extras
-  const categoryOrder = Object.keys(CATEGORIES);
-  const allCats = [...new Set([...categoryOrder, ...Object.keys(grouped)])];
+  // Show categories in DB order, plus any that meditations reference but aren't in the table
+  const catNames = new Set(categories.map(c => c.name));
+  const extraCats = Object.keys(grouped).filter(k => !catNames.has(k));
 
   return (
     <div>
       <h1>Meditations</h1>
 
-      {allCats.map(cat => {
-        const meds = grouped[cat];
-        if (!meds || meds.length === 0) return null;
-        const info = CATEGORIES[cat] || { label: cat, icon: '🧘' };
+      {[...categories, ...extraCats.map(k => ({ name: k, display_name: k }))].map(cat => {
+        const meds = grouped[cat.name] || [];
 
         return (
-          <div key={cat} className="category-section">
-            <h2 className="category-header">
-              <span className="category-icon">{info.icon}</span>
-              {info.label}
-            </h2>
+          <div key={cat.name} className="category-section">
+            <div className="category-header-row">
+              <h2 className="category-header">
+                {editingCategory === cat.name ? (
+                  <input
+                    className="category-name-input"
+                    value={editCatName}
+                    autoFocus
+                    onChange={e => setEditCatName(e.target.value)}
+                    onBlur={() => saveEditCategory(cat)}
+                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                  />
+                ) : (
+                  <>
+                    {cat.display_name}
+                    <span className="title-edit-btn" onClick={() => startEditCategory(cat)}>✎</span>
+                  </>
+                )}
+              </h2>
+              <button className="category-delete-btn" onClick={() => handleDeleteCategory(cat)}>✕</button>
+            </div>
             <div className="med-grid">
               {meds.map(med => (
                 <div key={med.name} className="med-card">
-                  <Link to={`/edit/${med.name}`} className="med-card-link">
-                    <span className="med-card-name">{med.display_name}</span>
-                  </Link>
-                  {med.loops && med.loops.length > 0 && (
-                    <div className="med-card-loops">
-                      <span className="loop-label">↻</span>
-                      <LoopInputs
-                        loops={med.loops}
-                        onChange={newLoops => updateMedLoops(med.name, newLoops)}
-                      />
+                  <div className="med-card-top">
+                    <Link to={`/edit/${med.name}`} className="med-card-link">
+                      <span className="med-card-name">{med.display_name}</span>
+                    </Link>
+                    <div className="med-kebab-wrapper">
+                      <button
+                        className="med-kebab-btn"
+                        onClick={e => { e.stopPropagation(); setOpenMenu(openMenu === med.name ? null : med.name); }}
+                      >&#x22EE;</button>
+                      {openMenu === med.name && (
+                        <div className="med-kebab-menu" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => { setOpenMenu(null); handleRename(med); }}>Rename</button>
+                          <button className="med-kebab-delete" onClick={() => { setOpenMenu(null); handleDelete(med); }}>Delete</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {med.stages && med.stages.length > 0 && (
+                    <div className="med-card-stages">
+                      {med.stages.map(stage => {
+                        const key = stageKey(med.name, stage.id);
+                        const vars = Object.entries(stage.variables || {});
+                        return (
+                          <div key={stage.id} className="dash-stage">
+                            <div className="dash-stage-header">
+                              <Link
+                                to={`/edit/${med.name}?stage=${stage.id}`}
+                                className="dash-stage-name"
+                              >{stage.name}</Link>
+                              <button
+                                className={`dash-stage-play ${playing === key ? 'playing' : ''}`}
+                                onClick={() => handlePlayStage(med, stage)}
+                                disabled={assembling === key}
+                              >
+                                {stageButtonLabel(med.name, stage.id)}
+                              </button>
+                            </div>
+                            {vars.length > 0 && (
+                              <div className="dash-stage-vars">
+                                {vars.map(([varName, varData]) => (
+                                  <span key={varName} className="dash-var-group">
+                                    <span className="dash-var-label">{(typeof varData === 'object' && varData.displayName) || varName}</span>
+                                    <input
+                                      className="dash-loop-input"
+                                      type="number"
+                                      value={typeof varData === 'object' ? varData.value : varData}
+                                      min="1"
+                                      onClick={e => e.stopPropagation()}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        updateStageVar(med.name, stage.id, varName, val);
+                                      }}
+                                      onBlur={() => saveStageVariables(med.name, stage.id, stage.variables)}
+                                    />
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
-                  <button
-                    className={`med-card-play ${playing === med.name ? 'playing' : ''}`}
-                    onClick={() => handlePlay(med)}
-                    disabled={assembling === med.name}
-                  >
-                    {buttonLabel(med)}
-                  </button>
                 </div>
               ))}
+              <button className="med-card med-card-add" onClick={() => handleNewPractice(cat.name)}>
+                <span className="med-card-add-icon">+</span>
+                <span className="med-card-add-label">New Practice</span>
+              </button>
             </div>
           </div>
         );
       })}
+
+      <button className="btn-new-section" onClick={handleNewSection}>
+        + New Section
+      </button>
     </div>
   );
 }

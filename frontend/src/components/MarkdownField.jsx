@@ -4,6 +4,9 @@ import ReactMarkdown from 'react-markdown';
 export default function MarkdownField({ value, onChange, placeholder }) {
   const [editing, setEditing] = useState(false);
   const textareaRef = useRef(null);
+  const undoStack = useRef([]);
+  const redoStack = useRef([]);
+  const lastValue = useRef(value || '');
 
   useEffect(() => {
     if (editing && textareaRef.current) {
@@ -12,9 +15,42 @@ export default function MarkdownField({ value, onChange, placeholder }) {
     }
   }, [editing]);
 
+  useEffect(() => {
+    lastValue.current = value || '';
+  }, [value]);
+
   function autoResize(el) {
     el.style.height = 'auto';
     el.style.height = el.scrollHeight + 'px';
+  }
+
+  function handleChange(e) {
+    undoStack.current.push(lastValue.current);
+    redoStack.current = [];
+    lastValue.current = e.target.value;
+    onChange(e.target.value);
+    autoResize(e.target);
+  }
+
+  function handleKeyDown(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (undoStack.current.length === 0) return;
+      redoStack.current.push(lastValue.current);
+      const prev = undoStack.current.pop();
+      lastValue.current = prev;
+      onChange(prev);
+    }
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'Z' || (e.key === 'z' && e.shiftKey))) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (redoStack.current.length === 0) return;
+      undoStack.current.push(lastValue.current);
+      const next = redoStack.current.pop();
+      lastValue.current = next;
+      onChange(next);
+    }
   }
 
   if (editing) {
@@ -26,10 +62,8 @@ export default function MarkdownField({ value, onChange, placeholder }) {
           className="md-textarea"
           value={value || ''}
           placeholder={placeholder}
-          onChange={e => {
-            onChange(e.target.value);
-            autoResize(e.target);
-          }}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
           onBlur={() => setEditing(false)}
         />
       </div>

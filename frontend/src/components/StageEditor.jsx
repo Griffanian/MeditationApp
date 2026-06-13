@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DndContext, closestCenter, pointerWithin, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
-import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, assembleStage } from '../api';
-import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation } from '../playback';
+import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, assembleStage, generateAllAudio } from '../api';
+import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, registerExternalStop, unregisterExternalStop } from '../playback';
 import { getClipboard, setClipboard } from '../clipboard';
 import { generateId, ensureIds, findById, findByIdWithContext, allIds, cloneWithNewIds, isDescendantOf } from '../segmentIds';
 import Timeline from './Timeline';
@@ -25,6 +25,8 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
   const lastClickedRef = useRef(null);
   const undoStack = useRef([]);
   const redoStack = useRef([]);
+  const assembledAudioRef = useRef(null);
+  const assembledPlayingRef = useRef(false);
 
   useEffect(() => { scriptRef.current = script; }, [script]);
 
@@ -203,6 +205,30 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
     save(newScript);
   }
 
+  // Register callbacks so external audio sources (RecordingModal, etc.) can
+  // stop the assembled output and reset timeline playback state.
+  useEffect(() => {
+    const stopAssembled = () => {
+      if (!assembledPlayingRef.current && assembledAudioRef.current) {
+        assembledAudioRef.current.pause();
+      }
+    };
+    const resetState = () => {
+      setPlayingId(null);
+      setPlayingParentId(null);
+      setLoopCounters({});
+      setIsPaused(false);
+      playAllModeRef.current = false;
+      setIsPlayAll(false);
+    };
+    registerExternalStop(stopAssembled);
+    registerExternalStop(resetState);
+    return () => {
+      unregisterExternalStop(stopAssembled);
+      unregisterExternalStop(resetState);
+    };
+  }, []);
+
   useEffect(() => {
     fetchStageScript(meditationName, stageId).then(loaded => {
       ensureIds(loaded);
@@ -266,6 +292,11 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
 
   function updateVariable(varName, newValue) {
     const updated = { ...variables, [varName]: { ...variables[varName], value: newValue } };
+    saveVars(updated);
+  }
+
+  function updateDisplayName(varName, newDisplayName) {
+    const updated = { ...variables, [varName]: { ...variables[varName], displayName: newDisplayName } };
     saveVars(updated);
   }
 
@@ -434,11 +465,24 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
     playAllModeRef.current = false; setIsPlayAll(false);
   }
 
-  async function handleAssemble() {
-    setStatus('Assembling...');
-    const data = await assembleStage(meditationName, stageId);
-    setStatus(`Assembled! Duration: ${data.duration.toFixed(1)}s`);
-    setOutputUrl(`/audio/meditation/${meditationName}/stage/${stageId}/output/${data.filename}?t=${Date.now()}`);
+  async function handleGenerateAll() {
+    setStatus('Generating all audio...');
+    try {
+      await generateAllAudio(meditationName, stageId);
+      setStatus('All audio generated!');
+      // Reload everything so the timeline reflects the new audio
+      const [loadedScript, comps, vars] = await Promise.all([
+        fetchStageScript(meditationName, stageId),
+        fetchStageComponents(meditationName, stageId),
+        fetchStageVariables(meditationName, stageId),
+      ]);
+      ensureIds(loadedScript);
+      setScript(loadedScript);
+      setComponents(comps);
+      setVariables(vars);
+    } catch (err) {
+      setStatus(`Generation failed: ${err.message}`);
+    }
   }
 
   return (
@@ -460,11 +504,12 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
               <tr>
                 <th>Value</th>
                 <th>Variable Name</th>
+                <th>Display Name</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {Object.entries(variables).map(([varName, { value }]) => (
+              {Object.entries(variables).map(([varName, { value, displayName }]) => (
                 <tr key={varName}>
                   <td>
                     <input
@@ -484,6 +529,17 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
                       onInput={e => { e.target.size = e.target.value.length || 1; }}
                       onBlur={e => renameVariable(varName, e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="variable-name-input"
+                      type="text"
+                      value={displayName || ''}
+                      placeholder={varName}
+                      size={Math.max((displayName || varName).length, 1)}
+                      onInput={e => { e.target.size = Math.max(e.target.value.length, 1); }}
+                      onChange={e => updateDisplayName(varName, e.target.value)}
                     />
                   </td>
                   <td className="var-delete-cell">
@@ -508,7 +564,7 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
               {isPlayAll && playingId ? '⏸ Pause' : '▶ Play All'}
             </button>
             <button className="btn-stop" onClick={handleStop}>■ Stop</button>
-            <button className="btn-assemble" onClick={handleAssemble}>Assemble</button>
+            <button className="btn-assemble" onClick={handleGenerateAll}>Generate All</button>
             <span className="status">{status}</span>
             <AddMenu onAdd={handleAddFromToolbar} />
           </div>
@@ -557,7 +613,16 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
 
       {outputUrl && (
         <div className="full-player">
-          <audio controls src={outputUrl} />
+          <audio
+            ref={assembledAudioRef}
+            controls
+            src={outputUrl}
+            onPlay={() => {
+              assembledPlayingRef.current = true;
+              stopPlayback();
+              assembledPlayingRef.current = false;
+            }}
+          />
         </div>
       )}
     </div>

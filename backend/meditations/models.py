@@ -1,6 +1,18 @@
 from django.db import models
 
 
+class Category(models.Model):
+    name = models.CharField(max_length=200, unique=True, primary_key=True)
+    display_name = models.CharField(max_length=200)
+    sort_order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "display_name"]
+
+    def __str__(self):
+        return self.display_name
+
+
 class Meditation(models.Model):
     name = models.SlugField(max_length=200, unique=True, primary_key=True)
     display_name = models.CharField(max_length=200, blank=True)

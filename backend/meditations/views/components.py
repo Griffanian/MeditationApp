@@ -22,7 +22,10 @@ class ComponentMixin:
 
     def _get_script_and_vars(self, name, stage_id=None):
         if stage_id:
-            stage = get_object_or_404(Stage, meditation_id=name, stage_id=stage_id)
+            try:
+                stage = Stage.objects.get(meditation_id=name, stage_id=stage_id)
+            except Stage.DoesNotExist:
+                return [], {}
             variables = self._parse_variables(stage.variables)
             return stage.script, variables
         meditation = get_object_or_404(Meditation, name=name)
@@ -143,6 +146,19 @@ class ComponentMixin:
 
 
 # --- Stage-level views ---
+
+class StageGenerateAllView(ComponentMixin, APIView):
+    def post(self, request, name, stage_id):
+        stage = get_object_or_404(Stage, meditation_id=name, stage_id=stage_id)
+        if not stage.script:
+            return Response({"error": "No script to generate from"}, status=400)
+        extra_vars = self._parse_variables(stage.variables)
+        try:
+            generate_components(stage.script, name, stage_id, extra_variables=extra_vars)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+        return Response({"status": "ok"})
+
 
 class StageComponentListView(ComponentMixin, APIView):
     def get(self, request, name, stage_id):

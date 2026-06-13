@@ -3,11 +3,16 @@ from django.urls import path
 from .views import assembly, assets, components, meditations, scripts, stages, trim
 
 urlpatterns = [
+    # Categories
+    path("api/categories", meditations.CategoryListView.as_view()),
+    path("api/categories/<str:category>", meditations.CategoryDetailView.as_view()),
+
     # Meditation list & metadata
     path("api/meditations", meditations.MeditationListView.as_view()),
     path("api/meditations/<str:name>/meta", meditations.MetaView.as_view()),
     path("api/meditations/<str:name>/instructions", meditations.InstructionsView.as_view()),
     path("api/meditations/<str:name>/instructions-pdf", meditations.InstructionsPdfView.as_view()),
+    path("api/meditations/<str:name>/extract-instructions", meditations.ExtractInstructionsView.as_view()),
     path("api/meditations/<str:name>/loops", meditations.LoopsView.as_view()),
 
     # Root-level script
@@ -29,8 +34,10 @@ urlpatterns = [
     # Stage script & variables
     path("api/meditations/<str:name>/stages/<str:stage_id>/script", scripts.StageScriptView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/variables", stages.VariablesView.as_view()),
+    path("api/meditations/<str:name>/stages/<str:stage_id>/generate-script", stages.GenerateStageScriptView.as_view()),
 
     # Stage components
+    path("api/meditations/<str:name>/stages/<str:stage_id>/generate-all", components.StageGenerateAllView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/components", components.StageComponentListView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/timestamps/<str:seg_id>", components.StageTimestampsView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/generate-audio/<str:seg_id>", components.StageGenerateAudioView.as_view()),

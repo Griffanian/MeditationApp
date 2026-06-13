@@ -7,6 +7,16 @@ let timestampCache = {};
 let currentMeditation = null;
 let currentStage = null;
 
+const externalStopCallbacks = new Set();
+
+export function registerExternalStop(cb) {
+  externalStopCallbacks.add(cb);
+}
+
+export function unregisterExternalStop(cb) {
+  externalStopCallbacks.delete(cb);
+}
+
 export function setMeditation(name, stageId) {
   currentMeditation = name;
   currentStage = stageId;
@@ -34,6 +44,9 @@ export function stopPlayback() {
       currentAudio.pause();
     }
     currentAudio = null;
+  }
+  for (const cb of externalStopCallbacks) {
+    cb();
   }
 }
 

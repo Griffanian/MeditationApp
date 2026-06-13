@@ -1,23 +1,39 @@
-import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { fetchMeta, saveMeta, fetchInstructions, saveInstructions, checkInstructionsPdf, uploadInstructionsPdf, deleteInstructionsPdf } from '../api';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
+import { fetchMeta, saveMeta, fetchInstructions, saveInstructions, checkInstructionsPdf, uploadInstructionsPdf, deleteInstructionsPdf, extractInstructions, generateStageScript } from '../api';
 import MarkdownField from '../components/MarkdownField';
 import StageEditor from '../components/StageEditor';
 import '../styles.css';
 
 export default function Editor() {
   const { name } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const targetStage = searchParams.get('stage');
   const [displayName, setDisplayName] = useState('');
   const [editingTitle, setEditingTitle] = useState(false);
   const [instructions, setInstructions] = useState({ description: '', stages: [] });
   const [hasPdf, setHasPdf] = useState(false);
-  const [instructionsCollapsed, setInstructionsCollapsed] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [extracting, setExtracting] = useState(false);
+  const [instructionsCollapsed, setInstructionsCollapsed] = useState(!!targetStage);
   const [timelinesCollapsed, setTimelinesCollapsed] = useState(false);
   const [collapsedStages, setCollapsedStages] = useState({});
+  const [generatingStage, setGeneratingStage] = useState(null);
+  const scrolledRef = useRef(false);
 
   useEffect(() => {
     fetchMeta(name).then(meta => setDisplayName(meta.display_name || name));
-    fetchInstructions(name).then(setInstructions);
+    fetchInstructions(name).then(loaded => {
+      setInstructions(loaded);
+      // If a target stage is specified, collapse all other stages
+      if (targetStage && loaded.stages) {
+        const collapsed = {};
+        for (const s of loaded.stages) {
+          collapsed[s.id] = s.id !== targetStage;
+        }
+        setCollapsedStages(collapsed);
+      }
+    });
     checkInstructionsPdf(name).then(r => setHasPdf(r.exists));
   }, [name]);
 
@@ -25,6 +41,61 @@ export default function Editor() {
     setInstructions(updated);
     saveInstructions(name, updated);
   }
+
+  async function handleExtract(opts = {}) {
+    setExtracting(true);
+    try {
+      const result = await extractInstructions(name, opts);
+      const stages = (result.stages || []).map((s, i) => ({
+        id: `stage-${Date.now()}-${i}`,
+        name: s.name || `Stage ${i + 1}`,
+        description: s.description || '',
+        directions: s.directions || '',
+        progression: s.progression || '',
+        contraindications: s.contraindications || '',
+      }));
+      const updated = {
+        ...instructions,
+        description: result.description || instructions.description,
+        stages: stages.length > 0 ? stages : instructions.stages,
+      };
+      setInstructions(updated);
+      await saveInstructions(name, updated);
+
+      // Auto-generate timelines for each stage
+      const finalStages = stages.length > 0 ? stages : instructions.stages;
+      for (const stage of finalStages) {
+        setGeneratingStage(stage.id);
+        try {
+          await generateStageScript(name, stage.id);
+        } catch (err) {
+          console.warn(`Script generation failed for ${stage.name}:`, err);
+        }
+      }
+      // Force StageEditors to reload by collapsing/expanding
+      const allCollapsed = {};
+      for (const s of finalStages) allCollapsed[s.id] = true;
+      setCollapsedStages(allCollapsed);
+      setTimeout(() => setCollapsedStages({}), 50);
+    } catch (err) {
+      alert(`Extraction failed: ${err.message}`);
+    } finally {
+      setExtracting(false);
+      setGeneratingStage(null);
+    }
+  }
+
+  // Scroll to target stage once the timeline renders
+  useEffect(() => {
+    if (!targetStage || scrolledRef.current) return;
+    const el = document.getElementById(`stage-${targetStage}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      scrolledRef.current = true;
+      // Clear the query param so refreshing doesn't re-scroll
+      setSearchParams({}, { replace: true });
+    }
+  }, [targetStage, instructions]);
 
   function toggleStageCollapsed(stageId) {
     setCollapsedStages(prev => ({ ...prev, [stageId]: !prev[stageId] }));
@@ -54,8 +125,16 @@ export default function Editor() {
 
       {/* Instructions */}
       <div className="editor-section">
-        <div className="editor-section-label collapsible" onClick={() => setInstructionsCollapsed(!instructionsCollapsed)}>
-          <span className={`chevron ${instructionsCollapsed ? 'collapsed' : ''}`}>▼</span> Instructions
+        <div className="instr-header-row">
+          <div className="editor-section-label collapsible" onClick={() => setInstructionsCollapsed(!instructionsCollapsed)}>
+            <span className={`chevron ${instructionsCollapsed ? 'collapsed' : ''}`}>▼</span> Instructions
+          </div>
+          {!instructionsCollapsed && (
+            <button className="btn-clear" onClick={() => {
+              if (!confirm('Clear all instructions?')) return;
+              updateInstructions({ description: '', stages: [] });
+            }}>Clear</button>
+          )}
         </div>
         {!instructionsCollapsed && (
           <div className="instructions-structured">
@@ -79,6 +158,7 @@ export default function Editor() {
                     await deleteInstructionsPdf(name);
                     setHasPdf(false);
                   }}>Remove</button>
+                  <button className="btn-pdf btn-pdf-extract" disabled={extracting} onClick={() => handleExtract()}>{extracting ? 'Extracting...' : 'Extract with AI'}</button>
                 </div>
               )}
             </div>
@@ -94,6 +174,24 @@ export default function Editor() {
                 }} />
               </label>
             )}
+
+            <div className="instr-youtube">
+              <label className="instr-label">YouTube Video</label>
+              <div className="instr-youtube-row">
+                <input
+                  className="instr-youtube-input"
+                  type="url"
+                  placeholder="Paste a YouTube URL..."
+                  value={youtubeUrl}
+                  onChange={e => setYoutubeUrl(e.target.value)}
+                />
+                <button
+                  className="btn-pdf btn-pdf-extract"
+                  disabled={extracting || !youtubeUrl.trim()}
+                  onClick={() => handleExtract({ youtubeUrl })}
+                >{extracting ? 'Extracting...' : 'Extract with AI'}</button>
+              </div>
+            </div>
 
             <label className="instr-label">Explanation</label>
             <div className="instr-stage">
@@ -164,6 +262,17 @@ export default function Editor() {
                     }}
                     placeholder="Progression steps..."
                   />
+
+                  <label className="instr-sublabel">Contraindications</label>
+                  <MarkdownField
+                    value={stage.contraindications || ''}
+                    onChange={v => {
+                      const stages = [...instructions.stages];
+                      stages[si] = { ...stage, contraindications: v };
+                      updateInstructions({ ...instructions, stages });
+                    }}
+                    placeholder="List any contraindications..."
+                  />
                 </div>
               ))}
             </div>
@@ -180,10 +289,26 @@ export default function Editor() {
         {!timelinesCollapsed && (
           <div className="timelines-list">
             {instructions.stages.map((stage) => (
-              <div key={stage.id} className="stage-section">
-                <div className="stage-section-header collapsible" onClick={() => toggleStageCollapsed(stage.id)}>
-                  <span className={`chevron ${collapsedStages[stage.id] ? 'collapsed' : ''}`}>▼</span>
-                  <span>{stage.name}</span>
+              <div key={stage.id} id={`stage-${stage.id}`} className="stage-section">
+                <div className="stage-section-header-row">
+                  <div className="stage-section-header collapsible" onClick={() => toggleStageCollapsed(stage.id)}>
+                    <span className={`chevron ${collapsedStages[stage.id] ? 'collapsed' : ''}`}>▼</span>
+                    <span>{stage.name}</span>
+                  </div>
+                  <button className="btn-pdf btn-pdf-extract" disabled={generatingStage === stage.id} onClick={async (e) => {
+                    e.stopPropagation();
+                    setGeneratingStage(stage.id);
+                    try {
+                      await generateStageScript(name, stage.id);
+                      // Collapse and re-expand to force StageEditor to reload
+                      setCollapsedStages(prev => ({ ...prev, [stage.id]: true }));
+                      setTimeout(() => setCollapsedStages(prev => ({ ...prev, [stage.id]: false })), 50);
+                    } catch (err) {
+                      alert(`Generation failed: ${err.message}`);
+                    } finally {
+                      setGeneratingStage(null);
+                    }
+                  }}>{generatingStage === stage.id ? 'Generating...' : 'Extract with AI'}</button>
                 </div>
                 {!collapsedStages[stage.id] && (
                   <StageEditor
