@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchCategories, createCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveStageVariables, assembleStage, BASE } from '../api';
+import { useAuth } from '../AuthContext';
 import { useLocalState } from '../utils';
 
 export default function Dashboard() {
+  const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState([]);
   const [meditations, setMeditations] = useState([]);
@@ -206,7 +208,7 @@ export default function Dashboard() {
                 onClick={() => setExpandedCats(prev => ({ ...prev, [cat.name]: !prev[cat.name] }))}
               >{isCollapsed ? '▸' : '▾'}</span>
               <h2 className="category-header">
-                {editingCategory === cat.name ? (
+                {isAdmin && editingCategory === cat.name ? (
                   <input
                     className="category-name-input"
                     value={editCatName}
@@ -218,20 +220,24 @@ export default function Dashboard() {
                 ) : (
                   <>
                     {cat.display_name}
-                    <span className="title-edit-btn" onClick={() => startEditCategory(cat)}>✎</span>
+                    {isAdmin && <span className="title-edit-btn" onClick={() => startEditCategory(cat)}>✎</span>}
                   </>
                 )}
               </h2>
-              <button className="category-delete-btn" onClick={() => handleDeleteCategory(cat)}>✕</button>
+              {isAdmin && <button className="category-delete-btn" onClick={() => handleDeleteCategory(cat)}>✕</button>}
             </div>
             {!isCollapsed && <div className="med-grid">
               {meds.map(med => (
                 <div key={med.name} className="med-card">
                   <div className="med-card-top">
-                    <Link to={`/edit/${med.name}`} className="med-card-link">
+                    {isAdmin ? (
+                      <Link to={`/edit/${med.name}`} className="med-card-link">
+                        <span className="med-card-name">{med.display_name}</span>
+                      </Link>
+                    ) : (
                       <span className="med-card-name">{med.display_name}</span>
-                    </Link>
-                    <div className="med-kebab-wrapper">
+                    )}
+                    {isAdmin && <div className="med-kebab-wrapper">
                       <button
                         className="med-kebab-btn"
                         onClick={e => { e.stopPropagation(); setOpenMenu(openMenu === med.name ? null : med.name); }}
@@ -242,7 +248,7 @@ export default function Dashboard() {
                           <button className="med-kebab-delete" onClick={() => { setOpenMenu(null); handleDelete(med); }}>Delete</button>
                         </div>
                       )}
-                    </div>
+                    </div>}
                   </div>
                   {med.stages && med.stages.length > 0 && (
                     <div className="med-card-stages">
@@ -252,10 +258,14 @@ export default function Dashboard() {
                         return (
                           <div key={stage.id} className="dash-stage">
                             <div className="dash-stage-header">
-                              <Link
-                                to={`/edit/${med.name}?stage=${stage.id}`}
-                                className="dash-stage-name"
-                              >{stage.name}</Link>
+                              {isAdmin ? (
+                                <Link
+                                  to={`/edit/${med.name}?stage=${stage.id}`}
+                                  className="dash-stage-name"
+                                >{stage.name}</Link>
+                              ) : (
+                                <span className="dash-stage-name" style={{ cursor: 'default' }}>{stage.name}</span>
+                              )}
                               <button
                                 className={`dash-stage-play ${playing === key ? 'playing' : ''}`}
                                 onClick={() => handlePlayStage(med, stage)}
@@ -292,18 +302,18 @@ export default function Dashboard() {
                   )}
                 </div>
               ))}
-              <button className="med-card med-card-add" onClick={() => handleNewExercise(cat.name)}>
+              {isAdmin && <button className="med-card med-card-add" onClick={() => handleNewExercise(cat.name)}>
                 <span className="med-card-add-icon">+</span>
                 <span className="med-card-add-label">New Exercise</span>
-              </button>
+              </button>}
             </div>}
           </div>
         );
       })}
 
-      <button className="btn-new-section" onClick={handleNewSection}>
+      {isAdmin && <button className="btn-new-section" onClick={handleNewSection}>
         + New Section
-      </button>
+      </button>}
 
     </div>
   );

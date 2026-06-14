@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import Asset, Component, Meditation, Stage
+from ..permissions import IsAdmin
 from ..services import storage
 
 
@@ -52,6 +53,8 @@ class TrimMixin:
 # --- Stage-level trim meta ---
 
 class StageTrimMetaView(TrimMixin, APIView):
+    permission_classes = [IsAdmin]
+
     def get(self, request, name, stage_id, seg_id):
         return self._get_trim_meta(name, stage_id, seg_id)
 
@@ -65,6 +68,8 @@ class StageTrimMetaView(TrimMixin, APIView):
 # --- Root-level trim meta ---
 
 class RootTrimMetaView(TrimMixin, APIView):
+    permission_classes = [IsAdmin]
+
     def get(self, request, name, seg_id):
         return self._get_trim_meta(name, None, seg_id)
 
@@ -78,6 +83,8 @@ class RootTrimMetaView(TrimMixin, APIView):
 # --- Trim execution (in-place audio trimming) ---
 
 class RootTrimComponentView(APIView):
+    permission_classes = [IsAdmin]
+
     def post(self, request, name, seg_id):
         data = request.data
         if not data or "start" not in data or "end" not in data:
@@ -107,6 +114,8 @@ class RootTrimComponentView(APIView):
 # --- Asset trim meta ---
 
 class AssetTrimMetaView(APIView):
+    permission_classes = [IsAdmin]
+
     def get(self, request, filename):
         try:
             asset = Asset.objects.get(filename=filename)
@@ -134,6 +143,8 @@ class AssetTrimMetaView(APIView):
 
 
 class TrimAssetView(APIView):
+    permission_classes = [IsAdmin]
+
     def post(self, request, filename):
         data = request.data
         start_ms = int(data["start"] * 1000)

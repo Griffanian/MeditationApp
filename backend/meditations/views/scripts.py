@@ -3,9 +3,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import Meditation, Stage
+from ..permissions import IsAdminOrReadOnly
 
 
 class RootScriptView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
     def get(self, request, name):
         m = get_object_or_404(Meditation, name=name)
         return Response(m.script or [])
@@ -18,6 +20,8 @@ class RootScriptView(APIView):
 
 
 class StageScriptView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
     def get(self, request, name, stage_id):
         try:
             stage = Stage.objects.get(meditation_id=name, stage_id=stage_id)

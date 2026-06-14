@@ -8,12 +8,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import Category, Meditation, Stage
+from ..permissions import IsAdmin, IsAdminOrReadOnly
 from ..services import storage
 from ..services.chat import chat
 from ..services.extract_instructions import extract_instructions
 
 
 class MeditationListView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
     def get(self, request):
         meds = []
         for m in Meditation.objects.prefetch_related("stages").order_by("name"):
@@ -57,6 +59,8 @@ class MeditationListView(APIView):
 
 
 class MetaView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
     def get(self, request, name):
         m = get_object_or_404(Meditation, name=name)
         return Response({
@@ -80,6 +84,8 @@ class MetaView(APIView):
 
 
 class CategoryListView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
     def get(self, request):
         return Response([
             {"name": c.name, "display_name": c.display_name, "sort_order": c.sort_order}
@@ -101,6 +107,8 @@ class CategoryListView(APIView):
 
 
 class CategoryDetailView(APIView):
+    permission_classes = [IsAdmin]
+
     def put(self, request, category):
         cat = get_object_or_404(Category, name=category)
         if "display_name" in request.data:
@@ -118,6 +126,8 @@ class CategoryDetailView(APIView):
 
 
 class InstructionsView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
     def get(self, request, name):
         m = get_object_or_404(Meditation, name=name)
         instructions = m.instructions or {"description": "", "stages": []}
@@ -131,6 +141,8 @@ class InstructionsView(APIView):
 
 
 class InstructionsPdfView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
     def get(self, request, name):
         path = storage.pdf_path(name)
         return Response({"exists": storage.file_exists(path)})
@@ -150,6 +162,8 @@ class InstructionsPdfView(APIView):
 
 
 class LoopsView(APIView):
+    permission_classes = [IsAdmin]
+
     def put(self, request, name):
         m = get_object_or_404(Meditation, name=name)
         _apply_loops(m.script, request.data)
@@ -158,6 +172,8 @@ class LoopsView(APIView):
 
 
 class ExtractInstructionsView(APIView):
+    permission_classes = [IsAdmin]
+
     def post(self, request, name):
         youtube_url = request.data.get("youtube_url")
         context = request.data.get("context")
@@ -354,6 +370,7 @@ def _diff_practice_items(old_weeks, new_weeks):
 
 class ChatView(APIView):
     """General context-aware chat endpoint."""
+    permission_classes = [IsAdmin]
     def post(self, request):
         message = request.data.get("message", "")
         history = request.data.get("history", [])

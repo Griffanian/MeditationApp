@@ -1,5 +1,27 @@
 const BASE = import.meta.env.VITE_API_URL || '';
 
+// --- Auth ---
+
+export async function checkAuth() {
+  const res = await fetch(`${BASE}/api/auth/status`);
+  return res.json();
+}
+
+export async function loginUser(username, password) {
+  const res = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Login failed');
+  return data;
+}
+
+export async function logoutUser() {
+  await fetch(`${BASE}/api/auth/logout`, { method: 'POST' });
+}
+
 export async function fetchCategories() {
   const res = await fetch(`${BASE}/api/categories`);
   return res.json();

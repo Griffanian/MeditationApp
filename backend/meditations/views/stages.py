@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import Meditation, Stage
+from ..permissions import IsAdmin
 from ..services.generate_stage_script import generate_stage_script
 
 
@@ -25,6 +26,8 @@ class VariablesView(APIView):
 
 
 class GenerateStageScriptView(APIView):
+    permission_classes = [IsAdmin]
+
     def post(self, request, name, stage_id):
         m = get_object_or_404(Meditation, name=name)
         instructions = m.instructions or {}

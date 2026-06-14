@@ -5,9 +5,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import Meditation, Practice, Stage
+from ..permissions import IsAdminOrReadOnly
 
 
 class PracticeListView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
     def get(self, request):
         practices = []
         for p in Practice.objects.order_by("display_name"):
@@ -34,6 +36,8 @@ class PracticeListView(APIView):
 
 
 class PracticeDetailView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
     def get(self, request, name):
         p = get_object_or_404(Practice, name=name)
         return Response({

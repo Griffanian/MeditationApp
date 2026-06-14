@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import Component, Meditation, Stage
+from ..permissions import IsAdmin, IsAdminOrReadOnly
 from ..services import storage
 from ..services.synthesize import (
     _collect_speech_segments,
@@ -155,6 +156,8 @@ class ComponentMixin:
 # --- Stage-level views ---
 
 class StageGenerateAllView(ComponentMixin, APIView):
+    permission_classes = [IsAdmin]
+
     def post(self, request, name, stage_id):
         stage = get_object_or_404(Stage, meditation_id=name, stage_id=stage_id)
         if not stage.script:
@@ -178,16 +181,22 @@ class StageTimestampsView(ComponentMixin, APIView):
 
 
 class StageGenerateAudioView(ComponentMixin, APIView):
+    permission_classes = [IsAdmin]
+
     def post(self, request, name, stage_id, seg_id):
         return self._generate_audio(request, name, stage_id, seg_id)
 
 
 class StageUploadComponentView(ComponentMixin, APIView):
+    permission_classes = [IsAdmin]
+
     def post(self, request, name, stage_id, seg_id):
         return self._upload_component(request, name, stage_id, seg_id)
 
 
 class StageDeleteComponentView(ComponentMixin, APIView):
+    permission_classes = [IsAdmin]
+
     def delete(self, request, name, stage_id, seg_id):
         return self._delete_component(name, stage_id, seg_id)
 
@@ -205,11 +214,15 @@ class RootTimestampsView(ComponentMixin, APIView):
 
 
 class RootGenerateAudioView(ComponentMixin, APIView):
+    permission_classes = [IsAdmin]
+
     def post(self, request, name, seg_id):
         return self._generate_audio(request, name, None, seg_id)
 
 
 class RootUploadComponentView(ComponentMixin, APIView):
+    permission_classes = [IsAdmin]
+
     def post(self, request, name, seg_id):
         return self._upload_component(request, name, None, seg_id)
 

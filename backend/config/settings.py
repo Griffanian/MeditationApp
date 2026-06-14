@@ -45,6 +45,7 @@ CORS_ALLOWED_ORIGINS = [
     o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",") if o.strip()
 ]
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL", "false").lower() == "true"
+CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = "config.urls"
 
@@ -102,13 +103,12 @@ AWS_S3_FILE_OVERWRITE = True
 # --- Django REST Framework ---
 
 REST_FRAMEWORK = {
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["meditations.authentication.SessionAuthNoCsrf"],
     "DEFAULT_PARSER_CLASSES": [
         "rest_framework.parsers.JSONParser",
         "rest_framework.parsers.MultiPartParser",
     ],
-    "UNAUTHENTICATED_USER": None,
 }
 
 # No trailing slashes — match Flask URL behavior

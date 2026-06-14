@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchPractices, createPractice, deletePractice } from '../api';
+import { useAuth } from '../AuthContext';
 
 export default function Practices() {
+  const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
   const [practices, setPractices] = useState([]);
   const [openMenu, setOpenMenu] = useState(null);
@@ -54,10 +56,10 @@ export default function Practices() {
           return (
             <div key={prac.name} className="med-card">
               <div className="med-card-top">
-                <Link to={`/practice/${prac.name}`} className="med-card-link">
+                <Link to={isAdmin ? `/practice/${prac.name}` : `/play/${prac.name}`} className="med-card-link">
                   <span className="med-card-name">{prac.display_name}</span>
                 </Link>
-                <div className="med-kebab-wrapper">
+                {isAdmin && <div className="med-kebab-wrapper">
                   <button
                     className="med-kebab-btn"
                     onClick={e => { e.stopPropagation(); setOpenMenu(openMenu === prac.name ? null : prac.name); }}
@@ -69,7 +71,7 @@ export default function Practices() {
                       <button className="med-kebab-delete" onClick={() => { setOpenMenu(null); handleDeletePractice(prac); }}>Delete</button>
                     </div>
                   )}
-                </div>
+                </div>}
               </div>
               <div className="prog-card-subtitle">
                 {hasWeeks
@@ -79,15 +81,15 @@ export default function Practices() {
               </div>
               <div className="prog-card-actions">
                 <Link to={`/play/${prac.name}`} className="prog-card-play-btn">▶ Play</Link>
-                <Link to={`/practice/${prac.name}`} className="prog-card-edit-btn">Edit</Link>
+                {isAdmin && <Link to={`/practice/${prac.name}`} className="prog-card-edit-btn">Edit</Link>}
               </div>
             </div>
           );
         })}
-        <button className="med-card med-card-add" onClick={handleNewPractice}>
+        {isAdmin && <button className="med-card med-card-add" onClick={handleNewPractice}>
           <span className="med-card-add-icon">+</span>
           <span className="med-card-add-label">New Programme</span>
-        </button>
+        </button>}
       </div>}
     </div>
   );

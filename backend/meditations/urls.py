@@ -1,8 +1,13 @@
 from django.urls import path
 
-from .views import assembly, assets, components, meditations, practices, scripts, stages, trim
+from .views import assembly, assets, auth, components, meditations, practices, scripts, stages, trim
 
 urlpatterns = [
+    # Auth
+    path("api/auth/login", auth.LoginView.as_view()),
+    path("api/auth/logout", auth.LogoutView.as_view()),
+    path("api/auth/status", auth.AuthStatusView.as_view()),
+
     # Categories
     path("api/categories", meditations.CategoryListView.as_view()),
     path("api/categories/<str:category>", meditations.CategoryDetailView.as_view()),
