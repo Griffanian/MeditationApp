@@ -1,37 +1,48 @@
 const BASE = import.meta.env.VITE_API_URL || '';
 
-// Wrapper around fetch that sends cookies cross-origin and kicks to login on 403.
+function getToken() { return localStorage.getItem('auth_token'); }
+export function setToken(token) { localStorage.setItem('auth_token', token); }
+export function clearToken() { localStorage.removeItem('auth_token'); }
+
+// Wrapper around fetch that adds auth header and kicks to login on 403.
 function apiFetch(url, opts = {}) {
-  return fetch(url, { credentials: 'include', ...opts }).then(res => {
+  const token = getToken();
+  const headers = { ...(opts.headers || {}) };
+  if (token) headers['Authorization'] = `Token ${token}`;
+  return fetch(url, { ...opts, headers }).then(res => {
     if (res.status === 403) {
-      // Session expired or missing — reload to show login screen
+      clearToken();
       window.location.reload();
     }
     return res;
   });
 }
 
-// --- Auth (use raw fetch — these must work without a session) ---
+// --- Auth ---
 
 export async function checkAuth() {
-  const res = await fetch(`${BASE}/api/auth/status`, { credentials: 'include' });
+  const token = getToken();
+  if (!token) return { authenticated: false };
+  const res = await fetch(`${BASE}/api/auth/status`, {
+    headers: { 'Authorization': `Token ${token}` },
+  });
   return res.json();
 }
 
 export async function loginUser(username, password) {
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Login failed');
+  setToken(data.token);
   return data;
 }
 
-export async function logoutUser() {
-  await fetch(`${BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+export function logoutUser() {
+  clearToken();
 }
 
 export async function fetchCategories() {

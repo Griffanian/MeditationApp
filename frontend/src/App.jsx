@@ -35,8 +35,8 @@ export default function App() {
     return <Login onLogin={(data) => setAuth({ isAdmin: !!data.is_admin })} />;
   }
 
-  async function handleLogout() {
-    await logoutUser();
+  function handleLogout() {
+    logoutUser();
     setAuth(false);
   }
 

@@ -104,7 +104,7 @@ AWS_S3_FILE_OVERWRITE = True
 
 REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
-    "DEFAULT_AUTHENTICATION_CLASSES": ["meditations.authentication.SessionAuthNoCsrf"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["meditations.authentication.TokenAuthentication"],
     "DEFAULT_PARSER_CLASSES": [
         "rest_framework.parsers.JSONParser",
         "rest_framework.parsers.MultiPartParser",
