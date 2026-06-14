@@ -51,7 +51,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/practices" element={<Practices />} />
-              <Route path="/edit/:name" element={authValue.isAdmin ? <Editor /> : <Navigate to="/" replace />} />
+              <Route path="/edit/:name" element={<Editor />} />
               <Route path="/practice/:name" element={authValue.isAdmin ? <PracticeBuilder /> : <Navigate to="/practices" replace />} />
               <Route path="/play/:name" element={<Player />} />
             </Routes>

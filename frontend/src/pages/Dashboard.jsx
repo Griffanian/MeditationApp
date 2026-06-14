@@ -230,13 +230,9 @@ export default function Dashboard() {
               {meds.map(med => (
                 <div key={med.name} className="med-card">
                   <div className="med-card-top">
-                    {isAdmin ? (
-                      <Link to={`/edit/${med.name}`} className="med-card-link">
-                        <span className="med-card-name">{med.display_name}</span>
-                      </Link>
-                    ) : (
+                    <Link to={`/edit/${med.name}`} className="med-card-link">
                       <span className="med-card-name">{med.display_name}</span>
-                    )}
+                    </Link>
                     {isAdmin && <div className="med-kebab-wrapper">
                       <button
                         className="med-kebab-btn"
@@ -258,14 +254,10 @@ export default function Dashboard() {
                         return (
                           <div key={stage.id} className="dash-stage">
                             <div className="dash-stage-header">
-                              {isAdmin ? (
-                                <Link
-                                  to={`/edit/${med.name}?stage=${stage.id}`}
-                                  className="dash-stage-name"
-                                >{stage.name}</Link>
-                              ) : (
-                                <span className="dash-stage-name" style={{ cursor: 'default' }}>{stage.name}</span>
-                              )}
+                              <Link
+                                to={`/edit/${med.name}?stage=${stage.id}`}
+                                className="dash-stage-name"
+                              >{stage.name}</Link>
                               <button
                                 className={`dash-stage-play ${playing === key ? 'playing' : ''}`}
                                 onClick={() => handlePlayStage(med, stage)}

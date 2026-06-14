@@ -40,7 +40,7 @@ function BottomDropZone({ id, forceHighlight }) {
   );
 }
 
-export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, components, meditationName, stageId, onRefreshComponents, playingParentId, variables = {}, loopCounters = {}, onUpdateVariable, selectedIds = new Set(), onSelect, onContextMenu, fullScript }) {
+export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, components, meditationName, stageId, onRefreshComponents, playingParentId, variables = {}, loopCounters = {}, onUpdateVariable, selectedIds = new Set(), onSelect, onContextMenu, fullScript, readOnly }) {
   const [collapsed, setCollapsed] = useLocalState(`collapse:loop:${seg.id}`, true);
   const [editLabel, setEditLabel] = useState(seg.label || '');
   const [editRepeat, setEditRepeat] = useState(seg.variable ? `{${seg.variable}}` : seg.repeat);
@@ -73,7 +73,7 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
   return (
     <div ref={setNodeRef} style={style} className={isSection ? 'section-container' : 'loop-container'}>
       <div className={isSection ? 'section-header' : 'loop-header'}>
-        <DragHandle listeners={listeners} attributes={attributes} />
+        {!readOnly && <DragHandle listeners={listeners} attributes={attributes} />}
         <span
           className={`chevron ${collapsed ? 'collapsed' : ''}`}
           onClick={() => setCollapsed(!collapsed)}
@@ -82,16 +82,20 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
         </span>
         {isSection ? (
           <span className="section-header-fields">
-            <input
-              className="section-label-input"
-              type="text"
-              value={editLabel}
-              onClick={e => e.stopPropagation()}
-              onChange={e => setEditLabel(e.target.value)}
-              onBlur={() => { if (editLabel !== seg.label) onUpdate(seg.id, { label: editLabel }); }}
-              onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-            />
-            {seg.targetDuration != null ? (
+            {readOnly ? (
+              <span className="section-label-input" style={{ cursor: 'default' }}>{seg.label}</span>
+            ) : (
+              <input
+                className="section-label-input"
+                type="text"
+                value={editLabel}
+                onClick={e => e.stopPropagation()}
+                onChange={e => setEditLabel(e.target.value)}
+                onBlur={() => { if (editLabel !== seg.label) onUpdate(seg.id, { label: editLabel }); }}
+                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+              />
+            )}
+            {!readOnly && seg.targetDuration != null && (
               <span className="target-duration-field">
                 <span className="target-duration-label">Target:</span>
                 <input
@@ -119,38 +123,50 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
                   onClick={e => { e.stopPropagation(); onUpdate(seg.id, { targetDuration: undefined }); }}
                 >✕</button>
               </span>
-            ) : (
+            )}
+            {!readOnly && seg.targetDuration == null && (
               <button
                 className="target-duration-add"
                 onClick={e => { e.stopPropagation(); onUpdate(seg.id, { targetDuration: '300' }); }}
               >+ Target</button>
             )}
+            {readOnly && seg.targetDuration != null && (
+              <span className="target-duration-field">
+                <span className="target-duration-label">Target:</span>
+                <span className="target-duration-input" style={{ border: 'none' }}>{seg.targetDuration}</span>
+                <span className="target-duration-unit">s</span>
+              </span>
+            )}
           </span>
         ) : (
           <span>
             ↻ Loops{' '}
-            <input
-              className={`pause-input${(() => {
-                const v = String(editRepeat);
-                const isVar = /\{\w+\}/.test(v);
-                const isValid = isVar || (v !== '' && !isNaN(Number(v)));
-                return (!isValid ? ' pause-input-error' : '') + (isVar ? ' pause-input-var' : '');
-              })()}`}
-              type="text"
-              value={editRepeat}
-              onClick={e => e.stopPropagation()}
-              onChange={e => setEditRepeat(e.target.value)}
-              onBlur={() => {
-                const v = String(editRepeat);
-                const varMatch = v.match(/^\{(\w+)\}$/);
-                if (varMatch) {
-                  onUpdate(seg.id, { variable: varMatch[1], repeat: undefined });
-                } else {
-                  onUpdate(seg.id, { variable: undefined, repeat: v });
-                }
-              }}
-              onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-            />
+            {readOnly ? (
+              <span style={{ fontWeight: 600 }}>{editRepeat}</span>
+            ) : (
+              <input
+                className={`pause-input${(() => {
+                  const v = String(editRepeat);
+                  const isVar = /\{\w+\}/.test(v);
+                  const isValid = isVar || (v !== '' && !isNaN(Number(v)));
+                  return (!isValid ? ' pause-input-error' : '') + (isVar ? ' pause-input-var' : '');
+                })()}`}
+                type="text"
+                value={editRepeat}
+                onClick={e => e.stopPropagation()}
+                onChange={e => setEditRepeat(e.target.value)}
+                onBlur={() => {
+                  const v = String(editRepeat);
+                  const varMatch = v.match(/^\{(\w+)\}$/);
+                  if (varMatch) {
+                    onUpdate(seg.id, { variable: varMatch[1], repeat: undefined });
+                  } else {
+                    onUpdate(seg.id, { variable: undefined, repeat: v });
+                  }
+                }}
+                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+              />
+            )}
             {' '}times
           </span>
         )}
@@ -173,21 +189,21 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
           <button onClick={e => { e.stopPropagation(); onPlay(seg.id, true); }}>
             {isPlayingParent && !isPaused ? '⏸' : '▶'}
           </button>
-          <KebabMenu
+          {!readOnly && <KebabMenu
             seg={seg}
             onDelete={() => onDelete(seg.id)}
             onInsert={(position, newSeg) => onInsert(seg.id, position, newSeg)}
             onColor={color => onUpdate(seg.id, { color })}
-          />
+          />}
         </span>
       </div>
-      {collapsed && dropHighlight && (
+      {!readOnly && collapsed && dropHighlight && (
         <div className="after-drop-zone drop-over" />
       )}
       {!collapsed && (
         <div className="loop-bracket">
           {seg.segments.length === 0 ? (
-            <EmptyDropZone id={seg.id} forceHighlight={dropHighlight} />
+            readOnly ? <p className="empty-hint">No segments.</p> : <EmptyDropZone id={seg.id} forceHighlight={dropHighlight} />
           ) : (
             <>
               <Timeline
@@ -212,8 +228,9 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
                 onSelect={onSelect}
                 onContextMenu={onContextMenu}
                 fullScript={fullScript}
+                readOnly={readOnly}
               />
-              <BottomDropZone id={seg.id} forceHighlight={dropHighlight} />
+              {!readOnly && <BottomDropZone id={seg.id} forceHighlight={dropHighlight} />}
             </>
           )}
         </div>

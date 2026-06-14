@@ -6,7 +6,7 @@ import KebabMenu from './KebabMenu';
 import RecordingModal from './RecordingModal';
 import { clearTimestampCache, computeMarkerDuration } from '../playback';
 
-export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, audioStatus = 'missing', meditationName, stageId, onRefreshComponents, insidePlayingParent, variables = {}, onUpdateVariable, selected, onSelect, onContextMenu, fullScript, components = {} }) {
+export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, audioStatus = 'missing', meditationName, stageId, onRefreshComponents, insidePlayingParent, variables = {}, onUpdateVariable, selected, onSelect, onContextMenu, fullScript, components = {}, readOnly }) {
   const hasAudio = audioStatus === 'current';
   const isStale = audioStatus === 'stale';
   const [editing, setEditing] = useState(seg.type === 'speech' && seg.text === 'New spoken segment.');
@@ -152,12 +152,31 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
     }
   }
 
+  // Read-only labels — show text without edit controls
+  let readOnlyLabel;
+  if (seg.type === 'speech') {
+    const words = seg.text.split(' ').map((w, wi) => {
+      const isVar = /\{\w+\}/.test(w);
+      return <span key={wi} className={`word ${isVar ? 'var-ref' : ''}`}>{w} </span>;
+    });
+    readOnlyLabel = <span className="text">{words}</span>;
+  } else if (seg.type === 'pause') {
+    const strVal = String(seg.duration_seconds);
+    const isVar = /\{\w+\}/.test(strVal);
+    const unit = isVar ? (() => { const m = strVal.match(/\{(\w+)\}/); return m && variables[m[1]]?.unit === 'minutes' ? ' min' : ' s'; })() : ' s';
+    readOnlyLabel = <span>Pause: {strVal}{unit}</span>;
+  } else if (seg.type === 'split_marker') {
+    readOnlyLabel = <span>Split Marker ×{seg.multiplier || 1}</span>;
+  } else {
+    readOnlyLabel = label;
+  }
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={`segment ${seg.type.replace('_', '-')}${isPlaying ? ' playing' : ''}${selected ? ' selected' : ''}${isOver && !isDragging ? ' drag-over' : ''}${seg.type === 'speech' && !hasAudio ? ' no-audio' : ''}${isStale ? ' stale' : ''}${seg.type === 'speech' && /\{\w+\}/.test(seg.text) ? ' has-variables' : ''}`}
-      onContextMenu={e => onContextMenu(e, seg.id)}
+      onContextMenu={readOnly ? undefined : e => onContextMenu(e, seg.id)}
       onClick={e => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.closest('.kebab-wrapper')) return;
         if (e.shiftKey) { onSelect(seg.id, true); return; }
@@ -166,9 +185,9 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
         onPlay(seg.id);
       }}
     >
-      <DragHandle listeners={listeners} attributes={attributes} />
+      {!readOnly && <DragHandle listeners={listeners} attributes={attributes} />}
       <span className="seg-icon">{icon}</span>
-      <span className="seg-label">{label}</span>
+      <span className="seg-label">{readOnly ? readOnlyLabel : label}</span>
       <span className="seg-duration">{duration}</span>
       <span className="seg-actions">
         {!insidePlayingParent && !(seg.type === 'speech' && !hasAudio) && (
@@ -176,14 +195,14 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
             {isPlaying ? '⏸' : '▶'}
           </button>
         )}
-        <KebabMenu
+        {!readOnly && <KebabMenu
           seg={seg}
           onDelete={onDelete}
           onInsert={(position, newSeg) => onInsert(seg.id, position, newSeg)}
           onManageRecording={(seg.type === 'speech' || seg.type === 'asset') ? () => setShowModal(true) : undefined}
-        />
+        />}
       </span>
-      {showModal && (
+      {!readOnly && showModal && (
         <RecordingModal
           seg={seg}
           meditationName={meditationName}

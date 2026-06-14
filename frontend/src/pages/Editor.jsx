@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { fetchMeta, saveMeta, fetchInstructions, saveInstructions, checkInstructionsPdf, uploadInstructionsPdf, deleteInstructionsPdf, extractInstructions, generateStageScript, BASE } from '../api';
+import { useAuth } from '../AuthContext';
 import { useLocalState } from '../utils';
 import MarkdownField from '../components/MarkdownField';
 import StageEditor from '../components/StageEditor';
@@ -8,6 +9,7 @@ import ExtractModal from '../components/ExtractModal';
 import '../styles.css';
 
 export default function Editor() {
+  const { isAdmin } = useAuth();
   const { name } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const targetStage = searchParams.get('stage');
@@ -140,10 +142,10 @@ export default function Editor() {
 
   return (
     <div>
-      <h2 className="page-title">Exercise Editor</h2>
+      <h2 className="page-title">{isAdmin ? 'Exercise Editor' : 'Exercise'}</h2>
         <h1>
           <Link to="/" className="back-link">← </Link>
-          {editingTitle ? (
+          {isAdmin && editingTitle ? (
             <input
               className="title-input"
               value={displayName}
@@ -155,7 +157,7 @@ export default function Editor() {
           ) : (
             <span className="title-display">
               {displayName}
-              <span className="title-edit-btn" onClick={() => setEditingTitle(true)}>✎</span>
+              {isAdmin && <span className="title-edit-btn" onClick={() => setEditingTitle(true)}>✎</span>}
             </span>
           )}
         </h1>
@@ -166,7 +168,7 @@ export default function Editor() {
             <div className="editor-section-label collapsible" onClick={() => setInstructionsCollapsed(!instructionsCollapsed)}>
               <span className={`chevron ${instructionsCollapsed ? 'collapsed' : ''}`}>▼</span> Instructions
             </div>
-            {!instructionsCollapsed && (
+            {isAdmin && !instructionsCollapsed && (
               <button className="btn-clear" onClick={() => {
                 if (!confirm('Clear all instructions?')) return;
                 updateInstructions({ description: '', stages: [] });
@@ -175,7 +177,7 @@ export default function Editor() {
           </div>
           {!instructionsCollapsed && (
             <div className="instructions-structured">
-              <div className="instr-pdf">
+              {isAdmin && <div className="instr-pdf">
                 <label className="instr-label">Instructions PDF</label>
                 {hasPdf && (
                   <div className="instr-pdf-row">
@@ -198,8 +200,8 @@ export default function Editor() {
                     <button className="btn-pdf btn-pdf-extract" disabled={extracting} onClick={() => setExtractModal({})}>{extracting ? 'Extracting...' : 'Extract with AI'}</button>
                   </div>
                 )}
-              </div>
-              {!hasPdf && (
+              </div>}
+              {isAdmin && !hasPdf && (
                 <label className="btn-pdf btn-pdf-upload">
                   Upload PDF
                   <input type="file" accept=".pdf" hidden onChange={async e => {
@@ -211,8 +213,16 @@ export default function Editor() {
                   }} />
                 </label>
               )}
+              {!isAdmin && hasPdf && (
+                <div className="instr-pdf">
+                  <label className="instr-label">Instructions PDF</label>
+                  <div className="instr-pdf-row">
+                    <button className="btn-pdf" onClick={() => window.open(`${BASE}/pdf/meditation/${name}/instructions.pdf`, '_blank')}>View PDF</button>
+                  </div>
+                </div>
+              )}
 
-              <div className="instr-youtube">
+              {isAdmin && <div className="instr-youtube">
                 <label className="instr-label">YouTube Video</label>
                 <div className="instr-youtube-row">
                   <input
@@ -228,7 +238,7 @@ export default function Editor() {
                     onClick={() => setExtractModal({ youtubeUrl })}
                   >{extracting ? 'Extracting...' : 'Extract with AI'}</button>
                 </div>
-              </div>
+              </div>}
 
               <label className="instr-label">Explanation</label>
               <div className="instr-stage">
@@ -236,16 +246,17 @@ export default function Editor() {
                   value={instructions.description || ''}
                   onChange={v => updateInstructions({ ...instructions, description: v })}
                   placeholder="Explain the exercise..."
+                  readOnly={!isAdmin}
                 />
               </div>
 
               <div className="instr-stages">
                 <div className="instr-stages-header">
                   <label className="instr-label">Stages</label>
-                  <button className="btn-add" onClick={() => updateInstructions({
+                  {isAdmin && <button className="btn-add" onClick={() => updateInstructions({
                     ...instructions,
                     stages: [...instructions.stages, { id: `stage-${Date.now()}`, name: 'New Stage', description: '', directions: '', progression: '' }]
-                  })}>+ Add Stage</button>
+                  })}>+ Add Stage</button>}
                 </div>
 
                 {instructions.stages.map((stage, si) => (
@@ -255,20 +266,24 @@ export default function Editor() {
                         className={`chevron ${!collapsedInstrStages[stage.id] ? 'collapsed' : ''}`}
                         onClick={() => setCollapsedInstrStages(prev => ({ ...prev, [stage.id]: !prev[stage.id] }))}
                       >▼</span>
-                      <input
-                        className="instr-stage-name"
-                        value={stage.name}
-                        onChange={e => {
-                          const stages = [...instructions.stages];
-                          stages[si] = { ...stage, name: e.target.value };
-                          updateInstructions({ ...instructions, stages });
-                        }}
-                      />
-                      <button className="var-delete-btn" onClick={() => {
+                      {isAdmin ? (
+                        <input
+                          className="instr-stage-name"
+                          value={stage.name}
+                          onChange={e => {
+                            const stages = [...instructions.stages];
+                            stages[si] = { ...stage, name: e.target.value };
+                            updateInstructions({ ...instructions, stages });
+                          }}
+                        />
+                      ) : (
+                        <span className="instr-stage-name" style={{ cursor: 'default' }}>{stage.name}</span>
+                      )}
+                      {isAdmin && <button className="var-delete-btn" onClick={() => {
                         if (!confirm(`Delete stage "${stage.name}"?`)) return;
                         const stages = instructions.stages.filter((_, i) => i !== si);
                         updateInstructions({ ...instructions, stages });
-                      }}>✕</button>
+                      }}>✕</button>}
                     </div>
 
                     {collapsedInstrStages[stage.id] && <>
@@ -281,6 +296,7 @@ export default function Editor() {
                         updateInstructions({ ...instructions, stages });
                       }}
                       placeholder="Stage description..."
+                      readOnly={!isAdmin}
                     />
 
                     <label className="instr-sublabel">Directions</label>
@@ -292,6 +308,7 @@ export default function Editor() {
                         updateInstructions({ ...instructions, stages });
                       }}
                       placeholder="Step-by-step directions..."
+                      readOnly={!isAdmin}
                     />
 
                     <label className="instr-sublabel">Progression</label>
@@ -303,6 +320,7 @@ export default function Editor() {
                         updateInstructions({ ...instructions, stages });
                       }}
                       placeholder="Progression steps..."
+                      readOnly={!isAdmin}
                     />
 
                     <label className="instr-sublabel">Contraindications</label>
@@ -314,6 +332,7 @@ export default function Editor() {
                         updateInstructions({ ...instructions, stages });
                       }}
                       placeholder="List any contraindications..."
+                      readOnly={!isAdmin}
                     />
                     </>}
                   </div>
@@ -338,7 +357,7 @@ export default function Editor() {
                       <span className={`chevron ${!collapsedStages[stage.id] ? 'collapsed' : ''}`}>▼</span>
                       <span>{stage.name}</span>
                     </div>
-                    <button className="btn-pdf btn-pdf-extract" disabled={generatingStage === stage.id} onClick={async (e) => {
+                    {isAdmin && <button className="btn-pdf btn-pdf-extract" disabled={generatingStage === stage.id} onClick={async (e) => {
                       e.stopPropagation();
                       setGeneratingStage(stage.id);
                       try {
@@ -351,13 +370,14 @@ export default function Editor() {
                       } finally {
                         setGeneratingStage(null);
                       }
-                    }}>{generatingStage === stage.id ? 'Generating...' : 'Extract with AI'}</button>
+                    }}>{generatingStage === stage.id ? 'Generating...' : 'Extract with AI'}</button>}
                   </div>
                   {collapsedStages[stage.id] && (
                     <StageEditor
                       stageName={stage.name}
                       stageId={stage.id}
                       meditationName={name}
+                      readOnly={!isAdmin}
                     />
                   )}
                 </div>
@@ -366,7 +386,7 @@ export default function Editor() {
           )}
         </div>
 
-      {extractModal && (
+      {isAdmin && extractModal && (
         <ExtractModal
           extracting={extracting}
           onExtract={handleExtract}

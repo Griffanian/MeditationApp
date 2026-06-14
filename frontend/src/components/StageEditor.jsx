@@ -10,7 +10,7 @@ import AddMenu from './AddMenu';
 import ContextMenu from './ContextMenu';
 import DragOverlayContent from './DragOverlayContent';
 
-export default function StageEditor({ stageName, stageId, meditationName }) {
+export default function StageEditor({ stageName, stageId, meditationName, readOnly }) {
   const [script, setScript] = useState([]);
   const [components, setComponents] = useState({});
   const [playingId, setPlayingId] = useState(null);
@@ -236,7 +236,7 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
     fetchStageScript(meditationName, stageId).then(loaded => {
       ensureIds(loaded);
       setScript(loaded);
-      saveStageScript(meditationName, stageId, loaded);
+      if (!readOnly) saveStageScript(meditationName, stageId, loaded);
     });
     fetchStageComponents(meditationName, stageId).then(setComponents);
     fetchStageVariables(meditationName, stageId).then(setVariables);
@@ -506,7 +506,7 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
           <div className="editor-section-label collapsible" onClick={() => setVarsCollapsed(!varsCollapsed)}>
             <span className={`chevron ${varsCollapsed ? 'collapsed' : ''}`}>▼</span> Variables
           </div>
-          <button className="btn-add" onClick={addVariable}>+ Add</button>
+          {!readOnly && <button className="btn-add" onClick={addVariable}>+ Add</button>}
         </div>
         {!varsCollapsed && (Object.keys(variables).length > 0 ? (
           <table className="variables-table">
@@ -516,7 +516,7 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
                 <th>Unit</th>
                 <th>Variable Name</th>
                 <th>Display Name</th>
-                <th></th>
+                {!readOnly && <th></th>}
               </tr>
             </thead>
             <tbody>
@@ -527,46 +527,34 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
                       className={`variable-input${value === '' || isNaN(Number(value)) ? ' variable-input-error' : ''}`}
                       type="text"
                       value={value}
-                      onChange={e => updateVariable(varName, e.target.value)}
+                      readOnly={readOnly}
+                      onChange={readOnly ? undefined : e => updateVariable(varName, e.target.value)}
                     />
                   </td>
                   <td>
-                    <select
-                      className="variable-unit-select"
-                      value={unit || ''}
-                      onChange={e => updateUnit(varName, e.target.value)}
-                    >
-                      <option value="">—</option>
-                      <option value="seconds">sec</option>
-                      <option value="minutes">min</option>
-                    </select>
+                    {readOnly ? (
+                      <span className="variable-unit-select" style={{ border: 'none' }}>{unit === 'seconds' ? 'sec' : unit === 'minutes' ? 'min' : '—'}</span>
+                    ) : (
+                      <select
+                        className="variable-unit-select"
+                        value={unit || ''}
+                        onChange={e => updateUnit(varName, e.target.value)}
+                      >
+                        <option value="">—</option>
+                        <option value="seconds">sec</option>
+                        <option value="minutes">min</option>
+                      </select>
+                    )}
                   </td>
                   <td>
-                    <input
-                      className="variable-name-input"
-                      type="text"
-                      key={`${varName}-name`}
-                      defaultValue={varName}
-                      size={varName.length || 1}
-                      onInput={e => { e.target.size = e.target.value.length || 1; }}
-                      onBlur={e => renameVariable(varName, e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-                    />
+                    <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{varName}</span>
                   </td>
                   <td>
-                    <input
-                      className="variable-name-input"
-                      type="text"
-                      value={displayName || ''}
-                      placeholder={varName}
-                      size={Math.max((displayName || varName).length, 1)}
-                      onInput={e => { e.target.size = Math.max(e.target.value.length, 1); }}
-                      onChange={e => updateDisplayName(varName, e.target.value)}
-                    />
+                    <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{displayName || varName}</span>
                   </td>
-                  <td className="var-delete-cell">
+                  {!readOnly && <td className="var-delete-cell">
                     <button className="var-delete-btn" onClick={() => deleteVariable(varName)}>✕</button>
-                  </td>
+                  </td>}
                 </tr>
               ))}
             </tbody>
@@ -586,40 +574,66 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
               {isPlayAll && playingId ? '⏸ Pause' : '▶ Play All'}
             </button>
             <button className="btn-stop" onClick={handleStop}>■ Stop</button>
-            <button className="btn-assemble" onClick={handleGenerateAll}>Generate All</button>
+            {!readOnly && <button className="btn-assemble" onClick={handleGenerateAll}>Generate All</button>}
             <span className="status">{status}</span>
-            <AddMenu onAdd={handleAddFromToolbar} />
+            {!readOnly && <AddMenu onAdd={handleAddFromToolbar} />}
           </div>
-          <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          {readOnly ? (
             <Timeline
               segments={script}
               playingId={playingId}
               isPaused={isPaused}
               onPlay={handlePlay}
               onWordClick={handleWordClick}
-              onDelete={deleteById}
-              onUpdate={updateById}
-              onInsert={insertNear}
+              onDelete={() => {}}
+              onUpdate={() => {}}
+              onInsert={() => {}}
               components={components}
               meditationName={meditationName}
               stageId={stageId}
-              onRefreshComponents={() => fetchStageComponents(meditationName, stageId).then(setComponents)}
+              onRefreshComponents={() => {}}
               playingParentId={playingParentId}
               variables={variables}
               loopCounters={loopCounters}
-              onUpdateVariable={updateVariable}
+              onUpdateVariable={() => {}}
               selectedIds={selectedIds}
-              onSelect={handleSelect}
-              onContextMenu={handleContextMenu}
+              onSelect={() => {}}
+              onContextMenu={() => {}}
               fullScript={script}
+              readOnly
             />
-            <DragOverlay dropAnimation={null}>
-              {activeDragSeg ? <DragOverlayContent seg={activeDragSeg} /> : null}
-            </DragOverlay>
-          </DndContext>
+          ) : (
+            <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+              <Timeline
+                segments={script}
+                playingId={playingId}
+                isPaused={isPaused}
+                onPlay={handlePlay}
+                onWordClick={handleWordClick}
+                onDelete={deleteById}
+                onUpdate={updateById}
+                onInsert={insertNear}
+                components={components}
+                meditationName={meditationName}
+                stageId={stageId}
+                onRefreshComponents={() => fetchStageComponents(meditationName, stageId).then(setComponents)}
+                playingParentId={playingParentId}
+                variables={variables}
+                loopCounters={loopCounters}
+                onUpdateVariable={updateVariable}
+                selectedIds={selectedIds}
+                onSelect={handleSelect}
+                onContextMenu={handleContextMenu}
+                fullScript={script}
+              />
+              <DragOverlay dropAnimation={null}>
+                {activeDragSeg ? <DragOverlayContent seg={activeDragSeg} /> : null}
+              </DragOverlay>
+            </DndContext>
+          )}
         </>}
       </div>
-      {contextMenu && (
+      {!readOnly && contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}

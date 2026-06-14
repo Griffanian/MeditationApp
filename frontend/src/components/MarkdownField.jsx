@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 
-export default function MarkdownField({ value, onChange, placeholder }) {
+export default function MarkdownField({ value, onChange, placeholder, readOnly }) {
   const [editing, setEditing] = useState(false);
   const textareaRef = useRef(null);
   const undoStack = useRef([]);
@@ -73,7 +73,7 @@ export default function MarkdownField({ value, onChange, placeholder }) {
   return (
     <div className="md-field">
       <span className="md-field-badge">Markdown</span>
-      <div className="md-preview" onClick={() => setEditing(true)}>
+      <div className="md-preview" onClick={() => !readOnly && setEditing(true)}>
         {value ? (
           <ReactMarkdown>{value}</ReactMarkdown>
         ) : (

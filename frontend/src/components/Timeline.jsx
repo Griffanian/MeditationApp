@@ -35,6 +35,7 @@ export default function Timeline({
   onSelect,
   onContextMenu,
   fullScript,
+  readOnly,
 }) {
   const ids = segments.map(seg => seg.id);
 
@@ -66,8 +67,9 @@ export default function Timeline({
                   onSelect={onSelect}
                   onContextMenu={onContextMenu}
                   fullScript={fullScript}
+                  readOnly={readOnly}
                 />
-                <AfterDropZone id={seg.id} />
+                {!readOnly && <AfterDropZone id={seg.id} />}
               </div>
             );
           }
@@ -95,6 +97,7 @@ export default function Timeline({
               onContextMenu={onContextMenu}
               fullScript={fullScript}
               components={components}
+              readOnly={readOnly}
             />
           );
         })}
