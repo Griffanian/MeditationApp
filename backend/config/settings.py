@@ -114,8 +114,11 @@ REST_FRAMEWORK = {
 # No trailing slashes — match Flask URL behavior
 APPEND_SLASH = False
 
-# No CSRF for API-only backend
-CSRF_COOKIE_SECURE = False
+# Session cookies — cross-origin support for production
+SESSION_COOKIE_SAMESITE = "None" if not DEBUG else "Lax"
+SESSION_COOKIE_SECURE = not DEBUG  # must be True when SameSite=None
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SECURE = not DEBUG
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
