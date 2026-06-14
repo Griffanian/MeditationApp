@@ -33,6 +33,8 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   useEffect(() => { setScriptAndComponents(script, components); }, [script, components]);
 
   const [variables, setVariables] = useState({});
+  const [loadingVars, setLoadingVars] = useState(true);
+  const [loadingTimeline, setLoadingTimeline] = useState(true);
   const [loopCounters, setLoopCounters] = useState({});
   const [selectedIds, setSelectedIds] = useState(new Set());
   const selectionAnchor = useRef(null);
@@ -233,13 +235,15 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   }, []);
 
   useEffect(() => {
+    setLoadingVars(true);
+    setLoadingTimeline(true);
     fetchStageScript(meditationName, stageId).then(loaded => {
       ensureIds(loaded);
       setScript(loaded);
       if (!readOnly) saveStageScript(meditationName, stageId, loaded);
-    });
+    }).finally(() => setLoadingTimeline(false));
     fetchStageComponents(meditationName, stageId).then(setComponents);
-    fetchStageVariables(meditationName, stageId).then(setVariables);
+    fetchStageVariables(meditationName, stageId).then(setVariables).finally(() => setLoadingVars(false));
   }, [meditationName, stageId]);
 
   const save = useCallback(async (newScript) => {
@@ -508,7 +512,9 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
           </div>
           {!readOnly && <button className="btn-add" onClick={addVariable}>+ Add</button>}
         </div>
-        {!varsCollapsed && (Object.keys(variables).length > 0 ? (
+        {!varsCollapsed && (loadingVars ? (
+          <div className="loading-page" style={{ minHeight: 40 }}><div className="loading-spinner" /><span>Loading variables...</span></div>
+        ) : Object.keys(variables).length > 0 ? (
           <table className="variables-table">
             <thead>
               <tr>
@@ -568,7 +574,9 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
         <div className="editor-section-label collapsible" onClick={() => setTimelineCollapsed(!timelineCollapsed)}>
           <span className={`chevron ${timelineCollapsed ? 'collapsed' : ''}`}>▼</span> Timeline
         </div>
-        {!timelineCollapsed && <>
+        {!timelineCollapsed && (loadingTimeline ? (
+          <div className="loading-page" style={{ minHeight: 60 }}><div className="loading-spinner" /><span>Loading timeline...</span></div>
+        ) : <>
           <div className="controls">
             <button className="btn-play" onClick={playAll}>
               {isPlayAll && playingId ? '⏸ Pause' : '▶ Play All'}
@@ -631,7 +639,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
               </DragOverlay>
             </DndContext>
           )}
-        </>}
+        </>)}
       </div>
       {!readOnly && contextMenu && (
         <ContextMenu
