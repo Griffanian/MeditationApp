@@ -31,10 +31,12 @@ export default function Player() {
   const [error, setError] = useState(null); // { idx, message }
   const [stageDurations, setStageDurations] = useState({}); // "med/stage" -> seconds
   const [singleMode, setSingleMode] = useState(false);
+  const [preparingAll, setPreparingAll] = useState(false);
   const audioRef = useRef(null);
   const timerRef = useRef(null);
   const stopRef = useRef(false);
   const playIdxRef = useRef(-1);
+  const preparedUrls = useRef({}); // idx -> audio URL
 
   useEffect(() => {
     fetchPractice(name).then(p => {
@@ -66,9 +68,10 @@ export default function Player() {
     };
   }, []);
 
-  // Stop playback when switching week/day
+  // Stop playback and clear cache when switching week/day
   useEffect(() => {
     handleStop();
+    preparedUrls.current = {};
   }, [currentWeek, currentDay]);
 
   if (!practice) return <div className="loading-page"><div className="loading-spinner" />Loading player...</div>;
@@ -101,7 +104,37 @@ export default function Player() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }
 
-  async function playFrom(idx, single = false) {
+  // Prepare all stages: save variables, assemble, cache URLs
+  async function prepareStages(indices) {
+    setPreparingAll(true);
+    setStatus('assembling');
+    setError(null);
+    const urls = { ...preparedUrls.current };
+    for (const idx of indices) {
+      if (stopRef.current) { setPreparingAll(false); return null; }
+      const item = items[idx];
+      if (urls[idx]) continue; // already prepared
+      setPlayIdx(idx);
+      if (Object.keys(item.variables || {}).length > 0) {
+        await saveStageVariables(item.meditation, item.stage_id, item.variables);
+      }
+      try {
+        const data = await assembleStage(item.meditation, item.stage_id);
+        urls[idx] = `${BASE}/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`;
+      } catch (err) {
+        setError({ idx, message: err.message });
+        setStatus('error');
+        setPreparingAll(false);
+        return null;
+      }
+    }
+    preparedUrls.current = urls;
+    setPreparingAll(false);
+    return urls;
+  }
+
+  // Play from a given index using pre-prepared URLs
+  function playFromPrepared(idx, single = false) {
     if (idx >= items.length || (single && idx !== playIdxRef.current)) {
       if (!single) markDayCompleted();
       setStatus('idle');
@@ -112,36 +145,20 @@ export default function Player() {
     }
     if (stopRef.current) return;
 
-    const item = items[idx];
+    const url = preparedUrls.current[idx];
+    if (!url) { setStatus('idle'); setPlayIdx(-1); return; }
+
     playIdxRef.current = idx;
     setPlayIdx(idx);
     setElapsed(0);
     setDuration(0);
-
-    if (Object.keys(item.variables || {}).length > 0) {
-      await saveStageVariables(item.meditation, item.stage_id, item.variables);
-    }
-
-    setStatus('assembling');
-    setError(null);
-    let data;
-    try {
-      data = await assembleStage(item.meditation, item.stage_id);
-    } catch (err) {
-      setError({ idx, message: err.message });
-      setStatus('error');
-      return;
-    }
-    if (stopRef.current) return;
-
     setStatus('playing');
-    const audio = new Audio(
-      `${BASE}/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`
-    );
+
+    const audio = new Audio(url);
     audioRef.current = audio;
     startTimer();
 
-    audio.onended = () => {
+    const onFinish = () => {
       audioRef.current = null;
       if (!stopRef.current) {
         if (single) {
@@ -150,38 +167,16 @@ export default function Player() {
           setSingleMode(false);
           stopTimer();
         } else {
-          playFrom(idx + 1);
+          playFromPrepared(idx + 1);
         }
       }
     };
-    audio.onerror = () => {
-      audioRef.current = null;
-      if (!stopRef.current) {
-        if (single) {
-          setStatus('idle');
-          setPlayIdx(-1);
-          setSingleMode(false);
-          stopTimer();
-        } else {
-          playFrom(idx + 1);
-        }
-      }
-    };
-    audio.play().catch(() => {
-      if (!stopRef.current) {
-        if (single) {
-          setStatus('idle');
-          setPlayIdx(-1);
-          setSingleMode(false);
-          stopTimer();
-        } else {
-          playFrom(idx + 1);
-        }
-      }
-    });
+    audio.onended = onFinish;
+    audio.onerror = onFinish;
+    audio.play().catch(onFinish);
   }
 
-  function handlePlay() {
+  async function handlePlay() {
     if (status === 'paused' && audioRef.current) {
       audioRef.current.play();
       setStatus('playing');
@@ -191,10 +186,13 @@ export default function Player() {
     handleStop();
     stopRef.current = false;
     setSingleMode(false);
-    playFrom(0);
+    const allIndices = items.map((_, i) => i);
+    const urls = await prepareStages(allIndices);
+    if (!urls || stopRef.current) return;
+    playFromPrepared(0);
   }
 
-  function handlePlaySingle(idx) {
+  async function handlePlaySingle(idx) {
     if (playIdx === idx && (status === 'playing' || status === 'assembling' || status === 'paused')) {
       handleStop();
       return;
@@ -202,7 +200,9 @@ export default function Player() {
     handleStop();
     stopRef.current = false;
     setSingleMode(true);
-    playFrom(idx, true);
+    const urls = await prepareStages([idx]);
+    if (!urls || stopRef.current) return;
+    playFromPrepared(idx, true);
   }
 
   function handlePause() {
@@ -221,6 +221,7 @@ export default function Player() {
     setPlayIdx(-1);
     playIdxRef.current = -1;
     setSingleMode(false);
+    setPreparingAll(false);
     setElapsed(0);
     setDuration(0);
     setError(null);
@@ -229,7 +230,7 @@ export default function Player() {
   function handleSkipError() {
     setError(null);
     if (playIdx >= 0 && playIdx < items.length - 1) {
-      playFrom(playIdx + 1);
+      playFromPrepared(playIdx + 1);
     } else {
       markDayCompleted();
       setStatus('idle');
@@ -241,7 +242,7 @@ export default function Player() {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     stopTimer();
     if (playIdx >= 0 && playIdx < items.length - 1) {
-      playFrom(playIdx + 1);
+      playFromPrepared(playIdx + 1);
     } else {
       markDayCompleted();
       setStatus('idle');
