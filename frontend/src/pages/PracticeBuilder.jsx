@@ -57,7 +57,7 @@ export default function PracticeBuilder() {
     await savePractice(name, { items: weeks });
   }, [name]);
 
-  if (!practice) return <div style={{ padding: 20, color: '#888' }}>Loading...</div>;
+  if (!practice) return <div className="loading-page"><div className="loading-spinner" />Loading programme...</div>;
 
   const weeks = practice.items || [];
 

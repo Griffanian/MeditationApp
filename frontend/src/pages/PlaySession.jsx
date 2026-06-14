@@ -45,7 +45,7 @@ export default function PlaySession() {
     };
   }, []);
 
-  if (!practice) return <div className="session-loading">Loading...</div>;
+  if (!practice) return <div className="loading-page"><div className="loading-spinner" />Loading session...</div>;
 
   const weeks = practice.items || [];
   const week = weeks[weekIdx];

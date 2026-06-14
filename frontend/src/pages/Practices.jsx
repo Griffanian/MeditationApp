@@ -3,12 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { fetchPractices, createPractice, deletePractice } from '../api';
 
 export default function Practices() {
+  const [loading, setLoading] = useState(true);
   const [practices, setPractices] = useState([]);
   const [openMenu, setOpenMenu] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchPractices().then(setPractices);
+    fetchPractices().then(setPractices).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -44,7 +45,7 @@ export default function Practices() {
 
       <h1>Programmes</h1>
 
-      <div className="med-grid">
+      {loading ? <div className="loading-page"><div className="loading-spinner" />Loading programmes...</div> : <div className="med-grid">
         {practices.map(prac => {
           const weeks = prac.items || [];
           const hasWeeks = weeks.length > 0 && weeks[0]?.days;
@@ -87,7 +88,7 @@ export default function Practices() {
           <span className="med-card-add-icon">+</span>
           <span className="med-card-add-label">New Programme</span>
         </button>
-      </div>
+      </div>}
     </div>
   );
 }

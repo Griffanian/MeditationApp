@@ -11,6 +11,7 @@ export default function Editor() {
   const { name } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const targetStage = searchParams.get('stage');
+  const [loading, setLoading] = useState(true);
   const [displayName, setDisplayName] = useState('');
   const [editingTitle, setEditingTitle] = useState(false);
   const [instructions, setInstructions] = useState({ description: '', stages: [] });
@@ -26,19 +27,20 @@ export default function Editor() {
   const scrolledRef = useRef(false);
 
   useEffect(() => {
-    fetchMeta(name).then(meta => setDisplayName(meta.display_name || name));
-    fetchInstructions(name).then(loaded => {
-      setInstructions(loaded);
-      // If a target stage is specified, collapse all other stages
-      if (targetStage && loaded.stages) {
-        const collapsed = {};
-        for (const s of loaded.stages) {
-          collapsed[s.id] = s.id !== targetStage;
+    Promise.all([
+      fetchMeta(name).then(meta => setDisplayName(meta.display_name || name)),
+      fetchInstructions(name).then(loaded => {
+        setInstructions(loaded);
+        if (targetStage && loaded.stages) {
+          const collapsed = {};
+          for (const s of loaded.stages) {
+            collapsed[s.id] = s.id !== targetStage;
+          }
+          setCollapsedStages(collapsed);
         }
-        setCollapsedStages(collapsed);
-      }
-    });
-    checkInstructionsPdf(name).then(r => setHasPdf(r.exists));
+      }),
+      checkInstructionsPdf(name).then(r => setHasPdf(r.exists)),
+    ]).finally(() => setLoading(false));
   }, [name]);
 
   function updateInstructions(updated) {
@@ -133,6 +135,8 @@ export default function Editor() {
   function toggleStageCollapsed(stageId) {
     setCollapsedStages(prev => ({ ...prev, [stageId]: !prev[stageId] }));
   }
+
+  if (loading) return <div className="loading-page"><div className="loading-spinner" />Loading exercise...</div>;
 
   return (
     <div>

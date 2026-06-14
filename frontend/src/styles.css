@@ -9,6 +9,18 @@ body {
 
 h1 { color: #a0c4ff; margin-bottom: 20px; font-size: 24px; }
 
+/* Loading spinner */
+.loading-page {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 200px; color: #888; font-size: 14px; gap: 10px;
+}
+.loading-spinner {
+  width: 20px; height: 20px; border: 2px solid #333;
+  border-top-color: #a0c4ff; border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* Nav bar */
 .nav-bar {
   display: flex; gap: 4px; margin-bottom: 20px;
@@ -1334,4 +1346,92 @@ h1 { color: #a0c4ff; margin-bottom: 20px; font-size: 24px; }
 .practice-picker-var-count {
   font-size: 11px; color: #888; background: rgba(255,255,255,0.06);
   padding: 2px 8px; border-radius: 10px;
+}
+
+/* ===== Mobile responsive ===== */
+@media (max-width: 768px) {
+  body { padding: 12px; }
+
+  /* Hide sidebar, remove main content offset */
+  .app-main { margin-right: 0; }
+  .editor-sidebar { display: none; }
+
+  /* Nav */
+  .nav-bar { gap: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .nav-link { padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+
+  /* Dashboard grid — single column on narrow screens */
+  .med-grid { grid-template-columns: 1fr; gap: 12px; }
+
+  /* Category sections */
+  .category-section { padding: 14px; }
+  .category-header { font-size: 17px; gap: 8px; }
+  .category-name-input { font-size: 17px; }
+
+  /* Cards — full width, compact */
+  .med-card { padding: 14px 12px; }
+  .med-card-add { min-height: 60px; }
+
+  /* Controls bar */
+  .controls { flex-wrap: wrap; gap: 8px; }
+  .controls button { padding: 10px 16px; font-size: 13px; }
+
+  /* Modals */
+  .modal { min-width: 0; max-width: calc(100vw - 32px); width: 100%; padding: 16px; }
+  .practice-picker { min-width: 0; max-width: calc(100vw - 32px); }
+
+  /* Player */
+  .player { max-width: 100%; }
+  .player-title { font-size: 20px; }
+  .player-bar { padding: 14px; }
+  .player-bar-main { padding: 10px 18px; font-size: 13px; }
+  .player-week-dots { flex-wrap: wrap; justify-content: center; }
+  .player-day-nav { flex-wrap: wrap; justify-content: center; }
+
+  /* Editor sections */
+  .editor-section, .variables-section { padding: 10px 12px; }
+  .variables-table { margin-left: 0; width: 100%; overflow-x: auto; display: block; }
+
+  /* Practice builder */
+  .practice-builder { max-width: 100%; }
+  .practice-top-bar { flex-wrap: wrap; gap: 8px; }
+  .practice-item { padding: 10px; gap: 8px; }
+  .practice-item-info { flex-wrap: wrap; }
+  .practice-item-exercise, .practice-item-stage { white-space: normal; }
+
+  /* Programme builder tabs */
+  .prog-weeks, .prog-days { flex-wrap: wrap; }
+  .prog-builder-week-header { flex-wrap: wrap; }
+
+  /* Segment rows */
+  .segment { padding: 8px 10px; gap: 8px; }
+  .seg-label { font-size: 12px; }
+
+  /* Section headers */
+  .section-header-row { flex-wrap: wrap; gap: 6px; }
+  .section-header-fields { flex-wrap: wrap; gap: 8px; }
+
+  /* Instruction fields */
+  .instr-textarea { font-size: 13px; }
+  .instr-stage-header { flex-wrap: wrap; }
+
+  /* Titles */
+  h1 { font-size: 20px; }
+  .title-input { font-size: 20px; min-width: 80px; }
+
+  /* Touch-friendly inputs */
+  .dash-loop-input,
+  .variable-input,
+  .loop-var-input,
+  .practice-var-input { min-height: 36px; font-size: 15px; }
+
+  /* Chat input (if sidebar is shown via toggle in future) */
+  .chat-input { font-size: 16px; } /* prevents iOS zoom on focus */
+
+  /* Kebab / context menus — ensure they stay on-screen */
+  .kebab-dropdown { right: 0; left: auto; }
+  .kebab-flyout { right: auto; left: calc(100% + 4px); }
+
+  /* Full player */
+  .full-player { padding: 12px; }
 }

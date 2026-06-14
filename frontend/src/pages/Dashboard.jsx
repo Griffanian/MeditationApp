@@ -4,6 +4,7 @@ import { fetchCategories, createCategory, renameCategory, deleteCategory, fetchM
 import { useLocalState } from '../utils';
 
 export default function Dashboard() {
+  const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState([]);
   const [meditations, setMeditations] = useState([]);
   const [assembling, setAssembling] = useState(null);
@@ -16,8 +17,10 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchCategories().then(setCategories);
-    fetchMeditations().then(setMeditations);
+    Promise.all([
+      fetchCategories().then(setCategories),
+      fetchMeditations().then(setMeditations),
+    ]).finally(() => setLoading(false));
   }, []);
 
   // Close menu when clicking outside
@@ -178,6 +181,8 @@ export default function Dashboard() {
   // Show categories in DB order, plus any that meditations reference but aren't in the table
   const catNames = new Set(categories.map(c => c.name));
   const extraCats = Object.keys(grouped).filter(k => !catNames.has(k));
+
+  if (loading) return <div className="loading-page"><div className="loading-spinner" />Loading exercises...</div>;
 
   return (
     <div>

@@ -69,7 +69,7 @@ export default function Player() {
     handleStop();
   }, [currentWeek, currentDay]);
 
-  if (!practice) return <div className="player-loading">Loading...</div>;
+  if (!practice) return <div className="loading-page"><div className="loading-spinner" />Loading player...</div>;
 
   const weeks = practice.items || [];
   if (weeks.length === 0) return <div className="player-empty">This programme has no content yet.</div>;
