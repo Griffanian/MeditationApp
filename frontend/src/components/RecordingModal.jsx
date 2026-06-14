@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js';
 import { stopPlayback, registerExternalStop, unregisterExternalStop } from '../playback';
+import { BASE } from '../api';
 
 const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
   'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
@@ -61,10 +62,10 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
 
   const audioUrl = hasAudio
     ? (seg.type === 'asset'
-      ? `/audio/asset/${seg.file}`
+      ? `${BASE}/audio/asset/${seg.file}`
       : stageId
-        ? `/audio/meditation/${meditationName}/stage/${stageId}/component/${seg.id}.mp3`
-        : `/audio/meditation/${meditationName}/component/${seg.id}.mp3`)
+        ? `${BASE}/audio/meditation/${meditationName}/stage/${stageId}/component/${seg.id}.mp3`
+        : `${BASE}/audio/meditation/${meditationName}/component/${seg.id}.mp3`)
     : null;
 
   // Register WaveSurfer stop so other audio sources can stop us

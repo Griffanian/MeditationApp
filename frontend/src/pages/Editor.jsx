@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { fetchMeta, saveMeta, fetchInstructions, saveInstructions, checkInstructionsPdf, uploadInstructionsPdf, deleteInstructionsPdf, extractInstructions, generateStageScript } from '../api';
+import { fetchMeta, saveMeta, fetchInstructions, saveInstructions, checkInstructionsPdf, uploadInstructionsPdf, deleteInstructionsPdf, extractInstructions, generateStageScript, BASE } from '../api';
 import { useLocalState } from '../utils';
 import MarkdownField from '../components/MarkdownField';
 import StageEditor from '../components/StageEditor';
@@ -175,7 +175,7 @@ export default function Editor() {
                 <label className="instr-label">Instructions PDF</label>
                 {hasPdf && (
                   <div className="instr-pdf-row">
-                    <button className="btn-pdf" onClick={() => window.open(`/pdf/meditation/${name}/instructions.pdf`, '_blank')}>View PDF</button>
+                    <button className="btn-pdf" onClick={() => window.open(`${BASE}/pdf/meditation/${name}/instructions.pdf`, '_blank')}>View PDF</button>
                     <label className="btn-pdf btn-pdf-replace">
                       Replace
                       <input type="file" accept=".pdf" hidden onChange={async e => {

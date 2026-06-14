@@ -1,4 +1,4 @@
-import { fetchStageTimestamps } from './api';
+import { fetchStageTimestamps, BASE } from './api';
 
 const UNIT_MULTIPLIERS = { minutes: 60, seconds: 1 };
 
@@ -96,7 +96,7 @@ export function playSeg(seg, onEnd, variables = {}, { script, components } = {})
       : fetchStageTimestamps(currentMeditation, currentStage, segId)
           .then(ts => { timestampCache[segId] = ts; return ts; })
           .catch(() => { timestampCache[segId] = []; return []; });
-    currentAudio = new Audio(`/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`);
+    currentAudio = new Audio(`${BASE}/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`);
     currentAudio.onended = onEnd;
     currentAudio.onerror = () => { onEnd(); };
     const playingPromise = new Promise(resolve => {
@@ -147,7 +147,7 @@ export function playSeg(seg, onEnd, variables = {}, { script, components } = {})
       },
     };
   } else if (seg.type === 'asset') {
-    currentAudio = new Audio(`/audio/asset/${seg.file}`);
+    currentAudio = new Audio(`${BASE}/audio/asset/${seg.file}`);
     currentAudio.onended = onEnd;
     currentAudio.onerror = () => { onEnd(); };
     currentAudio.play().catch(() => { onEnd(); });
@@ -188,7 +188,7 @@ export async function playSegFromWord(seg, wordIndex, onEnd) {
   const words = timestampCache[segId];
   const startTime = wordIndex < words.length ? words[wordIndex].start : 0;
 
-  currentAudio = new Audio(`/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`);
+  currentAudio = new Audio(`${BASE}/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`);
   currentAudio.currentTime = startTime;
   currentAudio.onended = onEnd;
   currentAudio.play();

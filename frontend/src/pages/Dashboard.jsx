@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { fetchCategories, createCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveStageVariables, assembleStage } from '../api';
+import { fetchCategories, createCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveStageVariables, assembleStage, BASE } from '../api';
 import { useLocalState } from '../utils';
 
 export default function Dashboard() {
@@ -150,7 +150,7 @@ export default function Dashboard() {
     const data = await assembleStage(med.name, stage.id);
     setAssembling(null);
 
-    const audio = new Audio(`/audio/meditation/${med.name}/stage/${stage.id}/output/${data.filename}?t=${Date.now()}`);
+    const audio = new Audio(`${BASE}/audio/meditation/${med.name}/stage/${stage.id}/output/${data.filename}?t=${Date.now()}`);
     audioRef.current = audio;
     setPlaying(key);
     audio.onended = () => {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { fetchPractice, saveStageVariables, assembleStage } from '../api';
+import { fetchPractice, saveStageVariables, assembleStage, BASE } from '../api';
 
 function migrateToWeeks(items) {
   if (!items || items.length === 0) return [];
@@ -101,7 +101,7 @@ export default function PlaySession() {
     // Play
     setStatus('playing');
     const audio = new Audio(
-      `/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`
+      `${BASE}/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`
     );
     audioRef.current = audio;
     startTimer();

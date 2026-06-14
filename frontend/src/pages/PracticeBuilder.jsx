@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { fetchPractice, savePractice, fetchAvailableStages, saveStageVariables, assembleStage } from '../api';
+import { fetchPractice, savePractice, fetchAvailableStages, saveStageVariables, assembleStage, BASE } from '../api';
 import { useLocalState } from '../utils';
 
 function genId() {
@@ -214,7 +214,7 @@ export default function PracticeBuilder() {
       if (stopRef.current) break;
       setAssemblingKey(null); setPlayingKey(key);
       await new Promise((resolve) => {
-        const audio = new Audio(`/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`);
+        const audio = new Audio(`${BASE}/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`);
         audioRef.current = audio;
         audio.onended = resolve; audio.onerror = resolve; audio.play().catch(resolve);
       });
@@ -239,7 +239,7 @@ export default function PracticeBuilder() {
     try { data = await assembleStage(item.meditation, item.stage_id); } catch { setAssemblingKey(null); return; }
     if (stopRef.current) return;
     setAssemblingKey(null); setPlayingKey(key);
-    const audio = new Audio(`/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`);
+    const audio = new Audio(`${BASE}/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`);
     audioRef.current = audio;
     audio.onended = () => { setPlayingKey(null); audioRef.current = null; };
     audio.onerror = () => { setPlayingKey(null); audioRef.current = null; };
