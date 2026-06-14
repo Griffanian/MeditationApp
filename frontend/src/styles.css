@@ -946,11 +946,24 @@ h1 { color: #a0c4ff; margin-bottom: 20px; font-size: 24px; }
 .player { max-width: 520px; margin: 0 auto; }
 .player-loading, .player-empty { padding: 40px; text-align: center; color: #888; }
 .player-back {
-  display: inline-block; color: #888; text-decoration: none; font-size: 13px; margin-bottom: 16px;
+  display: inline-block; color: #888; text-decoration: none; font-size: 13px; margin-bottom: 12px;
 }
 .player-back:hover { color: #a0c4ff; }
-.player-hero { text-align: center; margin-bottom: 24px; }
-.player-title { font-size: 24px; color: #e0e0e0; margin: 0 0 6px; font-weight: 600; }
+
+.player-card {
+  background: #0f1a30; border: 1px solid #2a2a4a; border-radius: 14px;
+  padding: 20px; display: flex; flex-direction: column; gap: 16px;
+}
+.player-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.player-title { font-size: 22px; color: #e0e0e0; margin: 0; font-weight: 600; }
+.player-completed-tick {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(76,175,80,0.15); color: #7ecba1;
+  font-size: 16px; font-weight: 700; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
 .player-meta { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; }
 .player-meta-day { color: #a0c4ff; }
 .player-meta-sep { color: #444; }
@@ -960,7 +973,7 @@ h1 { color: #a0c4ff; margin-bottom: 20px; font-size: 24px; }
 /* Play bar */
 .player-bar {
   background: #16213e; border: 1px solid #2a2a4a; border-radius: 14px;
-  padding: 16px 20px; margin-bottom: 24px;
+  padding: 16px 20px;
 }
 .player-bar-has-error { border-color: #4a2a2a; }
 .player-bar-controls { display: flex; align-items: center; gap: 8px; }
@@ -990,7 +1003,6 @@ h1 { color: #a0c4ff; margin-bottom: 20px; font-size: 24px; }
 .player-bar-now-label { font-size: 13px; color: #ccc; }
 .player-bar-now-time { font-size: 12px; color: #666; font-family: monospace; }
 
-.player-bar-done { display: block; text-align: center; font-size: 14px; color: #7ecba1; font-weight: 500; margin-top: 8px; }
 
 .player-bar-progress-wrap { margin-top: 6px; }
 .player-bar-seek {
@@ -1020,7 +1032,7 @@ h1 { color: #a0c4ff; margin-bottom: 20px; font-size: 24px; }
 }
 
 /* Stage list */
-.player-stages { margin-bottom: 20px; }
+.player-stages { }
 .player-stage {
   display: flex; align-items: center; gap: 10px; padding: 10px 12px;
   border-radius: 8px; margin-bottom: 3px; background: rgba(255,255,255,0.02);
@@ -1042,6 +1054,15 @@ h1 { color: #a0c4ff; margin-bottom: 20px; font-size: 24px; }
 .player-stage-detail { font-size: 12px; color: #666; display: block; }
 .player-stage-duration { font-size: 12px; color: #666; font-family: monospace; flex-shrink: 0; }
 .player-stage-indicator { color: #7ecba1; font-size: 16px; }
+.player-stage-play {
+  width: 28px; height: 28px; border-radius: 50%; border: none; flex-shrink: 0;
+  background: rgba(255,255,255,0.06); color: #888; font-size: 11px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.player-stage-play:hover { background: rgba(76,175,80,0.15); color: #7ecba1; }
+.player-stage-play.playing { background: rgba(244,67,54,0.15); color: #ff8a8a; }
+.player-stage-play:disabled { opacity: 0.4; cursor: not-allowed; }
 .player-stage-error { background: rgba(229,85,85,0.1); }
 .player-stage-error-icon {
   color: #e55; font-size: 14px; font-weight: 700;
@@ -1069,9 +1090,7 @@ h1 { color: #a0c4ff; margin-bottom: 20px; font-size: 24px; }
 .player-bar-error-btn:last-child:hover { background: #6a3a3a; }
 
 /* Week/Day nav */
-.player-nav {
-  border-top: 1px solid #2a2a4a; padding-top: 16px;
-}
+.player-nav { }
 .player-week-nav {
   display: flex; align-items: center; gap: 6px; justify-content: center; margin-bottom: 10px;
 }

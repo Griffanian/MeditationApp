@@ -16,8 +16,9 @@ class AssemblyMixin:
         """Pass through variable objects as-is so synthesize can handle units."""
         return dict(variables_data or {})
 
-    def _script_hash(self, script):
-        return hashlib.md5(json.dumps(script, sort_keys=True).encode()).hexdigest()[:10]
+    def _content_hash(self, script, variables=None):
+        blob = json.dumps({"s": script, "v": variables or {}}, sort_keys=True)
+        return hashlib.md5(blob.encode()).hexdigest()[:10]
 
     def _assemble(self, name, stage_id=None):
         meditation = get_object_or_404(Meditation, name=name)
@@ -34,7 +35,7 @@ class AssemblyMixin:
         if not script:
             return Response({"error": "not found"}, status=404)
 
-        h = self._script_hash(script)
+        h = self._content_hash(script, extra_vars)
 
         # Check for cached output
         try:
@@ -94,11 +95,10 @@ class StageDurationsView(APIView):
             key = f"{med_name}/{stage_id}"
             try:
                 stage = Stage.objects.get(meditation_id=med_name, stage_id=stage_id)
-                script_hash = hashlib.md5(
-                    json.dumps(stage.script or [], sort_keys=True).encode()
-                ).hexdigest()[:10]
+                blob = json.dumps({"s": stage.script or [], "v": stage.variables or {}}, sort_keys=True)
+                content_hash = hashlib.md5(blob.encode()).hexdigest()[:10]
                 output = AssembledOutput.objects.get(
-                    meditation_id=med_name, stage=stage, script_hash=script_hash,
+                    meditation_id=med_name, stage=stage, script_hash=content_hash,
                 )
                 results[key] = output.duration
             except (Stage.DoesNotExist, AssembledOutput.DoesNotExist):
