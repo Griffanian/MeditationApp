@@ -59,21 +59,28 @@ class ComponentMixin:
                     seg_id=seg_id,
                 )
             except Component.DoesNotExist:
-                result[seg_id] = "missing"
+                result[seg_id] = {"status": "missing"}
                 continue
 
             if not component.audio_file:
-                result[seg_id] = "missing"
+                result[seg_id] = {"status": "missing"}
                 continue
+
+            # Compute duration from timestamps
+            timestamps = component.timestamps or []
+            duration = timestamps[-1]["end"] if timestamps else None
+            if component.trim_meta and "start" in component.trim_meta and "end" in component.trim_meta:
+                duration = component.trim_meta["end"] - component.trim_meta["start"]
 
             has_vars = bool(re.search(r"\{\w+\}", raw_text))
             if not has_vars:
-                result[seg_id] = "current"
+                result[seg_id] = {"status": "current", "duration": duration}
                 continue
 
             substituted = _substitute_variables(raw_text, variables)
             current_hash = hashlib.md5(substituted.encode()).hexdigest()[:8]
-            result[seg_id] = "current" if component.text_hash == current_hash else "stale"
+            status = "current" if component.text_hash == current_hash else "stale"
+            result[seg_id] = {"status": status, "duration": duration}
 
         return Response(result)
 

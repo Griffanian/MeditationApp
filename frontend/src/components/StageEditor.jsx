@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DndContext, closestCenter, pointerWithin, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, assembleStage, generateAllAudio } from '../api';
-import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, registerExternalStop, unregisterExternalStop } from '../playback';
+import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, computeMarkerDuration, registerExternalStop, unregisterExternalStop, resolveVar } from '../playback';
 import { getClipboard, setClipboard } from '../clipboard';
 import { generateId, ensureIds, findById, findByIdWithContext, allIds, cloneWithNewIds, isDescendantOf } from '../segmentIds';
+import { useLocalState } from '../utils';
 import Timeline from './Timeline';
 import AddMenu from './AddMenu';
 import ContextMenu from './ContextMenu';
@@ -18,8 +19,8 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
   const [isPlayAll, setIsPlayAll] = useState(false);
   const [status, setStatus] = useState('');
   const [outputUrl, setOutputUrl] = useState(null);
-  const [varsCollapsed, setVarsCollapsed] = useState(false);
-  const [timelineCollapsed, setTimelineCollapsed] = useState(false);
+  const [varsCollapsed, setVarsCollapsed] = useLocalState(`collapse:${meditationName}:${stageId}:vars`, true);
+  const [timelineCollapsed, setTimelineCollapsed] = useLocalState(`collapse:${meditationName}:${stageId}:timeline`, true);
   const scriptRef = useRef(script);
   const playAllModeRef = useRef(false);
   const lastClickedRef = useRef(null);
@@ -29,6 +30,7 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
   const assembledPlayingRef = useRef(false);
 
   useEffect(() => { scriptRef.current = script; }, [script]);
+  useEffect(() => { setScriptAndComponents(script, components); }, [script, components]);
 
   const [variables, setVariables] = useState({});
   const [loopCounters, setLoopCounters] = useState({});
@@ -109,6 +111,7 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
       asset: { type: 'asset', id: generateId(), file: 'and_out.mp3' },
       loop: { type: 'loop', id: generateId(), repeat: 3, segments: [] },
       section: { type: 'loop', id: generateId(), repeat: 1, label: 'New Section', segments: [] },
+      split_marker: { type: 'split_marker', id: generateId() },
     };
     const sorted = sortedSelectedIds();
     const anchorId = position === 'above' ? sorted[0] : sorted[sorted.length - 1];
@@ -300,6 +303,11 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
     saveVars(updated);
   }
 
+  function updateUnit(varName, unit) {
+    const updated = { ...variables, [varName]: { ...variables[varName], unit: unit || undefined } };
+    saveVars(updated);
+  }
+
   function addVariable() {
     let name = 'newVar';
     let i = 1;
@@ -375,9 +383,11 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
     lastClickedRef.current = id;
     setMeditation(meditationName, stageId);
 
-    if (playingId === id && !isPaused) {
+    // Stop if clicking the currently playing segment or parent section
+    if ((playingId === id || (isLoop && playingParentId === id)) && !isPaused) {
       stopPlayback();
       setPlayingId(null);
+      setPlayingParentId(null);
       setIsPaused(false);
       playAllModeRef.current = false; setIsPlayAll(false);
       return;
@@ -392,7 +402,7 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
       const seg = findById(scriptRef.current, id);
       const varName = seg.variable;
       const repeat = (varName && variables[varName] != null)
-        ? (typeof variables[varName] === 'object' ? variables[varName].value : variables[varName])
+        ? resolveVar(variables[varName]) || 1
         : (seg.repeat || 1);
       const loopFlat = [];
       for (let r = 0; r < repeat; r++) {
@@ -407,7 +417,7 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
     setPlayingParentId(null);
     const seg = findById(scriptRef.current, id);
     setPlayingId(id);
-    playSeg(seg, () => setPlayingId(null), variables);
+    playSeg(seg, () => setPlayingId(null), variables, { script: scriptRef.current, components });
   }
 
   function handleWordClick(id, wordIndex) {
@@ -453,7 +463,7 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
       setLoopCounters(prev => ({ ...prev, [loopId]: { current: loopIteration, total: loopTotal } }));
     }
     setPlayingId(seg.id);
-    playSeg(seg, () => playSequence(flat, index + 1), variables);
+    playSeg(seg, () => playSequence(flat, index + 1), variables, { script: scriptRef.current, components });
   }
 
   function handleStop() {
@@ -503,13 +513,14 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
             <thead>
               <tr>
                 <th>Value</th>
+                <th>Unit</th>
                 <th>Variable Name</th>
                 <th>Display Name</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {Object.entries(variables).map(([varName, { value, displayName }]) => (
+              {Object.entries(variables).map(([varName, { value, displayName, unit }]) => (
                 <tr key={varName}>
                   <td>
                     <input
@@ -518,6 +529,17 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
                       value={value}
                       onChange={e => updateVariable(varName, e.target.value)}
                     />
+                  </td>
+                  <td>
+                    <select
+                      className="variable-unit-select"
+                      value={unit || ''}
+                      onChange={e => updateUnit(varName, e.target.value)}
+                    >
+                      <option value="">—</option>
+                      <option value="seconds">sec</option>
+                      <option value="minutes">min</option>
+                    </select>
                   </td>
                   <td>
                     <input
@@ -589,6 +611,7 @@ export default function StageEditor({ stageName, stageId, meditationName }) {
               selectedIds={selectedIds}
               onSelect={handleSelect}
               onContextMenu={handleContextMenu}
+              fullScript={script}
             />
             <DragOverlay dropAnimation={null}>
               {activeDragSeg ? <DragOverlayContent seg={activeDragSeg} /> : null}

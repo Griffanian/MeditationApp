@@ -4,9 +4,9 @@ import { CSS } from '@dnd-kit/utilities';
 import DragHandle from './DragHandle';
 import KebabMenu from './KebabMenu';
 import RecordingModal from './RecordingModal';
-import { clearTimestampCache } from '../playback';
+import { clearTimestampCache, computeMarkerDuration } from '../playback';
 
-export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, audioStatus = 'missing', meditationName, stageId, onRefreshComponents, insidePlayingParent, variables = {}, onUpdateVariable, selected, onSelect, onContextMenu }) {
+export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, audioStatus = 'missing', meditationName, stageId, onRefreshComponents, insidePlayingParent, variables = {}, onUpdateVariable, selected, onSelect, onContextMenu, fullScript, components = {} }) {
   const hasAudio = audioStatus === 'current';
   const isStale = audioStatus === 'stale';
   const [editing, setEditing] = useState(seg.type === 'speech' && seg.text === 'New spoken segment.');
@@ -87,31 +87,79 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
           onBlur={() => { if (editPause !== seg.duration_seconds) onUpdate(seg.id, { duration_seconds: editPause }); }}
           onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
         />
-        s
+        {(() => {
+          if (isVar) {
+            const varName = strVal.match(/\{(\w+)\}/)[1];
+            const varObj = variables[varName];
+            if (varObj?.unit === 'minutes') return ' min';
+          }
+          return ' s';
+        })()}
       </span>
     );
-    let resolvedDur = strVal;
     if (isVar) {
       const varName = strVal.match(/\{(\w+)\}/)[1];
-      if (variables[varName]) resolvedDur = String(variables[varName].value ?? variables[varName]);
+      const varObj = variables[varName];
+      const rawVal = varObj?.value ?? varObj;
+      const unit = varObj?.unit;
+      if (unit === 'minutes') {
+        duration = <span className="countdown" data-seg-id={seg.id}>{rawVal} min</span>;
+      } else {
+        duration = <span className="countdown" data-seg-id={seg.id}>{rawVal}</span>;
+      }
+    } else {
+      duration = <span className="countdown" data-seg-id={seg.id}>{strVal}</span>;
     }
-    duration = <span className="countdown" data-seg-id={seg.id}>{resolvedDur}</span>;
   } else if (seg.type === 'asset') {
     icon = '🔊';
     const raw = seg.label || seg.file.replace(/[-_]/g, ' ').replace(/\.mp3$/, '');
     const displayName = raw.charAt(0).toUpperCase() + raw.slice(1) + '.';
     label = <span className="text">"{displayName}"</span>;
     duration = null;
+  } else if (seg.type === 'split_marker') {
+    icon = '◆';
+    const mult = seg.multiplier || 1;
+    label = (
+      <span>
+        Split Marker
+        {' '}×{' '}
+        <input
+          className="split-mult-input"
+          type="text"
+          value={mult}
+          onClick={e => e.stopPropagation()}
+          onChange={e => {
+            const v = e.target.value;
+            const n = Number(v);
+            if (v === '' || (!isNaN(n) && n >= 1)) {
+              onUpdate(seg.id, { multiplier: v === '' ? 1 : n });
+            }
+          }}
+        />
+      </span>
+    );
+    const perMarker = fullScript ? computeMarkerDuration(fullScript, seg.id, variables, components) : null;
+    const totalDur = perMarker != null ? perMarker * mult : null;
+    if (totalDur != null) {
+      if (totalDur >= 60) {
+        const mins = (totalDur / 60).toFixed(1).replace(/\.0$/, '');
+        duration = <span className="countdown" data-seg-id={seg.id}>{mins} min</span>;
+      } else {
+        duration = <span className="countdown" data-seg-id={seg.id}>{Math.round(totalDur)}</span>;
+      }
+    } else {
+      duration = <span className="split-auto-label">--</span>;
+    }
   }
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`segment ${seg.type}${isPlaying ? ' playing' : ''}${selected ? ' selected' : ''}${isOver && !isDragging ? ' drag-over' : ''}${seg.type === 'speech' && !hasAudio ? ' no-audio' : ''}${isStale ? ' stale' : ''}${seg.type === 'speech' && /\{\w+\}/.test(seg.text) ? ' has-variables' : ''}`}
+      className={`segment ${seg.type.replace('_', '-')}${isPlaying ? ' playing' : ''}${selected ? ' selected' : ''}${isOver && !isDragging ? ' drag-over' : ''}${seg.type === 'speech' && !hasAudio ? ' no-audio' : ''}${isStale ? ' stale' : ''}${seg.type === 'speech' && /\{\w+\}/.test(seg.text) ? ' has-variables' : ''}`}
       onContextMenu={e => onContextMenu(e, seg.id)}
       onClick={e => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.closest('.kebab-wrapper')) return;
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.closest('.kebab-wrapper')) return;
         if (e.shiftKey) { onSelect(seg.id, true); return; }
         onSelect(seg.id, false);
         if (seg.type === 'speech' && !hasAudio) return;

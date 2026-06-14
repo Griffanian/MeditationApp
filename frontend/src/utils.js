@@ -45,3 +45,25 @@ export async function substituteAndHash(text, variables) {
 }
 
 export { substituteVariables, numberToWords };
+
+// useState backed by localStorage — persists across page loads
+import { useState, useEffect, useRef } from 'react';
+
+export function useLocalState(key, defaultValue) {
+  const [value, setValue] = useState(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored != null ? JSON.parse(stored) : defaultValue;
+    } catch {
+      return defaultValue;
+    }
+  });
+
+  const isFirst = useRef(true);
+  useEffect(() => {
+    if (isFirst.current) { isFirst.current = false; return; }
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  }, [key, value]);
+
+  return [value, setValue];
+}

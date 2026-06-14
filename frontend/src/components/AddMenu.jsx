@@ -7,6 +7,7 @@ const SEGMENT_TYPES = [
   { type: 'asset', icon: '🔊', label: 'Asset', default: { type: 'asset', file: 'and_out.mp3' } },
   { type: 'loop', icon: '↻', label: 'Loop', default: { type: 'loop', repeat: 3, segments: [] } },
   { type: 'section', icon: '▼', label: 'Section', default: { type: 'loop', repeat: 1, label: 'New Section', segments: [] } },
+  { type: 'split_marker', icon: '◆', label: 'Split Marker', default: { type: 'split_marker' } },
 ];
 
 export default function AddMenu({ onAdd }) {

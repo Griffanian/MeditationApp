@@ -20,6 +20,10 @@ export default function DragOverlayContent({ seg }) {
     icon = '↻';
     label = `Loop × ${seg.repeat} (${seg.segments.length} segments)`;
     className = 'loop-header';
+  } else if (seg.type === 'split_marker') {
+    icon = '◆';
+    label = 'Split Marker';
+    className = 'segment split-marker';
   }
 
   return (

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import assembly, assets, components, meditations, scripts, stages, trim
+from .views import assembly, assets, components, meditations, practices, scripts, stages, trim
 
 urlpatterns = [
     # Categories
@@ -13,6 +13,7 @@ urlpatterns = [
     path("api/meditations/<str:name>/instructions", meditations.InstructionsView.as_view()),
     path("api/meditations/<str:name>/instructions-pdf", meditations.InstructionsPdfView.as_view()),
     path("api/meditations/<str:name>/extract-instructions", meditations.ExtractInstructionsView.as_view()),
+    path("api/chat", meditations.ChatView.as_view()),
     path("api/meditations/<str:name>/loops", meditations.LoopsView.as_view()),
 
     # Root-level script
@@ -23,6 +24,9 @@ urlpatterns = [
     path("api/meditations/<str:name>/timestamps/<str:seg_id>", components.RootTimestampsView.as_view()),
     path("api/meditations/<str:name>/generate-audio/<str:seg_id>", components.RootGenerateAudioView.as_view()),
     path("api/meditations/<str:name>/upload-component/<str:seg_id>", components.RootUploadComponentView.as_view()),
+
+    # Durations
+    path("api/stage-durations", assembly.StageDurationsView.as_view()),
 
     # Root-level assembly
     path("api/meditations/<str:name>/assemble", assembly.RootAssembleView.as_view()),
@@ -54,6 +58,11 @@ urlpatterns = [
     path("api/upload-asset/<str:filename>", assets.UploadAssetView.as_view()),
     path("api/trim-meta/asset/<str:filename>", trim.AssetTrimMetaView.as_view()),
     path("api/trim-asset/<str:filename>", trim.TrimAssetView.as_view()),
+
+    # Practices
+    path("api/practices", practices.PracticeListView.as_view()),
+    path("api/practices/stages", practices.PracticeStagesView.as_view()),
+    path("api/practices/<str:name>", practices.PracticeDetailView.as_view()),
 
     # Audio & PDF serving — redirect to Supabase Storage public URLs
     path("audio/meditation/<str:name>/component/<str:filename>", components.serve_component),

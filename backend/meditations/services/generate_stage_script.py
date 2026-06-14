@@ -74,8 +74,5 @@ def generate_stage_script(stage_instructions: dict) -> dict:
     )
 
     response_text = message.content[0].text.strip()
-    if response_text.startswith("```"):
-        response_text = response_text.split("\n", 1)[1]
-        response_text = response_text.rsplit("```", 1)[0]
-
-    return json.loads(response_text)
+    from .extract_instructions import _parse_json_response
+    return _parse_json_response(response_text)

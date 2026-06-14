@@ -117,7 +117,7 @@ MeditationApp/
 
 | Model | Fields | Description |
 |-------|--------|-------------|
-| **Meditation** | `name`, `display_name`, `category`, `instructions` (JSON), `script` (JSON) | A meditation practice |
+| **Meditation** | `name`, `display_name`, `category`, `instructions` (JSON), `script` (JSON) | A meditation exercise |
 | **Stage** | `meditation` (FK), `stage_id`, `script` (JSON), `variables` (JSON) | A stage within a meditation |
 | **Component** | `meditation` (FK), `stage` (FK), `seg_id`, `text_hash`, `timestamps` (JSON), `trim_meta` (JSON), `audio_file` | Generated speech audio for a segment |
 | **Asset** | `filename`, `audio_file`, `trim_meta` (JSON) | Reusable audio file (bell, breath cue, etc.) |

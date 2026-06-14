@@ -100,15 +100,37 @@ export async function deleteInstructionsPdf(name) {
   await fetch(`/api/meditations/${name}/instructions-pdf`, { method: 'DELETE' });
 }
 
-export async function extractInstructions(name, { youtubeUrl } = {}) {
+export async function extractInstructions(name, { youtubeUrl, context } = {}) {
   const res = await fetch(`/api/meditations/${name}/extract-instructions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ youtube_url: youtubeUrl || null }),
+    body: JSON.stringify({ youtube_url: youtubeUrl || null, context: context || null }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to extract instructions');
   return data;
+}
+
+// --- Chat ---
+
+export async function sendChatMessage(message, history, context) {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, history, context }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Chat failed');
+  return data;
+}
+
+export async function fetchStageDurations(items) {
+  const res = await fetch('/api/stage-durations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  return res.json();
 }
 
 // --- Per-stage APIs ---
@@ -166,6 +188,14 @@ export async function generateAllAudio(name, stageId) {
 
 export async function assembleStage(name, stageId) {
   const res = await fetch(`/api/meditations/${name}/stages/${stageId}/assemble`, { method: 'POST' });
+  if (!res.ok) {
+    let msg = `Assembly failed (${res.status})`;
+    try {
+      const data = await res.json();
+      msg = data.error || msg;
+    } catch {}
+    throw new Error(msg);
+  }
   return res.json();
 }
 
@@ -179,5 +209,45 @@ export async function updateLoops(name, loops) {
 
 export async function assembleAudio(name) {
   const res = await fetch(`/api/meditations/${name}/assemble`, { method: 'POST' });
+  return res.json();
+}
+
+// --- Practices ---
+
+export async function fetchPractices() {
+  const res = await fetch('/api/practices');
+  return res.json();
+}
+
+export async function createPractice(displayName) {
+  const res = await fetch('/api/practices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display_name: displayName }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to create');
+  return data;
+}
+
+export async function fetchPractice(name) {
+  const res = await fetch(`/api/practices/${name}`);
+  return res.json();
+}
+
+export async function savePractice(name, data) {
+  await fetch(`/api/practices/${name}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deletePractice(name) {
+  await fetch(`/api/practices/${name}`, { method: 'DELETE' });
+}
+
+export async function fetchAvailableStages() {
+  const res = await fetch('/api/practices/stages');
   return res.json();
 }

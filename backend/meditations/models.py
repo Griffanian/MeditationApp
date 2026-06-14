@@ -71,6 +71,18 @@ class Asset(models.Model):
         return self.filename
 
 
+class Practice(models.Model):
+    name = models.SlugField(max_length=200, unique=True, primary_key=True)
+    display_name = models.CharField(max_length=200, blank=True)
+    items = models.JSONField(default=list, blank=True)
+    # items: [{"id": "...", "meditation": "slug", "stage_id": "...", "variables": {...}}, ...]
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.display_name or self.name
+
+
 class AssembledOutput(models.Model):
     meditation = models.ForeignKey(
         Meditation, on_delete=models.CASCADE, related_name="outputs"

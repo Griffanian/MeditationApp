@@ -40,6 +40,25 @@ def _number_to_words(n: int) -> str:
     return str(n)
 
 
+UNIT_MULTIPLIERS = {"minutes": 60, "seconds": 1}
+
+
+def _resolve_var(val):
+    """Resolve a variable value, handling both plain numbers and objects with units."""
+    if isinstance(val, dict):
+        raw = val.get("value", 0)
+        unit = val.get("unit")
+        multiplier = UNIT_MULTIPLIERS.get(unit, 1)
+        try:
+            return float(raw) * multiplier
+        except (ValueError, TypeError):
+            return 0
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return 0
+
+
 def _collect_variables(segments: list[dict]) -> dict:
     variables = {}
     for seg in segments:
@@ -60,6 +79,14 @@ def _substitute_variables(text: str, variables: dict) -> str:
         var_name = match.group(1)
         if var_name in variables:
             val = variables[var_name]
+            # Handle variable objects with value/unit/displayName
+            if isinstance(val, dict):
+                raw = val.get("value", 0)
+                try:
+                    raw = int(float(raw))
+                except (ValueError, TypeError):
+                    return str(raw)
+                return _number_to_words(raw)
             if isinstance(val, int):
                 return _number_to_words(val)
             return str(val)
@@ -185,12 +212,29 @@ def _apply_trim(audio: AudioSegment, trim_meta: dict) -> AudioSegment:
     return audio
 
 
+def _count_markers(segments: list[dict], variables: dict) -> int:
+    """Count effective split markers, accounting for loop repeats."""
+    count = 0
+    for seg in segments:
+        if seg["type"] == "split_marker":
+            count += seg.get("multiplier", 1)
+        elif seg["type"] == "loop":
+            loop_var = seg.get("variable")
+            if loop_var and loop_var in variables:
+                repeat = int(_resolve_var(variables[loop_var]))
+            else:
+                repeat = seg.get("repeat", 1)
+            count += repeat * _count_markers(seg["segments"], variables)
+    return count
+
+
 def _assemble_segments(
     segments: list[dict],
     meditation_name: str,
     stage_id: str = None,
     depth: int = 0,
     variables: dict = None,
+    marker_duration: float = None,
 ) -> AudioSegment:
     from meditations.models import Asset, Component
 
@@ -217,10 +261,15 @@ def _assemble_segments(
             if isinstance(duration, str):
                 match = re.match(r"^\{(\w+)\}$", duration)
                 if match and match.group(1) in variables:
-                    duration = variables[match.group(1)]
+                    duration = _resolve_var(variables[match.group(1)])
                 else:
                     duration = float(duration) if duration.replace(".", "").isdigit() else 0
-            combined += AudioSegment.silent(duration=int(duration * 1000))
+            combined += AudioSegment.silent(duration=int(float(duration) * 1000))
+
+        elif seg_type == "split_marker":
+            if marker_duration is not None:
+                mult = seg.get("multiplier", 1)
+                combined += AudioSegment.silent(duration=int(marker_duration * mult * 1000))
 
         elif seg_type == "asset":
             try:
@@ -238,16 +287,60 @@ def _assemble_segments(
                     combined += audio
 
         elif seg_type == "loop":
-            var_name = seg.get("variable")
-            if var_name and var_name in variables:
-                repeat = int(variables[var_name])
+            target = seg.get("targetDuration")
+
+            if target is not None:
+                # Section with a target duration — two-pass split
+                # Resolve variable reference like {varName}
+                if isinstance(target, str):
+                    match = re.match(r"^\{(\w+)\}$", target)
+                    if match and match.group(1) in variables:
+                        target = _resolve_var(variables[match.group(1)])
+                target_seconds = float(target)
+                num_markers = _count_markers(seg["segments"], variables)
+
+                if num_markers > 0:
+                    # Pass 1: assemble with 0-duration markers to get fixed duration
+                    fixed_audio = _assemble_segments(
+                        seg["segments"], meditation_name, stage_id,
+                        depth + 1, variables, marker_duration=0,
+                    )
+                    fixed_duration = len(fixed_audio) / 1000.0
+
+                    remaining = target_seconds - fixed_duration
+                    if remaining < 0:
+                        label = seg.get("label", "section")
+                        raise ValueError(
+                            f"Fixed content ({fixed_duration:.1f}s) exceeds "
+                            f"target duration ({target_seconds:.0f}s) for "
+                            f"section \"{label}\""
+                        )
+                    per_marker = remaining / num_markers
+
+                    # Pass 2: assemble with computed marker durations
+                    combined += _assemble_segments(
+                        seg["segments"], meditation_name, stage_id,
+                        depth + 1, variables, marker_duration=per_marker,
+                    )
+                else:
+                    # No markers — assemble normally
+                    combined += _assemble_segments(
+                        seg["segments"], meditation_name, stage_id,
+                        depth + 1, variables, marker_duration=marker_duration,
+                    )
             else:
-                repeat = seg.get("repeat", 1)
-            iteration = _assemble_segments(
-                seg["segments"], meditation_name, stage_id, depth + 1, variables,
-            )
-            for _ in range(repeat):
-                combined += iteration
+                # Standard loop logic
+                var_name = seg.get("variable")
+                if var_name and var_name in variables:
+                    repeat = int(_resolve_var(variables[var_name]))
+                else:
+                    repeat = seg.get("repeat", 1)
+                iteration = _assemble_segments(
+                    seg["segments"], meditation_name, stage_id,
+                    depth + 1, variables, marker_duration=marker_duration,
+                )
+                for _ in range(repeat):
+                    combined += iteration
 
     return combined
 

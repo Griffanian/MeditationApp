@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchCategories, createCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveStageVariables, assembleStage } from '../api';
+import { useLocalState } from '../utils';
 
 export default function Dashboard() {
   const [categories, setCategories] = useState([]);
@@ -10,6 +11,7 @@ export default function Dashboard() {
   const [openMenu, setOpenMenu] = useState(null);
   const [editingCategory, setEditingCategory] = useState(null);
   const [editCatName, setEditCatName] = useState('');
+  const [expandedCats, setExpandedCats] = useLocalState('dashboard:expandedCats', {});
   const audioRef = useRef(null);
   const navigate = useNavigate();
 
@@ -56,7 +58,7 @@ export default function Dashboard() {
   async function handleDeleteCategory(cat) {
     const meds = meditations.filter(m => m.category === cat.name);
     const msg = meds.length > 0
-      ? `Delete "${cat.display_name}"? Its ${meds.length} practice(s) will be moved to "Other".`
+      ? `Delete "${cat.display_name}"? Its ${meds.length} exercise(s) will be moved to "Other".`
       : `Delete "${cat.display_name}"?`;
     if (!confirm(msg)) return;
     await deleteCategory(cat.name);
@@ -70,7 +72,7 @@ export default function Dashboard() {
 
   // --- Meditation actions ---
   async function handleRename(med) {
-    const newName = prompt('Rename practice:', med.display_name);
+    const newName = prompt('Rename exercise:', med.display_name);
     if (!newName || !newName.trim() || newName.trim() === med.display_name) return;
     await renameMeditation(med.name, newName.trim());
     setMeditations(meds =>
@@ -84,8 +86,8 @@ export default function Dashboard() {
     setMeditations(meds => meds.filter(m => m.name !== med.name));
   }
 
-  async function handleNewPractice(category) {
-    const displayName = prompt('Practice name:');
+  async function handleNewExercise(category) {
+    const displayName = prompt('Exercise name:');
     if (!displayName || !displayName.trim()) return;
     try {
       const data = await createMeditation(displayName.trim(), category);
@@ -179,14 +181,25 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h1>Meditations</h1>
+      <div className="nav-bar">
+        <Link to="/" className="nav-link nav-link-active">Exercises</Link>
+        <Link to="/practices" className="nav-link">Programmes</Link>
+      </div>
+
+      <h1>Exercises</h1>
 
       {[...categories, ...extraCats.map(k => ({ name: k, display_name: k }))].map(cat => {
         const meds = grouped[cat.name] || [];
 
+        const isCollapsed = !expandedCats[cat.name];
+
         return (
           <div key={cat.name} className="category-section">
             <div className="category-header-row">
+              <span
+                className="category-collapse-btn"
+                onClick={() => setExpandedCats(prev => ({ ...prev, [cat.name]: !prev[cat.name] }))}
+              >{isCollapsed ? '▸' : '▾'}</span>
               <h2 className="category-header">
                 {editingCategory === cat.name ? (
                   <input
@@ -206,7 +219,7 @@ export default function Dashboard() {
               </h2>
               <button className="category-delete-btn" onClick={() => handleDeleteCategory(cat)}>✕</button>
             </div>
-            <div className="med-grid">
+            {!isCollapsed && <div className="med-grid">
               {meds.map(med => (
                 <div key={med.name} className="med-card">
                   <div className="med-card-top">
@@ -274,11 +287,11 @@ export default function Dashboard() {
                   )}
                 </div>
               ))}
-              <button className="med-card med-card-add" onClick={() => handleNewPractice(cat.name)}>
+              <button className="med-card med-card-add" onClick={() => handleNewExercise(cat.name)}>
                 <span className="med-card-add-icon">+</span>
-                <span className="med-card-add-label">New Practice</span>
+                <span className="med-card-add-label">New Exercise</span>
               </button>
-            </div>
+            </div>}
           </div>
         );
       })}
@@ -286,6 +299,7 @@ export default function Dashboard() {
       <button className="btn-new-section" onClick={handleNewSection}>
         + New Section
       </button>
+
     </div>
   );
 }

@@ -7,6 +7,7 @@ const SEGMENT_TYPES = [
   { type: 'asset', icon: '🔊', label: 'Asset' },
   { type: 'loop', icon: '↻', label: 'Loop' },
   { type: 'section', icon: '▼', label: 'Section' },
+  { type: 'split_marker', icon: '◆', label: 'Split Marker' },
 ];
 
 

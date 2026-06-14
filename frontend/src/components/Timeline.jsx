@@ -29,10 +29,12 @@ export default function Timeline({
   stageId,
   onRefreshComponents,
   playingParentId,
+  insidePlayingParent = false,
   onUpdateVariable,
   selectedIds = new Set(),
   onSelect,
   onContextMenu,
+  fullScript,
 }) {
   const ids = segments.map(seg => seg.id);
 
@@ -63,6 +65,7 @@ export default function Timeline({
                   selectedIds={selectedIds}
                   onSelect={onSelect}
                   onContextMenu={onContextMenu}
+                  fullScript={fullScript}
                 />
                 <AfterDropZone id={seg.id} />
               </div>
@@ -80,16 +83,18 @@ export default function Timeline({
               onDelete={() => onDelete(seg.id)}
               onInsert={onInsert}
               onUpdate={onUpdate}
-              audioStatus={seg.type === 'asset' ? 'current' : (components[seg.id] || 'missing')}
+              audioStatus={seg.type === 'asset' ? 'current' : (components[seg.id]?.status || components[seg.id] || 'missing')}
               meditationName={meditationName}
               stageId={stageId}
               onRefreshComponents={onRefreshComponents}
-              insidePlayingParent={false}
+              insidePlayingParent={insidePlayingParent}
               variables={variables}
               onUpdateVariable={onUpdateVariable}
               selected={selectedIds.has(seg.id)}
               onSelect={onSelect}
               onContextMenu={onContextMenu}
+              fullScript={fullScript}
+              components={components}
             />
           );
         })}

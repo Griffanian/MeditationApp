@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 
 from ..models import Category, Meditation, Stage
 from ..services import storage
+from ..services.chat import chat
 from ..services.extract_instructions import extract_instructions
 
 
@@ -159,14 +160,285 @@ class LoopsView(APIView):
 class ExtractInstructionsView(APIView):
     def post(self, request, name):
         youtube_url = request.data.get("youtube_url")
+        context = request.data.get("context")
         try:
-            result = extract_instructions(name, youtube_url=youtube_url)
+            result = extract_instructions(name, youtube_url=youtube_url, context=context)
         except FileNotFoundError as e:
             return Response({"error": str(e)}, status=404)
+        except json.JSONDecodeError as e:
+            return Response({"error": f"AI returned invalid JSON: {e}"}, status=500)
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
         except Exception as e:
             return Response({"error": str(e)}, status=500)
+        return Response(result)
+
+
+def _seg_key(seg):
+    """Generate a stable key for a segment for diffing."""
+    t = seg.get("type", "unknown")
+    if t == "speech":
+        return ("speech", seg.get("id", seg.get("text", "")[:60]))
+    if t == "pause":
+        return ("pause", str(seg.get("duration_seconds", 0)))
+    if t == "asset":
+        return ("asset", seg.get("file", ""))
+    if t == "split_marker":
+        return ("split_marker", str(seg.get("multiplier", 1)))
+    if t == "loop":
+        label = seg.get("label", "")
+        variable = seg.get("variable", "")
+        return ("loop", label or variable or "loop")
+    return (t, "")
+
+
+def _seg_desc(seg):
+    """Human-readable description of a segment."""
+    t = seg.get("type", "unknown")
+    if t == "speech":
+        text = seg.get("text", "")
+        preview = text[:50] + "\u2026" if len(text) > 50 else text
+        return f'"{preview}"'
+    if t == "pause":
+        return f'{seg.get("duration_seconds", 0)}s pause'
+    if t == "asset":
+        return seg.get("file", "audio file")
+    if t == "split_marker":
+        m = seg.get("multiplier", 1)
+        return "split marker" + (f" (\u00d7{m})" if m > 1 else "")
+    if t == "loop":
+        label = seg.get("label", "")
+        repeat = seg.get("repeat", 1)
+        variable = seg.get("variable", "")
+        if repeat == 1 and label:
+            return f'section "{label}"'
+        rep = f"{{{variable}}}" if variable else str(repeat)
+        return f'loop \u00d7{rep}' + (f' "{label}"' if label else "")
+    return t
+
+
+def _flatten_segments(segments):
+    """Flatten a script into (key, seg) pairs."""
+    items = []
+    for seg in (segments or []):
+        items.append((_seg_key(seg), seg))
+        if seg.get("type") == "loop":
+            items.extend(_flatten_segments(seg.get("segments", [])))
+    return items
+
+
+def _diff_scripts(old_script, new_script, stage_id=""):
+    """Diff two stage scripts, returning a list of change dicts."""
+    old_flat = _flatten_segments(old_script)
+    new_flat = _flatten_segments(new_script)
+
+    old_keys = {}
+    for key, seg in old_flat:
+        old_keys.setdefault(key, []).append(seg)
+    new_keys = {}
+    for key, seg in new_flat:
+        new_keys.setdefault(key, []).append(seg)
+
+    changes = []
+    for key, segs in old_keys.items():
+        new_count = len(new_keys.get(key, []))
+        for seg in segs[new_count:]:
+            changes.append({
+                "action": "removed",
+                "segment_type": seg.get("type", "unknown"),
+                "description": _seg_desc(seg),
+            })
+    for key, segs in new_keys.items():
+        old_count = len(old_keys.get(key, []))
+        for seg in segs[old_count:]:
+            changes.append({
+                "action": "added",
+                "segment_type": seg.get("type", "unknown"),
+                "description": _seg_desc(seg),
+            })
+    return changes
+
+
+def _diff_instruction_stages(old_stages, new_stages):
+    """Diff instruction stage lists."""
+    old_ids = {s.get("id"): s for s in old_stages}
+    new_ids = {s.get("id"): s for s in new_stages}
+    changes = []
+    for sid, s in old_ids.items():
+        if sid not in new_ids:
+            changes.append({
+                "action": "removed",
+                "segment_type": "stage",
+                "description": s.get("name", sid),
+            })
+    for sid, s in new_ids.items():
+        if sid not in old_ids:
+            changes.append({
+                "action": "added",
+                "segment_type": "stage",
+                "description": s.get("name", sid),
+            })
+    return changes
+
+
+def _diff_practice_items(old_weeks, new_weeks):
+    """Diff practice week/day structures."""
+    changes = []
+
+    # Diff weeks
+    old_wk = [w.get("label", f"Week {i+1}") for i, w in enumerate(old_weeks or []) if isinstance(w, dict)]
+    new_wk = [w.get("label", f"Week {i+1}") for i, w in enumerate(new_weeks or []) if isinstance(w, dict)]
+    for label in old_wk:
+        if label not in new_wk:
+            changes.append({"action": "removed", "segment_type": "week", "description": label})
+    for label in new_wk:
+        if label not in old_wk:
+            changes.append({"action": "added", "segment_type": "week", "description": label})
+
+    # Diff days (by week label + day label)
+    def _day_keys(weeks):
+        keys = {}
+        for w in (weeks or []):
+            if not isinstance(w, dict):
+                continue
+            wl = w.get("label", "Week")
+            for d in w.get("days", []):
+                dl = d.get("label", "Day")
+                key = f"{wl} / {dl}"
+                keys[key] = d
+        return keys
+
+    old_days = _day_keys(old_weeks)
+    new_days = _day_keys(new_weeks)
+    for key in old_days:
+        if key not in new_days:
+            changes.append({"action": "removed", "segment_type": "day", "description": key})
+    for key in new_days:
+        if key not in old_days:
+            changes.append({"action": "added", "segment_type": "day", "description": key})
+
+    # Diff stage items across all days
+    def _extract_stage_refs(weeks):
+        refs = {}
+        for week in (weeks or []):
+            if not isinstance(week, dict):
+                continue
+            wl = week.get("label", "Week")
+            for day in week.get("days", []):
+                dl = day.get("label", "Day")
+                for item in day.get("items", []):
+                    key = (wl, dl, item.get("meditation", ""), item.get("stage_id", ""))
+                    refs.setdefault(key, []).append(item)
+        return refs
+
+    old_refs = _extract_stage_refs(old_weeks)
+    new_refs = _extract_stage_refs(new_weeks)
+    for key, items in old_refs.items():
+        new_count = len(new_refs.get(key, []))
+        for item in items[new_count:]:
+            changes.append({
+                "action": "removed",
+                "segment_type": "practice_item",
+                "description": f'{item.get("meditation_display", "")} > {item.get("stage_name", "")}',
+            })
+    for key, items in new_refs.items():
+        old_count = len(old_refs.get(key, []))
+        for item in items[old_count:]:
+            changes.append({
+                "action": "added",
+                "segment_type": "practice_item",
+                "description": f'{item.get("meditation_display", "")} > {item.get("stage_name", "")}',
+            })
+    return changes
+
+
+class ChatView(APIView):
+    """General context-aware chat endpoint."""
+    def post(self, request):
+        message = request.data.get("message", "")
+        history = request.data.get("history", [])
+        context = request.data.get("context", {})
+        if not message:
+            return Response({"error": "message required"}, status=400)
+        try:
+            result = chat(context, history, message)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+        # Apply mutations if present
+        mutations = result.get("mutations")
+        if mutations:
+            errors = []
+            changes = []
+            page = context.get("page")
+
+            if page == "exercise":
+                m = Meditation.objects.filter(
+                    name=context.get("meditation")
+                ).first()
+                if m:
+                    if "instructions" in mutations:
+                        old_stages = (m.instructions or {}).get("stages", [])
+                        new_stages = mutations["instructions"].get("stages", [])
+                        changes.extend(_diff_instruction_stages(old_stages, new_stages))
+                        try:
+                            m.instructions = mutations["instructions"]
+                            m.save()
+                        except Exception as e:
+                            errors.append(f"Failed to update instructions: {e}")
+                    if "stages" in mutations:
+                        for stage_id, stage_data in mutations["stages"].items():
+                            try:
+                                stage, created = Stage.objects.get_or_create(
+                                    meditation=m, stage_id=stage_id,
+                                )
+                                old_script = stage.script or [] if not created else []
+                                if "script" in stage_data:
+                                    changes.extend(_diff_scripts(old_script, stage_data["script"], stage_id))
+                                    stage.script = stage_data["script"]
+                                if "variables" in stage_data:
+                                    stage.variables = stage_data["variables"]
+                                stage.save()
+                            except Exception as e:
+                                errors.append(
+                                    f"Failed to update stage '{stage_id}': {e}"
+                                )
+
+            elif page in ("practice", "player"):
+                from ..models import Practice
+                p = Practice.objects.filter(
+                    name=context.get("practice")
+                ).first()
+                if p and "items" in mutations:
+                    try:
+                        old_items = p.items or []
+                        changes.extend(_diff_practice_items(old_items, mutations["items"]))
+                        p.items = mutations["items"]
+                        p.save()
+                    except Exception as e:
+                        errors.append(f"Failed to update practice: {e}")
+
+            # Create new programme (works from any page)
+            if "create_programme" in mutations:
+                from ..models import Practice
+                import uuid
+                cp = mutations["create_programme"]
+                try:
+                    practice_id = f"prac-{uuid.uuid4().hex[:12]}"
+                    Practice.objects.create(
+                        name=practice_id,
+                        display_name=cp.get("display_name", "New Programme"),
+                        items=cp.get("items", []),
+                    )
+                    result["created_programme"] = practice_id
+                except Exception as e:
+                    errors.append(f"Failed to create programme: {e}")
+
+            if changes:
+                result["changes"] = changes
+            if errors:
+                result["mutation_errors"] = errors
+
         return Response(result)
 
 

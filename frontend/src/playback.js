@@ -1,5 +1,27 @@
 import { fetchStageTimestamps } from './api';
 
+const UNIT_MULTIPLIERS = { minutes: 60, seconds: 1 };
+
+/**
+ * Resolve a variable reference to a numeric value, applying unit conversion.
+ * Returns the value in seconds (or unitless for rounds etc).
+ */
+export function resolveVar(varObj) {
+  if (varObj == null) return null;
+  const raw = Number(typeof varObj === 'object' ? varObj.value : varObj) || 0;
+  const unit = typeof varObj === 'object' ? varObj.unit : undefined;
+  return raw * (UNIT_MULTIPLIERS[unit] || 1);
+}
+
+function formatCountdown(seconds) {
+  if (seconds >= 60) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+  return String(Math.max(0, Math.floor(seconds)));
+}
+
 let currentAudio = null;
 let wordTimers = [];
 let countdownInterval = null;
@@ -56,7 +78,17 @@ function clearWordHighlights() {
   document.querySelectorAll('.word.active').forEach(el => el.classList.remove('active'));
 }
 
-export function playSeg(seg, onEnd, variables = {}) {
+let currentScript = null;
+let currentComponents = {};
+
+export function setScriptAndComponents(script, components) {
+  currentScript = script;
+  currentComponents = components;
+}
+
+export function playSeg(seg, onEnd, variables = {}, { script, components } = {}) {
+  const _script = script || currentScript;
+  const _components = components || currentComponents;
   if (seg.type === 'speech') {
     const segId = seg.id;
     const tsPromise = timestampCache[segId]
@@ -91,19 +123,18 @@ export function playSeg(seg, onEnd, variables = {}) {
     if (typeof duration === 'string') {
       const varMatch = duration.match(/^\{(\w+)\}$/);
       if (varMatch && variables[varMatch[1]] != null) {
-        const v = variables[varMatch[1]];
-        duration = Number(typeof v === 'object' ? v.value : v) || 0;
+        duration = resolveVar(variables[varMatch[1]]);
       } else {
         duration = Number(duration) || 0;
       }
     }
     let remaining = duration;
     const cdEl = document.querySelector(`.countdown[data-seg-id="${seg.id}"]`);
-    if (cdEl) cdEl.textContent = remaining;
+    if (cdEl) cdEl.textContent = formatCountdown(remaining);
     countdownInterval = setInterval(() => {
       remaining--;
       const el = document.querySelector(`.countdown[data-seg-id="${seg.id}"]`);
-      if (el) el.textContent = Math.max(0, remaining);
+      if (el) el.textContent = formatCountdown(remaining);
     }, 1000);
     currentAudio = {
       _timer: setTimeout(() => {
@@ -120,6 +151,30 @@ export function playSeg(seg, onEnd, variables = {}) {
     currentAudio.onended = onEnd;
     currentAudio.onerror = () => { onEnd(); };
     currentAudio.play().catch(() => { onEnd(); });
+  } else if (seg.type === 'split_marker') {
+    const markerDur = _script
+      ? computeMarkerDuration(_script, seg.id, variables, _components)
+      : null;
+    const mult = seg.multiplier || 1;
+    const duration = markerDur != null ? markerDur * mult : 1;
+    let remaining = Math.round(duration);
+    const cdEl = document.querySelector(`.countdown[data-seg-id="${seg.id}"]`);
+    if (cdEl) cdEl.textContent = formatCountdown(remaining);
+    countdownInterval = setInterval(() => {
+      remaining--;
+      const el = document.querySelector(`.countdown[data-seg-id="${seg.id}"]`);
+      if (el) el.textContent = formatCountdown(remaining);
+    }, 1000);
+    currentAudio = {
+      _timer: setTimeout(() => {
+        clearInterval(countdownInterval);
+        onEnd();
+      }, duration * 1000),
+      pause() {
+        clearTimeout(this._timer);
+        clearInterval(countdownInterval);
+      },
+    };
   }
 }
 
@@ -174,13 +229,108 @@ export function resumeCurrentAudio(seg) {
   }
 }
 
+/**
+ * Compute the fixed duration of segments, excluding split markers.
+ */
+function computeFixedDuration(segments, variables, components) {
+  let total = 0;
+  for (const seg of segments) {
+    if (seg.type === 'speech') {
+      const comp = components[seg.id];
+      if (comp && comp.duration != null) total += comp.duration;
+    } else if (seg.type === 'pause') {
+      let dur = seg.duration_seconds;
+      if (typeof dur === 'string') {
+        const m = dur.match(/^\{(\w+)\}$/);
+        if (m && variables[m[1]] != null) {
+          dur = resolveVar(variables[m[1]]);
+        } else {
+          dur = Number(dur) || 0;
+        }
+      }
+      total += Number(dur) || 0;
+    } else if (seg.type === 'asset') {
+      // Assets: use component duration if available, otherwise estimate 1s
+      const comp = components[seg.id];
+      total += (comp && comp.duration != null) ? comp.duration : 1;
+    } else if (seg.type === 'loop') {
+      const varName = seg.variable;
+      const repeat = (varName && variables[varName] != null)
+        ? resolveVar(variables[varName]) || 1
+        : (seg.repeat || 1);
+      total += repeat * computeFixedDuration(seg.segments, variables, components);
+    }
+    // split_marker: excluded from fixed duration
+  }
+  return total;
+}
+
+/**
+ * Count effective split markers in a segment list, accounting for loop repeats and multipliers.
+ */
+function countMarkers(segments, variables) {
+  let count = 0;
+  for (const seg of segments) {
+    if (seg.type === 'split_marker') {
+      count += seg.multiplier || 1;
+    } else if (seg.type === 'loop') {
+      const varName = seg.variable;
+      const repeat = (varName && variables[varName] != null)
+        ? resolveVar(variables[varName]) || 1
+        : (seg.repeat || 1);
+      count += repeat * countMarkers(seg.segments, variables);
+    }
+  }
+  return count;
+}
+
+/**
+ * Find the nearest ancestor section with a targetDuration for a given segment id.
+ * Returns the section segment, or null.
+ */
+function findParentSection(segments, targetId, parent = null) {
+  for (const seg of segments) {
+    if (seg.id === targetId) return parent;
+    if (seg.type === 'loop' && seg.segments) {
+      const section = seg.targetDuration != null ? seg : parent;
+      const found = findParentSection(seg.segments, targetId, section);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined; // not found in this branch
+}
+
+/**
+ * Compute the per-marker duration for a split marker segment.
+ * Returns the duration in seconds, or null if not computable.
+ */
+function resolveValue(val, variables) {
+  const s = String(val);
+  const m = s.match(/^\{(\w+)\}$/);
+  if (m && variables[m[1]] != null) {
+    return resolveVar(variables[m[1]]);
+  }
+  return Number(s) || 0;
+}
+
+export function computeMarkerDuration(script, markerId, variables, components) {
+  const section = findParentSection(script, markerId);
+  if (!section || section.targetDuration == null) return null;
+  const target = resolveValue(section.targetDuration, variables);
+  const fixed = computeFixedDuration(section.segments, variables, components);
+  const markers = countMarkers(section.segments, variables);
+  if (markers === 0) return null;
+  const remaining = target - fixed;
+  return remaining > 0 ? remaining / markers : 0;
+}
+
 export function flattenScript(segments, variables = {}) {
   const flat = [];
   for (const seg of segments) {
     if (seg.type === 'loop') {
       const varName = seg.variable;
       const repeat = (varName && variables[varName] != null)
-        ? (typeof variables[varName] === 'object' ? variables[varName].value : variables[varName])
+        ? resolveVar(variables[varName]) || 1
         : (seg.repeat || 1);
       for (let r = 0; r < repeat; r++) {
         flattenScript(seg.segments, variables).forEach(f => {

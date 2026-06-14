@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { useLocalState } from '../utils';
 import DragHandle from './DragHandle';
 import KebabMenu from './KebabMenu';
 import Timeline from './Timeline';
@@ -39,18 +40,19 @@ function BottomDropZone({ id, forceHighlight }) {
   );
 }
 
-export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, components, meditationName, stageId, onRefreshComponents, playingParentId, variables = {}, loopCounters = {}, onUpdateVariable, selectedIds = new Set(), onSelect, onContextMenu }) {
-  const [collapsed, setCollapsed] = useState(false);
+export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, components, meditationName, stageId, onRefreshComponents, playingParentId, variables = {}, loopCounters = {}, onUpdateVariable, selectedIds = new Set(), onSelect, onContextMenu, fullScript }) {
+  const [collapsed, setCollapsed] = useLocalState(`collapse:loop:${seg.id}`, true);
   const [editLabel, setEditLabel] = useState(seg.label || '');
   const [editRepeat, setEditRepeat] = useState(seg.variable ? `{${seg.variable}}` : seg.repeat);
+  const [editTargetDuration, setEditTargetDuration] = useState(seg.targetDuration ?? '');
 
   // Sync local state when segment data changes
   useEffect(() => { setEditLabel(seg.label || ''); }, [seg.label]);
   useEffect(() => { setEditRepeat(seg.variable ? `{${seg.variable}}` : seg.repeat); }, [seg.variable, seg.repeat]);
+  useEffect(() => { setEditTargetDuration(seg.targetDuration ?? ''); }, [seg.targetDuration]);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({ id: seg.id });
 
-  const isPlaying = playingId && playingId === seg.id;
   const isPlayingParent = playingParentId === seg.id;
   const isSection = !!seg.label;
 
@@ -79,7 +81,7 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
           ▼
         </span>
         {isSection ? (
-          <span>
+          <span className="section-header-fields">
             <input
               className="section-label-input"
               type="text"
@@ -89,6 +91,40 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
               onBlur={() => { if (editLabel !== seg.label) onUpdate(seg.id, { label: editLabel }); }}
               onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
             />
+            {seg.targetDuration != null ? (
+              <span className="target-duration-field">
+                <span className="target-duration-label">Target:</span>
+                <input
+                  className={`target-duration-input${(() => {
+                    const v = String(editTargetDuration);
+                    const isVar = /\{\w+\}/.test(v);
+                    const isValid = isVar || (v !== '' && !isNaN(Number(v)));
+                    return (!isValid ? ' pause-input-error' : '') + (isVar ? ' pause-input-var' : '');
+                  })()}`}
+                  type="text"
+                  value={editTargetDuration}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => setEditTargetDuration(e.target.value)}
+                  onBlur={() => {
+                    const v = String(editTargetDuration);
+                    if (v !== String(seg.targetDuration)) {
+                      onUpdate(seg.id, { targetDuration: v === '' ? undefined : v });
+                    }
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                />
+                <span className="target-duration-unit">s</span>
+                <button
+                  className="target-duration-remove"
+                  onClick={e => { e.stopPropagation(); onUpdate(seg.id, { targetDuration: undefined }); }}
+                >✕</button>
+              </span>
+            ) : (
+              <button
+                className="target-duration-add"
+                onClick={e => { e.stopPropagation(); onUpdate(seg.id, { targetDuration: '300' }); }}
+              >+ Target</button>
+            )}
           </span>
         ) : (
           <span>
@@ -168,12 +204,14 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
                 stageId={stageId}
                 onRefreshComponents={onRefreshComponents}
                 playingParentId={playingParentId}
+                insidePlayingParent={isPlayingParent}
                 variables={variables}
                 loopCounters={loopCounters}
                 onUpdateVariable={onUpdateVariable}
                 selectedIds={selectedIds}
                 onSelect={onSelect}
                 onContextMenu={onContextMenu}
+                fullScript={fullScript}
               />
               <BottomDropZone id={seg.id} forceHighlight={dropHighlight} />
             </>
