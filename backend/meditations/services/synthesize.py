@@ -14,6 +14,9 @@ from . import storage
 
 DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL"  # Sarah - Mature, Reassuring, Confident
 
+# Match ElevenLabs mp3_44100_128 output to avoid costly resampling in PyDub
+_FRAME_RATE = 44100
+
 # Number words for substitution
 _ONES = [
     "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
@@ -264,12 +267,12 @@ def _assemble_segments(
                     duration = _resolve_var(variables[match.group(1)])
                 else:
                     duration = float(duration) if duration.replace(".", "").isdigit() else 0
-            combined += AudioSegment.silent(duration=int(float(duration) * 1000))
+            combined += AudioSegment.silent(duration=int(float(duration) * 1000), frame_rate=_FRAME_RATE)
 
         elif seg_type == "split_marker":
             if marker_duration is not None:
                 mult = seg.get("multiplier", 1)
-                combined += AudioSegment.silent(duration=int(marker_duration * mult * 1000))
+                combined += AudioSegment.silent(duration=int(marker_duration * mult * 1000), frame_rate=_FRAME_RATE)
 
         elif seg_type == "asset":
             try:
