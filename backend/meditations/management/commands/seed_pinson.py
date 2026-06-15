@@ -141,7 +141,7 @@ HABATA_HASHKATA_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Hashkata — Quieting",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "enter",
                 "text": (
@@ -214,7 +214,7 @@ HABATA_HASHKATA_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "The Question",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "question_intro",
                 "text": (
@@ -235,7 +235,7 @@ HABATA_HASHKATA_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Closing",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "close",
                 "text": (
@@ -338,7 +338,7 @@ DAILY_HASHKATA_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "The Question",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "question",
                 "text": (
@@ -363,7 +363,7 @@ DAILY_HASHKATA_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Sealing",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "seal",
                 "text": (
@@ -475,7 +475,7 @@ OBSERVING_THOUGHTS_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Resolution & Sealing",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "resolution",
                 "text": (
@@ -724,7 +724,7 @@ LOWER_UNITY_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Breath Awareness",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "awareness",
                 "text": (
@@ -813,7 +813,7 @@ LOWER_UNITY_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Closing",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "seal",
                 "text": (
@@ -887,7 +887,7 @@ HIGHER_UNITY_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Breath Awareness",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "awareness",
                 "text": (
@@ -950,7 +950,7 @@ HIGHER_UNITY_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Closing",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "seal",
                 "text": (
@@ -998,7 +998,7 @@ THREE_STAGES_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Introducing the Three Stages",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "intro",
                 "text": (
@@ -1098,7 +1098,7 @@ THREE_STAGES_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Closing",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "seal",
                 "text": (
@@ -1146,7 +1146,7 @@ FEAR_AWE_PLEASURE_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Yirah — Fear (Lower)",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "fear_intro",
                 "text": (
@@ -1171,7 +1171,7 @@ FEAR_AWE_PLEASURE_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Yirah — Awe (Higher)",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "awe_inhale",
                 "text": (
@@ -1195,7 +1195,7 @@ FEAR_AWE_PLEASURE_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Ta'anug — Pleasure",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "taanug",
                 "text": (
@@ -1218,7 +1218,7 @@ FEAR_AWE_PLEASURE_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Closing",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "seal",
                 "text": (
@@ -1276,7 +1276,7 @@ RENEWAL_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Exhale as Completion",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "exhale_complete",
                 "text": (
@@ -1315,7 +1315,7 @@ RENEWAL_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Inhale as New Creation",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "inhale_new",
                 "text": (
@@ -1354,7 +1354,7 @@ RENEWAL_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Closing",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "seal",
                 "text": (
@@ -1402,7 +1402,7 @@ DAILY_BREATHING_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Four-Phase Introduction",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "inhale_intro",
                 "text": (
@@ -1494,7 +1494,7 @@ DAILY_BREATHING_SCRIPT = [
     {
         "type": "loop", "repeat": 1, "label": "Closing",
         "segments": [
-            {"type": "asset", "file": "and_out.mp3"},
+
             {
                 "type": "speech", "id": "seal",
                 "text": (
