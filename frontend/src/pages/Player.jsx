@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { fetchPractice, saveStageVariables, assembleStage, fetchStageDurations, BASE } from '../api';
+import { fetchPractice, saveStageVariables, assembleStage, computeDurations, BASE } from '../api';
 import { useLocalState } from '../utils';
 
 function migrateToWeeks(items) {
@@ -16,6 +16,13 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function itemDurationMinutes(item) {
+  for (const v of Object.values(item.variables || {})) {
+    if (typeof v === 'object' && v.unit === 'minutes' && v.value != null) return Number(v.value);
+  }
+  return null;
+}
+
 export default function Player() {
   const { name } = useParams();
   const [practice, setPractice] = useState(null);
@@ -29,7 +36,7 @@ export default function Player() {
   const [elapsed, setElapsed] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState(null); // { idx, message }
-  const [stageDurations, setStageDurations] = useState({}); // "med/stage" -> seconds
+  const [itemDurations, setItemDurations] = useState({}); // item.id -> seconds
   const [singleMode, setSingleMode] = useState(false);
   const [preparingAll, setPreparingAll] = useState(false);
   const audioRef = useRef(null);
@@ -43,20 +50,20 @@ export default function Player() {
       p.items = migrateToWeeks(p.items);
       setPractice(p);
       const allItems = [];
-      const seen = new Set();
       for (const week of (p.items || [])) {
         for (const day of (week.days || [])) {
           for (const item of (day.items || [])) {
-            const key = `${item.meditation}/${item.stage_id}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              allItems.push({ meditation: item.meditation, stage_id: item.stage_id });
-            }
+            allItems.push({
+              id: item.id,
+              meditation: item.meditation,
+              stage_id: item.stage_id,
+              variables: item.variables,
+            });
           }
         }
       }
       if (allItems.length > 0) {
-        fetchStageDurations(allItems).then(setStageDurations);
+        computeDurations(allItems).then(setItemDurations);
       }
     });
   }, [name]);
@@ -297,13 +304,12 @@ export default function Player() {
           <span className="player-meta-sep">·</span>
           <span className="player-meta-count">{items.length} stage{items.length !== 1 ? 's' : ''}</span>
           {(() => {
-            const totalSecs = items.reduce((sum, item) => {
-              const dur = stageDurations[`${item.meditation}/${item.stage_id}`];
-              return sum + (dur || 0);
-            }, 0);
-            return totalSecs > 0 ? (
-              <><span className="player-meta-sep">·</span><span className="player-meta-duration">{formatTime(totalSecs)}</span></>
-            ) : null;
+            const totalMins = items.reduce((sum, item) => sum + (itemDurationMinutes(item) || 0), 0);
+            const totalSecs = items.reduce((sum, item) => sum + (itemDurations[item.id] || 0), 0);
+            return <>
+              {totalMins > 0 && <><span className="player-meta-sep">·</span><span className="player-meta-duration">{totalMins} min</span></>}
+              {totalSecs > 0 && <><span className="player-meta-sep">·</span><span className="player-meta-actual-duration">{formatTime(totalSecs)} actual</span></>}
+            </>;
           })()}
         </div>
 
@@ -394,10 +400,16 @@ export default function Player() {
                   <span className="player-stage-exercise">{item.meditation_display}</span>
                   <span className="player-stage-detail">{item.stage_name}</span>
                 </Link>
-                {(() => {
-                  const dur = stageDurations[`${item.meditation}/${item.stage_id}`];
-                  return dur ? <span className="player-stage-duration">{formatTime(dur)}</span> : null;
-                })()}
+                <span className="player-stage-durations">
+                  {(() => {
+                    const varMins = itemDurationMinutes(item);
+                    return varMins != null ? <span className="player-stage-exercise-dur">{varMins} min</span> : null;
+                  })()}
+                  {(() => {
+                    const dur = itemDurations[item.id];
+                    return dur ? <span className="player-stage-actual-dur">{formatTime(dur)}</span> : null;
+                  })()}
+                </span>
                 {isCurrent && status === 'assembling' && <span className="player-stage-indicator">...</span>}
                 {isCurrent && status === 'error' && <span className="player-stage-error-icon">!</span>}
                 <button

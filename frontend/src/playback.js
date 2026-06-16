@@ -1,6 +1,6 @@
 import { fetchStageTimestamps, BASE } from './api';
 
-const UNIT_MULTIPLIERS = { minutes: 60, seconds: 1 };
+const UNIT_MULTIPLIERS = { seconds: 1, minutes: 60, hours: 3600 };
 
 /**
  * Resolve a variable reference to a numeric value, applying unit conversion.
@@ -232,7 +232,7 @@ export function resumeCurrentAudio(seg) {
 /**
  * Compute the fixed duration of segments, excluding split markers.
  */
-function computeFixedDuration(segments, variables, components) {
+export function computeFixedDuration(segments, variables, components) {
   let total = 0;
   for (const seg of segments) {
     if (seg.type === 'speech') {
@@ -254,11 +254,16 @@ function computeFixedDuration(segments, variables, components) {
       const comp = components[seg.id];
       total += (comp && comp.duration != null) ? comp.duration : 1;
     } else if (seg.type === 'loop') {
-      const varName = seg.variable;
-      const repeat = (varName && variables[varName] != null)
-        ? resolveVar(variables[varName]) || 1
-        : (seg.repeat || 1);
-      total += repeat * computeFixedDuration(seg.segments, variables, components);
+      if (!seg.label && seg.targetDuration != null) {
+        // Duration-based loop: its fixed duration IS the target
+        total += resolveTargetDuration(seg, variables);
+      } else {
+        const varName = seg.variable;
+        const repeat = (varName && variables[varName] != null)
+          ? resolveVar(variables[varName]) || 1
+          : (seg.repeat || 1);
+        total += repeat * computeFixedDuration(seg.segments, variables, components);
+      }
     }
     // split_marker: excluded from fixed duration
   }
@@ -268,17 +273,22 @@ function computeFixedDuration(segments, variables, components) {
 /**
  * Count effective split markers in a segment list, accounting for loop repeats and multipliers.
  */
-function countMarkers(segments, variables) {
+function countMarkers(segments, variables, components = {}) {
   let count = 0;
   for (const seg of segments) {
     if (seg.type === 'split_marker') {
       count += seg.multiplier || 1;
     } else if (seg.type === 'loop') {
-      const varName = seg.variable;
-      const repeat = (varName && variables[varName] != null)
-        ? resolveVar(variables[varName]) || 1
-        : (seg.repeat || 1);
-      count += repeat * countMarkers(seg.segments, variables);
+      let repeat;
+      if (!seg.label && seg.targetDuration != null) {
+        repeat = computeDurationRepeat(seg, variables, components);
+      } else {
+        const varName = seg.variable;
+        repeat = (varName && variables[varName] != null)
+          ? resolveVar(variables[varName]) || 1
+          : (seg.repeat || 1);
+      }
+      count += repeat * countMarkers(seg.segments, variables, components);
     }
   }
   return count;
@@ -318,23 +328,56 @@ export function computeMarkerDuration(script, markerId, variables, components) {
   if (!section || section.targetDuration == null) return null;
   const target = resolveValue(section.targetDuration, variables);
   const fixed = computeFixedDuration(section.segments, variables, components);
-  const markers = countMarkers(section.segments, variables);
+  const markers = countMarkers(section.segments, variables, components);
   if (markers === 0) return null;
   const remaining = target - fixed;
   return remaining > 0 ? remaining / markers : 0;
 }
 
-export function flattenScript(segments, variables = {}) {
+/**
+ * Resolve a loop's targetDuration to seconds.
+ * If the value is a variable reference, the variable's own unit applies.
+ * Otherwise, the segment's targetDurationUnit is used as the multiplier.
+ */
+function resolveTargetDuration(seg, variables) {
+  const val = seg.targetDuration;
+  const s = String(val);
+  const m = s.match(/^\{(\w+)\}$/);
+  if (m && variables[m[1]] != null) {
+    return resolveVar(variables[m[1]]);
+  }
+  const raw = Number(s) || 0;
+  const unit = seg.targetDurationUnit || 'seconds';
+  return raw * (UNIT_MULTIPLIERS[unit] || 1);
+}
+
+/**
+ * Compute the repeat count for a duration-based loop.
+ * Rounds up so the loop always fills (and slightly exceeds) the target duration.
+ */
+export function computeDurationRepeat(seg, variables, components) {
+  const target = resolveTargetDuration(seg, variables);
+  const iterDuration = computeFixedDuration(seg.segments, variables, components);
+  return iterDuration > 0 ? Math.max(1, Math.ceil(target / iterDuration)) : 1;
+}
+
+export function flattenScript(segments, variables = {}, components = {}) {
   const flat = [];
   for (const seg of segments) {
     if (seg.type === 'loop') {
-      const varName = seg.variable;
-      const repeat = (varName && variables[varName] != null)
-        ? resolveVar(variables[varName]) || 1
-        : (seg.repeat || 1);
+      let repeat;
+      if (!seg.label && seg.targetDuration != null) {
+        repeat = computeDurationRepeat(seg, variables, components);
+      } else {
+        const varName = seg.variable;
+        repeat = (varName && variables[varName] != null)
+          ? resolveVar(variables[varName]) || 1
+          : (seg.repeat || 1);
+      }
+      const iterDuration = computeFixedDuration(seg.segments, variables, components);
       for (let r = 0; r < repeat; r++) {
-        flattenScript(seg.segments, variables).forEach(f => {
-          flat.push({ ...f, loopId: seg.id, loopIteration: r + 1, loopTotal: Number(repeat) });
+        flattenScript(seg.segments, variables, components).forEach(f => {
+          flat.push({ ...f, loopId: seg.id, loopIteration: r + 1, loopTotal: Number(repeat), loopIterDuration: iterDuration });
         });
       }
     } else {

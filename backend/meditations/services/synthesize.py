@@ -2,8 +2,10 @@ import base64
 import hashlib
 import io
 import json
+import math
 import os
 import re
+import time
 from pathlib import Path
 
 from elevenlabs import ElevenLabs
@@ -43,7 +45,7 @@ def _number_to_words(n: int) -> str:
     return str(n)
 
 
-UNIT_MULTIPLIERS = {"minutes": 60, "seconds": 1}
+UNIT_MULTIPLIERS = {"seconds": 1, "minutes": 60, "hours": 3600}
 
 
 def _resolve_var(val):
@@ -102,7 +104,10 @@ def _collect_speech_segments(segments: list[dict]) -> dict:
     speech = {}
     for seg in segments:
         if seg["type"] == "speech":
-            speech[seg["id"]] = seg["text"]
+            speech[seg["id"]] = {
+                "text": seg["text"],
+                "direction": seg.get("direction", ""),
+            }
         elif seg["type"] == "loop":
             speech.update(_collect_speech_segments(seg["segments"]))
     return speech
@@ -114,6 +119,7 @@ def generate_components(
     stage_id: str = None,
     voice: str = DEFAULT_VOICE,
     extra_variables: dict = None,
+    only_seg_ids: set = None,
 ):
     """Generate and cache speech components + word timestamps.
 
@@ -134,9 +140,12 @@ def generate_components(
     speech_segments = _collect_speech_segments(script)
     total = len(speech_segments)
 
-    for i, (seg_id, raw_text) in enumerate(speech_segments.items()):
-        text = _substitute_variables(raw_text, variables)
-        text_hash = hashlib.md5(text.encode()).hexdigest()[:8]
+    for i, (seg_id, seg_info) in enumerate(speech_segments.items()):
+        if only_seg_ids is not None and seg_id not in only_seg_ids:
+            continue
+        text = _substitute_variables(seg_info["text"], variables)
+        direction = seg_info["direction"]
+        text_hash = hashlib.md5((text + direction).encode()).hexdigest()[:8]
 
         component, _ = Component.objects.get_or_create(
             meditation=meditation, stage=stage, seg_id=seg_id,
@@ -147,14 +156,50 @@ def generate_components(
             print(f"  [{i + 1}/{total}] cached: {seg_id}")
             continue
 
+        # Reuse audio from another component with the same text+direction
+        existing = Component.objects.filter(
+            meditation=meditation, text_hash=text_hash,
+        ).exclude(audio_file="").first()
+        if existing:
+            component.text_hash = text_hash
+            component.timestamps = existing.timestamps
+            component.audio_file = existing.audio_file
+            component.save()
+            print(f"  [{i + 1}/{total}] reused: {seg_id}")
+            continue
+
         print(f'  [{i + 1}/{total}] generating: "{text[:50]}..."')
 
-        response = client.text_to_speech.convert_with_timestamps(
-            text=text,
+        # For very short texts, the multilingual model can misinterpret the
+        # language.  Ensure the text ends with a period to anchor pronunciation.
+        synth_text = text if text.rstrip().endswith((".", "!", "?")) else text.rstrip() + "."
+
+        # Use direction as previous_text to guide vocal tone/pacing
+        tts_kwargs = dict(
+            text=synth_text,
             voice_id=voice,
             model_id="eleven_multilingual_v2",
             output_format="mp3_44100_128",
+            language_code="en",
         )
+        if direction:
+            tts_kwargs["previous_text"] = direction
+
+        # Retry with exponential backoff on rate-limit / server errors
+        for attempt in range(5):
+            try:
+                response = client.text_to_speech.convert_with_timestamps(**tts_kwargs)
+                break
+            except Exception as exc:
+                status = getattr(exc, "status_code", None) or getattr(
+                    getattr(exc, "response", None), "status_code", None
+                )
+                if status in (429, 503) and attempt < 4:
+                    wait = 2 ** attempt  # 1, 2, 4, 8, 16 seconds
+                    print(f"    ElevenLabs {status}, retrying in {wait}s...")
+                    time.sleep(wait)
+                else:
+                    raise
 
         # Re-encode audio at 192k bitrate
         audio_bytes = base64.b64decode(response.audio_base_64)
@@ -244,8 +289,12 @@ def _assemble_segments(
     if variables is None:
         variables = {}
     combined = AudioSegment.empty()
+    prev_type = None
 
-    for seg in segments:
+    _FADE_MS = 300
+    _CROSSFADE_MS = 150
+
+    for i, seg in enumerate(segments):
         seg_type = seg["type"]
 
         if seg_type == "speech":
@@ -257,7 +306,15 @@ def _assemble_segments(
             audio_data = storage.download_file(component.audio_file.name)
             audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
             audio = _apply_trim(audio, component.trim_meta)
-            combined += audio
+            # Fade out when followed by silence (pause, split_marker, or end)
+            next_type = segments[i + 1]["type"] if i + 1 < len(segments) else None
+            if next_type in (None, "pause", "split_marker"):
+                audio = audio.fade_out(_FADE_MS)
+            # Crossfade when speech follows speech
+            if prev_type == "speech" and len(combined) >= _CROSSFADE_MS and len(audio) >= _CROSSFADE_MS:
+                combined = combined.append(audio, crossfade=_CROSSFADE_MS)
+            else:
+                combined += audio
 
         elif seg_type == "pause":
             duration = seg["duration_seconds"]
@@ -291,10 +348,10 @@ def _assemble_segments(
 
         elif seg_type == "loop":
             target = seg.get("targetDuration")
+            is_section = bool(seg.get("label"))
 
-            if target is not None:
-                # Section with a target duration — two-pass split
-                # Resolve variable reference like {varName}
+            if target is not None and is_section:
+                # Section with a target duration — two-pass split marker distribution
                 if isinstance(target, str):
                     match = re.match(r"^\{(\w+)\}$", target)
                     if match and match.group(1) in variables:
@@ -331,8 +388,34 @@ def _assemble_segments(
                         seg["segments"], meditation_name, stage_id,
                         depth + 1, variables, marker_duration=marker_duration,
                     )
+
+            elif target is not None and not is_section:
+                # Duration-based loop — repeat content to fill target duration
+                if isinstance(target, str):
+                    match = re.match(r"^\{(\w+)\}$", target)
+                    if match and match.group(1) in variables:
+                        target = _resolve_var(variables[match.group(1)])
+                target_seconds = float(target)
+                # Apply unit multiplier (variable refs already resolve to seconds)
+                if not (isinstance(seg.get("targetDuration"), str)
+                        and re.match(r"^\{\w+\}$", seg["targetDuration"])):
+                    unit = seg.get("targetDurationUnit", "seconds")
+                    target_seconds *= UNIT_MULTIPLIERS.get(unit, 1)
+
+                iteration = _assemble_segments(
+                    seg["segments"], meditation_name, stage_id,
+                    depth + 1, variables, marker_duration=marker_duration,
+                )
+                iteration_duration = len(iteration) / 1000.0
+                if iteration_duration > 0:
+                    repeat = max(1, math.ceil(target_seconds / iteration_duration))
+                else:
+                    repeat = 1
+                for _ in range(repeat):
+                    combined += iteration
+
             else:
-                # Standard loop logic
+                # Standard count-based loop
                 var_name = seg.get("variable")
                 if var_name and var_name in variables:
                     repeat = int(_resolve_var(variables[var_name]))
@@ -345,7 +428,150 @@ def _assemble_segments(
                 for _ in range(repeat):
                     combined += iteration
 
+        prev_type = seg_type
+
     return combined
+
+
+def _preload_component_durations(meditation_name, stage_id):
+    """Bulk-load all component durations for a stage into a dict keyed by seg_id."""
+    from meditations.models import Component
+    cache = {}
+    qs = Component.objects.filter(
+        meditation_id=meditation_name,
+        stage__stage_id=stage_id if stage_id else None,
+    )
+    for c in qs:
+        ts = c.timestamps or []
+        dur = ts[-1]["end"] if ts else 0
+        if c.trim_meta and "start" in c.trim_meta and "end" in c.trim_meta:
+            dur = c.trim_meta["end"] - c.trim_meta["start"]
+        cache[c.seg_id] = dur
+    return cache
+
+
+def _preload_asset_durations(segments):
+    """Bulk-load asset durations for all asset segments in a script."""
+    from meditations.models import Asset
+    filenames = set()
+    def _collect(segs):
+        for seg in segs:
+            if seg["type"] == "asset":
+                filenames.add(seg["file"])
+            elif seg["type"] == "loop":
+                _collect(seg.get("segments", []))
+    _collect(segments)
+    if not filenames:
+        return {}
+    cache = {}
+    for a in Asset.objects.filter(filename__in=filenames):
+        if a.trim_meta and "start" in a.trim_meta and "end" in a.trim_meta:
+            cache[a.filename] = a.trim_meta["end"] - a.trim_meta["start"]
+        else:
+            cache[a.filename] = 0
+    return cache
+
+
+def _compute_duration(
+    segments: list[dict],
+    variables: dict = None,
+    marker_duration: float = None,
+    comp_cache: dict = None,
+    asset_cache: dict = None,
+) -> float:
+    """Compute expected duration in seconds using preloaded caches."""
+    if variables is None:
+        variables = {}
+    if comp_cache is None:
+        comp_cache = {}
+    if asset_cache is None:
+        asset_cache = {}
+    total = 0.0
+
+    for seg in segments:
+        seg_type = seg["type"]
+
+        if seg_type == "speech":
+            total += comp_cache.get(seg["id"], 0)
+
+        elif seg_type == "pause":
+            duration = seg["duration_seconds"]
+            if isinstance(duration, str):
+                match = re.match(r"^\{(\w+)\}$", duration)
+                if match and match.group(1) in variables:
+                    duration = _resolve_var(variables[match.group(1)])
+                else:
+                    duration = float(duration) if duration.replace(".", "").isdigit() else 0
+            total += float(duration)
+
+        elif seg_type == "split_marker":
+            if marker_duration is not None:
+                mult = seg.get("multiplier", 1)
+                total += marker_duration * mult
+
+        elif seg_type == "asset":
+            total += asset_cache.get(seg["file"], 0)
+
+        elif seg_type == "loop":
+            target = seg.get("targetDuration")
+            is_section = bool(seg.get("label"))
+
+            if target is not None and is_section:
+                if isinstance(target, str):
+                    match = re.match(r"^\{(\w+)\}$", target)
+                    if match and match.group(1) in variables:
+                        target = _resolve_var(variables[match.group(1)])
+                total += float(target)
+
+            elif target is not None and not is_section:
+                if isinstance(target, str):
+                    match = re.match(r"^\{(\w+)\}$", target)
+                    if match and match.group(1) in variables:
+                        target = _resolve_var(variables[match.group(1)])
+                target_seconds = float(target)
+                if not (isinstance(seg.get("targetDuration"), str)
+                        and re.match(r"^\{\w+\}$", seg["targetDuration"])):
+                    unit = seg.get("targetDurationUnit", "seconds")
+                    target_seconds *= UNIT_MULTIPLIERS.get(unit, 1)
+                total += target_seconds
+
+            else:
+                var_name = seg.get("variable")
+                if var_name and var_name in variables:
+                    repeat = int(_resolve_var(variables[var_name]))
+                else:
+                    repeat = seg.get("repeat", 1)
+                iteration_dur = _compute_duration(
+                    seg["segments"], variables, marker_duration,
+                    comp_cache, asset_cache,
+                )
+                total += repeat * iteration_dur
+
+    return total
+
+
+def compute_stage_duration(
+    meditation_name: str,
+    stage_id: str,
+    variables: dict = None,
+    comp_cache: dict = None,
+    asset_cache: dict = None,
+) -> float:
+    """Compute expected duration for a stage with the given variables."""
+    from meditations.models import Stage
+    try:
+        stage = Stage.objects.get(meditation_id=meditation_name, stage_id=stage_id)
+    except Stage.DoesNotExist:
+        return 0
+    script = stage.script or []
+    merged_vars = _collect_variables(script)
+    if variables:
+        merged_vars.update(variables)
+    if comp_cache is None:
+        comp_cache = _preload_component_durations(meditation_name, stage_id)
+    if asset_cache is None:
+        asset_cache = _preload_asset_durations(script)
+    return _compute_duration(script, merged_vars, comp_cache=comp_cache, asset_cache=asset_cache)
 
 
 def assemble(

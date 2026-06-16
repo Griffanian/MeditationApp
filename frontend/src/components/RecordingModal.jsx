@@ -30,6 +30,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
   const [recording, setRecording] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [deleted, setDeleted] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(null);
   const [trimMode, setTrimMode] = useState(false);
@@ -60,7 +61,9 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
     }
   }
 
-  const audioUrl = hasAudio
+  const effectiveHasAudio = hasAudio && !deleted;
+
+  const audioUrl = effectiveHasAudio
     ? (seg.type === 'asset'
       ? `${BASE}/audio/asset/${seg.file}`
       : stageId
@@ -236,8 +239,6 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
     try {
       const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/generate-audio/${seg.id}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: seg.text }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -360,7 +361,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
           )}
 
           {/* Waveform player */}
-          {hasAudio && (
+          {effectiveHasAudio && (
             <div className="modal-section">
               <p className="modal-section-label">
                 Current recording
@@ -393,6 +394,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
                     )}
                     <button className="modal-btn-sm modal-btn-delete" onClick={async () => {
                       if (!window.confirm('Are you sure you want to delete this recording?')) return;
+                      setDeleted(true);
                       await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/delete-component/${seg.id}`, { method: 'DELETE' });
                       onDone();
                     }}>🗑 Delete</button>
@@ -409,7 +411,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
             </div>
           )}
 
-          {!hasAudio && (
+          {!effectiveHasAudio && (
             <div className="modal-section">
               <p className="modal-no-audio">No recording yet</p>
             </div>

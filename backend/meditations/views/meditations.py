@@ -88,7 +88,7 @@ class CategoryListView(APIView):
 
     def get(self, request):
         return Response([
-            {"name": c.name, "display_name": c.display_name, "sort_order": c.sort_order}
+            {"name": c.name, "display_name": c.display_name, "sort_order": c.sort_order, "group": c.group}
             for c in Category.objects.all()
         ])
 
@@ -97,12 +97,13 @@ class CategoryListView(APIView):
         if not display_name:
             return Response({"error": "display_name required"}, status=400)
         cat_id = f"cat-{uuid.uuid4().hex[:12]}"
+        group = (request.data.get("group") or "").strip()
         cat = Category.objects.create(
-            name=cat_id, display_name=display_name, sort_order=50,
+            name=cat_id, display_name=display_name, sort_order=50, group=group,
         )
         return Response({
             "name": cat.name, "display_name": cat.display_name,
-            "sort_order": cat.sort_order,
+            "sort_order": cat.sort_order, "group": cat.group,
         }, status=201)
 
 
@@ -115,6 +116,8 @@ class CategoryDetailView(APIView):
             cat.display_name = request.data["display_name"]
         if "sort_order" in request.data:
             cat.sort_order = request.data["sort_order"]
+        if "group" in request.data:
+            cat.group = request.data["group"]
         cat.save()
         return Response({"status": "ok"})
 

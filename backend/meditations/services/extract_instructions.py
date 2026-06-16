@@ -172,7 +172,7 @@ def extract_instructions(meditation_name: str, youtube_url: str = None, context:
         content = prompt
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=4096,
         system=SYSTEM_PROMPT,
         messages=[

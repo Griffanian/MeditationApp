@@ -32,6 +32,7 @@ urlpatterns = [
 
     # Durations
     path("api/stage-durations", assembly.StageDurationsView.as_view()),
+    path("api/compute-durations", assembly.ComputeDurationsView.as_view()),
 
     # Root-level assembly
     path("api/meditations/<str:name>/assemble", assembly.RootAssembleView.as_view()),

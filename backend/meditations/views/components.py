@@ -1,5 +1,6 @@
 import hashlib
 import re
+import traceback
 
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
@@ -52,8 +53,15 @@ class ComponentMixin:
         variables.update(extra_vars)
         speech = _collect_speech_segments(script)
 
+        from ..models import Stage
+        stage_obj = None
+        if stage_id:
+            stage_obj = Stage.objects.filter(meditation_id=name, stage_id=stage_id).first()
+
         result = {}
-        for seg_id, raw_text in speech.items():
+        for seg_id, seg_info in speech.items():
+            raw_text = seg_info["text"]
+            direction = seg_info["direction"]
             try:
                 component = Component.objects.get(
                     meditation_id=name,
@@ -61,10 +69,27 @@ class ComponentMixin:
                     seg_id=seg_id,
                 )
             except Component.DoesNotExist:
-                result[seg_id] = {"status": "missing"}
-                continue
+                component = None
 
-            if not component.audio_file:
+            if component and not component.audio_file:
+                component = None
+
+            # Auto-clone from a component with the same text+direction hash
+            if not component:
+                substituted = _substitute_variables(raw_text, variables)
+                content_hash = hashlib.md5((substituted + direction).encode()).hexdigest()[:8]
+                existing = Component.objects.filter(
+                    meditation_id=name, text_hash=content_hash,
+                ).exclude(audio_file="").first()
+                if existing:
+                    component = Component.objects.create(
+                        meditation_id=name, stage=stage_obj, seg_id=seg_id,
+                        text_hash=content_hash,
+                        timestamps=existing.timestamps,
+                        audio_file=existing.audio_file,
+                    )
+
+            if not component:
                 result[seg_id] = {"status": "missing"}
                 continue
 
@@ -74,13 +99,8 @@ class ComponentMixin:
             if component.trim_meta and "start" in component.trim_meta and "end" in component.trim_meta:
                 duration = component.trim_meta["end"] - component.trim_meta["start"]
 
-            has_vars = bool(re.search(r"\{\w+\}", raw_text))
-            if not has_vars:
-                result[seg_id] = {"status": "current", "duration": duration}
-                continue
-
             substituted = _substitute_variables(raw_text, variables)
-            current_hash = hashlib.md5(substituted.encode()).hexdigest()[:8]
+            current_hash = hashlib.md5((substituted + direction).encode()).hexdigest()[:8]
             status = "current" if component.text_hash == current_hash else "stale"
             result[seg_id] = {"status": status, "duration": duration}
 
@@ -98,22 +118,18 @@ class ComponentMixin:
             return Response([])
 
     def _generate_audio(self, request, name, stage_id, seg_id):
-        text = request.data.get("text", "")
-        if not text:
-            return Response({"error": "no text"}, status=400)
+        script, extra_vars = self._get_script_and_vars(name, stage_id)
+        if not script:
+            return Response({"error": "No script"}, status=400)
 
-        extra_vars = {}
-        if stage_id:
-            try:
-                stage = Stage.objects.get(meditation_id=name, stage_id=stage_id)
-                extra_vars = self._parse_variables(stage.variables)
-            except Stage.DoesNotExist:
-                pass
+        speech = _collect_speech_segments(script)
+        if seg_id not in speech:
+            return Response({"error": f"Segment '{seg_id}' not found in script"}, status=404)
 
-        script = [{"type": "speech", "id": seg_id, "text": text}]
         try:
-            generate_components(script, name, stage_id, extra_variables=extra_vars)
+            generate_components(script, name, stage_id, extra_variables=extra_vars, only_seg_ids={seg_id})
         except Exception as e:
+            traceback.print_exc()
             return Response({"error": str(e)}, status=500)
         return Response({"status": "ok"})
 
@@ -160,13 +176,13 @@ class StageGenerateAllView(ComponentMixin, APIView):
     permission_classes = [IsAdmin]
 
     def post(self, request, name, stage_id):
-        stage = get_object_or_404(Stage, meditation_id=name, stage_id=stage_id)
-        if not stage.script:
+        script, extra_vars = self._get_script_and_vars(name, stage_id)
+        if not script:
             return Response({"error": "No script to generate from"}, status=400)
-        extra_vars = self._parse_variables(stage.variables)
         try:
-            generate_components(stage.script, name, stage_id, extra_variables=extra_vars)
+            generate_components(script, name, stage_id, extra_variables=extra_vars)
         except Exception as e:
+            traceback.print_exc()
             return Response({"error": str(e)}, status=500)
         return Response({"status": "ok"})
 
@@ -238,6 +254,13 @@ def _redirect_to_storage(path):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def serve_component(request, name, filename):
+    seg_id = filename.rsplit(".", 1)[0]
+    try:
+        comp = Component.objects.get(meditation_id=name, stage=None, seg_id=seg_id)
+        if comp.audio_file:
+            return _redirect_to_storage(comp.audio_file.name)
+    except Component.DoesNotExist:
+        pass
     return _redirect_to_storage(f"meditations/{name}/components/{filename}")
 
 
@@ -250,6 +273,13 @@ def serve_output(request, name, filename):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def serve_stage_component(request, name, stage_id, filename):
+    seg_id = filename.rsplit(".", 1)[0]
+    try:
+        comp = Component.objects.get(meditation_id=name, stage__stage_id=stage_id, seg_id=seg_id)
+        if comp.audio_file:
+            return _redirect_to_storage(comp.audio_file.name)
+    except Component.DoesNotExist:
+        pass
     return _redirect_to_storage(f"meditations/{name}/stages/{stage_id}/components/{filename}")
 
 

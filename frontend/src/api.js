@@ -18,6 +18,13 @@ export function apiFetch(url, opts = {}) {
   });
 }
 
+// Safely parse JSON, returning fallback on empty/invalid response.
+async function safeJson(res, fallback = null) {
+  const text = await res.text();
+  if (!text) return fallback;
+  try { return JSON.parse(text); } catch { return fallback; }
+}
+
 // --- Auth ---
 
 export async function checkAuth() {
@@ -47,18 +54,26 @@ export function logoutUser() {
 
 export async function fetchCategories() {
   const res = await apiFetch(`${BASE}/api/categories`);
-  return res.json();
+  return safeJson(res, []);
 }
 
-export async function createCategory(displayName) {
+export async function createCategory(displayName, group = '') {
   const res = await apiFetch(`${BASE}/api/categories`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ display_name: displayName }),
+    body: JSON.stringify({ display_name: displayName, group }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to create');
   return data;
+}
+
+export async function updateCategory(name, updates) {
+  await apiFetch(`${BASE}/api/categories/${name}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
 }
 
 export async function renameCategory(name, displayName) {
@@ -75,7 +90,7 @@ export async function deleteCategory(name) {
 
 export async function fetchMeditations() {
   const res = await apiFetch(`${BASE}/api/meditations`);
-  return res.json();
+  return safeJson(res, []);
 }
 
 export async function createMeditation(displayName, category) {
@@ -180,11 +195,20 @@ export async function fetchStageDurations(items) {
   return res.json();
 }
 
+export async function computeDurations(items) {
+  const res = await apiFetch(`${BASE}/api/compute-durations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  return safeJson(res, {});
+}
+
 // --- Per-stage APIs ---
 
 export async function fetchStageVariables(name, stageId) {
   const res = await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/variables`);
-  return res.json();
+  return safeJson(res, {});
 }
 
 export async function saveStageVariables(name, stageId, variables) {
@@ -197,7 +221,7 @@ export async function saveStageVariables(name, stageId, variables) {
 
 export async function fetchStageScript(name, stageId) {
   const res = await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/script`);
-  return res.json();
+  return safeJson(res, []);
 }
 
 export async function saveStageScript(name, stageId, script) {
@@ -210,7 +234,7 @@ export async function saveStageScript(name, stageId, script) {
 
 export async function fetchStageComponents(name, stageId) {
   const res = await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/components`);
-  return res.json();
+  return safeJson(res, {});
 }
 
 export async function fetchStageTimestamps(name, stageId, segId) {

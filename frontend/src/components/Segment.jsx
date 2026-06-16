@@ -4,13 +4,14 @@ import { CSS } from '@dnd-kit/utilities';
 import DragHandle from './DragHandle';
 import KebabMenu from './KebabMenu';
 import RecordingModal from './RecordingModal';
-import { clearTimestampCache, computeMarkerDuration } from '../playback';
+import { clearTimestampCache, computeMarkerDuration, resolveVar } from '../playback';
 
 export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, audioStatus = 'missing', meditationName, stageId, onRefreshComponents, insidePlayingParent, variables = {}, onUpdateVariable, selected, onSelect, onContextMenu, fullScript, components = {}, readOnly }) {
   const hasAudio = audioStatus === 'current';
   const isStale = audioStatus === 'stale';
   const [editing, setEditing] = useState(seg.type === 'speech' && seg.text === 'New spoken segment.');
   const [editText, setEditText] = useState(seg.text || '');
+  const [editDirection, setEditDirection] = useState(seg.direction || '');
   const [showModal, setShowModal] = useState(false);
   const [editPause, setEditPause] = useState(seg.duration_seconds);
   const inputRef = useRef(null);
@@ -19,6 +20,36 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
   useEffect(() => {
     if (editing && inputRef.current) inputRef.current.select();
   }, [editing]);
+
+  // Restore countdown text when this segment stops playing
+  useEffect(() => {
+    if (playingId === seg.id) return;
+    const el = document.querySelector(`.countdown[data-seg-id="${seg.id}"]`);
+    if (!el) return;
+    if (seg.type === 'pause') {
+      const strVal = String(seg.duration_seconds);
+      const varMatch = strVal.match(/^\{(\w+)\}$/);
+      if (varMatch && variables[varMatch[1]] != null) {
+        const varObj = variables[varMatch[1]];
+        const rawVal = typeof varObj === 'object' ? varObj.value : varObj;
+        const unit = typeof varObj === 'object' ? varObj.unit : undefined;
+        el.textContent = unit === 'minutes' ? `${rawVal} min` : String(rawVal);
+      } else {
+        el.textContent = strVal;
+      }
+    } else if (seg.type === 'split_marker') {
+      const dur = computeMarkerDuration(fullScript, seg.id, variables, components);
+      if (dur != null) {
+        const mult = seg.multiplier || 1;
+        const totalDur = dur * mult;
+        if (totalDur >= 60) {
+          el.textContent = `${(totalDur / 60).toFixed(1).replace(/\.0$/, '')} min`;
+        } else {
+          el.textContent = String(Math.round(totalDur));
+        }
+      }
+    }
+  }, [playingId]);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({ id: seg.id });
 
@@ -37,19 +68,22 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
     const hasVars = /\{\w+\}/.test(seg.text);
     if (editing) {
       label = (
-        <input
+        <textarea
           ref={inputRef}
           className="speech-text-input"
           value={editText}
+          spellCheck={true}
+          rows={Math.max(2, editText.split('\n').length)}
           onClick={e => e.stopPropagation()}
           onChange={e => setEditText(e.target.value)}
           onBlur={() => { setEditing(false); if (editText !== seg.text) onUpdate(seg.id, { text: editText }); }}
-          onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+          onKeyDown={e => { if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) e.target.blur(); }}
         />
       );
     } else {
       const words = seg.text.split(' ').map((w, wi) => {
         const isVar = /\{\w+\}/.test(w);
+        const parts = w.split('\n');
         return (
           <span
             key={wi}
@@ -58,13 +92,22 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
             data-word={wi}
             onClick={e => { e.stopPropagation(); if (e.shiftKey) { onSelect(seg.id, true); return; } onWordClick(seg.id, wi); }}
             style={{ cursor: 'pointer' }}
-          >{w} </span>
+          >{parts.length > 1 ? parts.map((p, pi) => <span key={pi}>{pi > 0 && <br />}{p}</span>) : w}{' '}</span>
         );
       });
       label = (
         <span className="text">
           {words}
           <span className="speech-edit-btn" onClick={e => { e.stopPropagation(); setEditText(seg.text); setEditing(true); }}>✎</span>
+          <input
+            className="direction-input"
+            placeholder="Direction (e.g. slow, breathy, calm)"
+            value={editDirection}
+            onClick={e => e.stopPropagation()}
+            onChange={e => setEditDirection(e.target.value)}
+            onBlur={() => { if (editDirection !== (seg.direction || '')) onUpdate(seg.id, { direction: editDirection }); }}
+            onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+          />
         </span>
       );
     }
@@ -157,7 +200,8 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
   if (seg.type === 'speech') {
     const words = seg.text.split(' ').map((w, wi) => {
       const isVar = /\{\w+\}/.test(w);
-      return <span key={wi} className={`word ${isVar ? 'var-ref' : ''}`}>{w} </span>;
+      const parts = w.split('\n');
+      return <span key={wi} className={`word ${isVar ? 'var-ref' : ''}`}>{parts.length > 1 ? parts.map((p, pi) => <span key={pi}>{pi > 0 && <br />}{p}</span>) : w}{' '}</span>;
     });
     readOnlyLabel = <span className="text">{words}</span>;
   } else if (seg.type === 'pause') {

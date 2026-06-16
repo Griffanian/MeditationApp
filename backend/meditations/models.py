@@ -5,6 +5,7 @@ class Category(models.Model):
     name = models.CharField(max_length=200, unique=True, primary_key=True)
     display_name = models.CharField(max_length=200)
     sort_order = models.IntegerField(default=0)
+    group = models.CharField(max_length=200, blank=True, default="")
 
     class Meta:
         ordering = ["sort_order", "display_name"]
@@ -53,7 +54,7 @@ class Component(models.Model):
     text_hash = models.CharField(max_length=8, blank=True)
     timestamps = models.JSONField(default=list, blank=True)
     trim_meta = models.JSONField(default=dict, blank=True)
-    audio_file = models.FileField(upload_to="components/", blank=True)
+    audio_file = models.FileField(upload_to="components/", max_length=300, blank=True)
 
     class Meta:
         unique_together = ("meditation", "stage", "seg_id")
@@ -64,7 +65,7 @@ class Component(models.Model):
 
 class Asset(models.Model):
     filename = models.CharField(max_length=200, unique=True, primary_key=True)
-    audio_file = models.FileField(upload_to="assets/")
+    audio_file = models.FileField(upload_to="assets/", max_length=300)
     trim_meta = models.JSONField(default=dict, blank=True)
 
     def __str__(self):
@@ -91,7 +92,7 @@ class AssembledOutput(models.Model):
         Stage, on_delete=models.CASCADE, null=True, blank=True,
     )
     script_hash = models.CharField(max_length=10)
-    audio_file = models.FileField(upload_to="outputs/")
+    audio_file = models.FileField(upload_to="outputs/", max_length=300)
     duration = models.FloatField()
 
     class Meta:

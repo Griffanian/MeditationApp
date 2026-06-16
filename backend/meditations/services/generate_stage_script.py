@@ -21,7 +21,7 @@ The "script" array contains segments. Each segment must be one of these types:
 1. {"type": "speech", "text": "...", "id": "unique_id"} — spoken instruction. The id must be unique across the script (e.g. "welcome", "round_intro", "rest_1").
 2. {"type": "pause", "duration_seconds": N} — silent pause in seconds
 3. {"type": "asset", "file": "and_out.mp3"} — play a pre-recorded audio clip from the assets folder
-4. {"type": "loop", "variable": "X", "repeat": N, "segments": [...]} — repeat a sequence of segments N times. The "variable" field names this loop's count so it can be referenced. Segments inside can be any of these types including nested loops.
+4. {"type": "loop", "variable": "X", "repeat": N, "segments": [...]} — repeat a sequence of segments N times. The "variable" field names this loop's count so it can be referenced. Segments inside can be any of these types including nested loops. Alternatively, a loop can have a "targetDuration" field instead of a repeat count — the loop will repeat its content enough times to fill the target duration (rounding up). Use "targetDurationUnit" ("seconds", "minutes", or "hours") to set the unit (default "seconds"). The value can also be a variable reference like "{duration}", in which case the variable's own unit applies.
 5. Sections: {"type": "loop", "repeat": 1, "label": "Section Name", "segments": [...]} — a non-repeating group used to organize segments visually.
 
 For rhythmic breath cues, use a loop containing an asset and a pause. For example, 9 breath cues at 1-second intervals:
@@ -67,7 +67,7 @@ def generate_stage_script(stage_instructions: dict) -> dict:
     user_prompt += "\n\nGenerate the script and variables as a JSON object."
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=4096,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],

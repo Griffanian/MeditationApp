@@ -2,6 +2,7 @@ import { useDroppable } from '@dnd-kit/core';
 import SortableList from './SortableList';
 import Segment from './Segment';
 import Loop from './Loop';
+import AddZone from './AddZone';
 
 function AfterDropZone({ id }) {
   const { setNodeRef, isOver } = useDroppable({ id: `after:${id}` });
@@ -36,6 +37,7 @@ export default function Timeline({
   onContextMenu,
   fullScript,
   readOnly,
+  containerId,
 }) {
   const ids = segments.map(seg => seg.id);
 
@@ -102,6 +104,9 @@ export default function Timeline({
           );
         })}
       </SortableList>
+      {!readOnly && (
+        <AddZone onAdd={newSeg => onInsert(containerId, 'append', newSeg)} />
+      )}
     </div>
   );
 }

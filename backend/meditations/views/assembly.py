@@ -8,7 +8,14 @@ from rest_framework.views import APIView
 
 from ..models import AssembledOutput, Meditation, Stage
 from ..services import storage
-from ..services.synthesize import _collect_variables, assemble, generate_components
+from ..services.synthesize import (
+    _collect_variables,
+    _preload_asset_durations,
+    _preload_component_durations,
+    assemble,
+    compute_stage_duration,
+    generate_components,
+)
 
 
 class AssemblyMixin:
@@ -103,6 +110,60 @@ class StageDurationsView(APIView):
                 results[key] = output.duration
             except (Stage.DoesNotExist, AssembledOutput.DoesNotExist):
                 results[key] = None
+        return Response(results)
+
+
+class ComputeDurationsView(APIView):
+    """Compute expected durations for items with specific variable overrides."""
+    def post(self, request):
+        items = request.data.get("items", [])
+
+        # Group items by stage to preload caches once per unique stage
+        stage_groups = {}
+        for item in items:
+            key = (item.get("meditation"), item.get("stage_id"))
+            if key[0] and key[1]:
+                stage_groups.setdefault(key, []).append(item)
+
+        # Preload script + component + asset caches per unique stage
+        caches = {}
+        for (med_name, stage_id) in stage_groups:
+            stage = Stage.objects.filter(
+                meditation_id=med_name, stage_id=stage_id,
+            ).first()
+            script = stage.script if stage else []
+            base_vars = _collect_variables(script)
+            caches[(med_name, stage_id)] = {
+                "script": script,
+                "base_vars": base_vars,
+                "comp": _preload_component_durations(med_name, stage_id),
+                "asset": _preload_asset_durations(script),
+            }
+
+        results = {}
+        for item in items:
+            item_id = item.get("id")
+            med_name = item.get("meditation")
+            stage_id = item.get("stage_id")
+            variables = item.get("variables")
+            if not item_id or not med_name or not stage_id:
+                continue
+            cache = caches.get((med_name, stage_id))
+            if not cache:
+                continue
+            try:
+                merged = {**cache["base_vars"]}
+                if variables:
+                    merged.update(variables)
+                from ..services.synthesize import _compute_duration
+                dur = _compute_duration(
+                    cache["script"], merged,
+                    comp_cache=cache["comp"],
+                    asset_cache=cache["asset"],
+                )
+                results[item_id] = round(dur, 1)
+            except Exception:
+                results[item_id] = None
         return Response(results)
 
 

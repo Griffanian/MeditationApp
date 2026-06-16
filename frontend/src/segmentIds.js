@@ -55,11 +55,14 @@ export function allIds(segments) {
   return ids;
 }
 
-// Deep clone segments and assign fresh IDs to every segment
+// Deep clone segments and assign fresh IDs to every segment.
+// For speech segments, preserve the original id as sourceId so the
+// backend can link the copy to the same audio component.
 export function cloneWithNewIds(segments) {
   const cloned = JSON.parse(JSON.stringify(segments));
   function reassign(segs) {
     for (const seg of segs) {
+      if (seg.type === 'speech') seg.sourceId = seg.id;
       seg.id = generateId();
       if (seg.type === 'loop' && seg.segments) reassign(seg.segments);
     }

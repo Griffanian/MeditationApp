@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DndContext, closestCenter, pointerWithin, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, assembleStage, generateAllAudio } from '../api';
-import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, computeMarkerDuration, registerExternalStop, unregisterExternalStop, resolveVar } from '../playback';
+import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, computeMarkerDuration, computeDurationRepeat, computeFixedDuration, registerExternalStop, unregisterExternalStop, resolveVar } from '../playback';
 import { getClipboard, setClipboard } from '../clipboard';
 import { generateId, ensureIds, findById, findByIdWithContext, allIds, cloneWithNewIds, isDescendantOf } from '../segmentIds';
 import { useLocalState } from '../utils';
@@ -23,6 +23,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   const [timelineCollapsed, setTimelineCollapsed] = useLocalState(`collapse:${meditationName}:${stageId}:timeline`, true);
   const scriptRef = useRef(script);
   const playAllModeRef = useRef(false);
+  const sequenceIdRef = useRef(0);
   const lastClickedRef = useRef(null);
   const undoStack = useRef([]);
   const redoStack = useRef([]);
@@ -219,6 +220,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
       }
     };
     const resetState = () => {
+      sequenceIdRef.current++;
       setPlayingId(null);
       setPlayingParentId(null);
       setLoopCounters({});
@@ -251,6 +253,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
     redoStack.current = [];
     setScript(newScript);
     await saveStageScript(meditationName, stageId, newScript);
+    fetchStageComponents(meditationName, stageId).then(setComponents);
   }, [meditationName, stageId]);
 
   function undo() {
@@ -363,12 +366,21 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   function insertNear(anchorId, position, newSeg) {
     if (!newSeg.id) newSeg.id = generateId();
     const newScript = JSON.parse(JSON.stringify(scriptRef.current));
-    const ctx = findByIdWithContext(newScript, anchorId);
-    if (!ctx) {
-      // No anchor, append to root
-      newScript.push(newSeg);
+    if (position === 'append') {
+      // Append to a loop/section's segments, or to root
+      if (anchorId) {
+        const loop = findById(newScript, anchorId);
+        if (loop && loop.segments) loop.segments.push(newSeg);
+      } else {
+        newScript.push(newSeg);
+      }
     } else {
-      ctx.parent.splice(position === 'above' ? ctx.index : ctx.index + 1, 0, newSeg);
+      const ctx = findByIdWithContext(newScript, anchorId);
+      if (!ctx) {
+        newScript.push(newSeg);
+      } else {
+        ctx.parent.splice(position === 'above' ? ctx.index : ctx.index + 1, 0, newSeg);
+      }
     }
     save(newScript);
   }
@@ -389,29 +401,39 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
 
     // Stop if clicking the currently playing segment or parent section
     if ((playingId === id || (isLoop && playingParentId === id)) && !isPaused) {
+      sequenceIdRef.current++;
       stopPlayback();
       setPlayingId(null);
       setPlayingParentId(null);
+      setLoopCounters({});
       setIsPaused(false);
       playAllModeRef.current = false; setIsPlayAll(false);
       return;
     }
 
+    sequenceIdRef.current++;
     stopPlayback();
     setIsPaused(false);
+    setLoopCounters({});
     playAllModeRef.current = false; setIsPlayAll(false);
 
     if (isLoop) {
       setPlayingParentId(id);
       const seg = findById(scriptRef.current, id);
-      const varName = seg.variable;
-      const repeat = (varName && variables[varName] != null)
-        ? resolveVar(variables[varName]) || 1
-        : (seg.repeat || 1);
+      const iterDuration = computeFixedDuration(seg.segments, variables, components);
+      let repeat;
+      if (!seg.label && seg.targetDuration != null) {
+        repeat = computeDurationRepeat(seg, variables, components);
+      } else {
+        const varName = seg.variable;
+        repeat = (varName && variables[varName] != null)
+          ? resolveVar(variables[varName]) || 1
+          : (seg.repeat || 1);
+      }
       const loopFlat = [];
       for (let r = 0; r < repeat; r++) {
         seg.segments.forEach(s => {
-          loopFlat.push({ seg: s, loopId: seg.id, loopIteration: r + 1, loopTotal: Number(repeat) });
+          loopFlat.push({ seg: s, loopId: seg.id, loopIteration: r + 1, loopTotal: Number(repeat), loopIterDuration: iterDuration });
         });
       }
       playSequence(loopFlat, 0);
@@ -438,6 +460,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   function playAll() {
     setMeditation(meditationName, stageId);
     if (playingId && !isPaused) {
+      sequenceIdRef.current++;
       stopPlayback();
       setPlayingId(null);
       setPlayingParentId(null);
@@ -446,15 +469,18 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
       playAllModeRef.current = false; setIsPlayAll(false);
       return;
     }
+    sequenceIdRef.current++;
     stopPlayback();
     setIsPaused(false);
     setPlayingParentId(null);
     playAllModeRef.current = true; setIsPlayAll(true);
-    const flat = flattenScript(scriptRef.current, variables);
+    const flat = flattenScript(scriptRef.current, variables, components);
     playSequence(flat, 0);
   }
 
-  function playSequence(flat, index) {
+  function playSequence(flat, index, seqId) {
+    if (seqId == null) seqId = sequenceIdRef.current;
+    if (seqId !== sequenceIdRef.current) return; // cancelled
     if (index >= flat.length) {
       setPlayingId(null);
       setPlayingParentId(null);
@@ -462,15 +488,28 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
       playAllModeRef.current = false; setIsPlayAll(false);
       return;
     }
-    const { seg, loopId, loopIteration, loopTotal } = flat[index];
+    const { seg, loopId, loopIteration, loopTotal, loopIterDuration } = flat[index];
     if (loopId && loopIteration) {
-      setLoopCounters(prev => ({ ...prev, [loopId]: { current: loopIteration, total: loopTotal } }));
+      setLoopCounters(prev => {
+        const existing = prev[loopId];
+        return {
+          ...prev,
+          [loopId]: {
+            current: loopIteration,
+            total: loopTotal,
+            iterDuration: loopIterDuration,
+            startTime: (!existing || existing.current !== loopIteration) ? Date.now() : existing.startTime,
+            loopStartTime: existing?.loopStartTime || Date.now(),
+          },
+        };
+      });
     }
     setPlayingId(seg.id);
-    playSeg(seg, () => playSequence(flat, index + 1), variables, { script: scriptRef.current, components });
+    playSeg(seg, () => playSequence(flat, index + 1, seqId), variables, { script: scriptRef.current, components });
   }
 
   function handleStop() {
+    sequenceIdRef.current++;
     stopPlayback();
     setPlayingId(null);
     setPlayingParentId(null);
@@ -482,6 +521,8 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   async function handleGenerateAll() {
     setStatus('Generating all audio...');
     try {
+      // Ensure the latest script is saved before generating
+      await saveStageScript(meditationName, stageId, scriptRef.current);
       await generateAllAudio(meditationName, stageId);
       setStatus('All audio generated!');
       // Reload everything so the timeline reflects the new audio
@@ -539,7 +580,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
                   </td>
                   <td>
                     {readOnly ? (
-                      <span className="variable-unit-select" style={{ border: 'none' }}>{unit === 'seconds' ? 'sec' : unit === 'minutes' ? 'min' : '—'}</span>
+                      <span className="variable-unit-select" style={{ border: 'none' }}>{unit === 'seconds' ? 'sec' : unit === 'minutes' ? 'min' : unit === 'hours' ? 'hr' : '—'}</span>
                     ) : (
                       <select
                         className="variable-unit-select"
@@ -549,14 +590,35 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
                         <option value="">—</option>
                         <option value="seconds">sec</option>
                         <option value="minutes">min</option>
+                        <option value="hours">hr</option>
                       </select>
                     )}
                   </td>
                   <td>
-                    <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{varName}</span>
+                    {readOnly ? (
+                      <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{varName}</span>
+                    ) : (
+                      <input
+                        className="variable-name-input"
+                        type="text"
+                        defaultValue={varName}
+                        onBlur={e => renameVariable(varName, e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                      />
+                    )}
                   </td>
                   <td>
-                    <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{displayName || varName}</span>
+                    {readOnly ? (
+                      <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{displayName || varName}</span>
+                    ) : (
+                      <input
+                        className="variable-name-input"
+                        type="text"
+                        defaultValue={displayName || varName}
+                        onBlur={e => updateDisplayName(varName, e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                      />
+                    )}
                   </td>
                   {!readOnly && <td className="var-delete-cell">
                     <button className="var-delete-btn" onClick={() => deleteVariable(varName)}>✕</button>
@@ -631,6 +693,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
                 onUpdateVariable={updateVariable}
                 selectedIds={selectedIds}
                 onSelect={handleSelect}
+                containerId={null}
                 onContextMenu={handleContextMenu}
                 fullScript={script}
               />

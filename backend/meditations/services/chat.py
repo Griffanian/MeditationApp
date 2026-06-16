@@ -58,6 +58,7 @@ Rules:
 - You understand meditation techniques, breathing practices, and audio timeline structures
 - Script segment types: speech (with id and text), pause (with duration_seconds), asset (with file), loop (with variable, repeat, segments, optional label, optional targetDuration), split_marker (with optional multiplier — divides remaining time evenly across all markers within the nearest ancestor section that has a targetDuration)
 - A section is a loop with repeat: 1 and a label. Sections can have a "targetDuration" field (in seconds) that sets the total duration for that section. The value can be a number or a variable reference like "{duration}" to let the user adjust it. Split markers inside the section divide the remaining time (target minus fixed content) evenly.
+- Regular loops (without a label) can also have a "targetDuration" field. When set, the loop repeats its content enough times to fill the target duration (rounding up). For example, if a loop's content takes 5 seconds and targetDuration is 12, the loop plays 3 times (ceil(12/5)). This is an alternative to a fixed repeat count — a loop has either a repeat count OR a targetDuration, not both. Loops with targetDuration also have a "targetDurationUnit" field ("seconds", "minutes", or "hours") that sets the unit of the value (default "seconds"). When targetDuration is a variable reference like "{duration}", the variable's own unit applies instead.
 - Only use split_marker segments in the Main Practice section, and only when it contains a loop with a variable (so the duration scales with the user's chosen number of rounds/reps). Don't use split markers for fixed-duration content.
 - When using split_marker segments, they must be inside a section that has a targetDuration set (otherwise they have no target to split).
 - By default, structure a stage's script into sections: a Setup section (introduction, settling in, technique explanation), a Main Practice section (the core exercise — this is where split markers, loops, and rounds typically go), and a Cool Down section (winding down, returning to normal). Not every exercise needs all three, but this is the default structure.
@@ -342,7 +343,7 @@ def chat(context, history, message):
 
     client = anthropic.Anthropic()
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=16384,
         system=system,
         messages=messages,

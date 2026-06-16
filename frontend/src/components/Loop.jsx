@@ -1,11 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useLocalState } from '../utils';
+import { computeDurationRepeat, computeFixedDuration } from '../playback';
 import DragHandle from './DragHandle';
 import KebabMenu from './KebabMenu';
 import Timeline from './Timeline';
+import AddZone from './AddZone';
+
+function formatDuration(seconds) {
+  seconds = Math.round(seconds);
+  if (seconds >= 3600) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+  if (seconds >= 60) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+  return `${seconds}s`;
+}
 
 const COLOR_THEMES = {
   green:  { bg: '#1e3a2f', hover: '#264a3a', accent: '#7ecba1' },
@@ -46,10 +64,26 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
   const [editRepeat, setEditRepeat] = useState(seg.variable ? `{${seg.variable}}` : seg.repeat);
   const [editTargetDuration, setEditTargetDuration] = useState(seg.targetDuration ?? '');
 
+  const [now, setNow] = useState(Date.now());
+  const tickRef = useRef(null);
+
   // Sync local state when segment data changes
   useEffect(() => { setEditLabel(seg.label || ''); }, [seg.label]);
   useEffect(() => { setEditRepeat(seg.variable ? `{${seg.variable}}` : seg.repeat); }, [seg.variable, seg.repeat]);
   useEffect(() => { setEditTargetDuration(seg.targetDuration ?? ''); }, [seg.targetDuration]);
+
+  const lc = loopCounters[seg.id];
+  const isDurationLoop = seg.targetDuration != null && !seg.label;
+  const isLoopPlaying = lc && lc.iterDuration != null && playingParentId === seg.id;
+
+  // Tick every second while a loop is playing
+  useEffect(() => {
+    if (isLoopPlaying) {
+      tickRef.current = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(tickRef.current);
+    }
+    if (tickRef.current) clearInterval(tickRef.current);
+  }, [isLoopPlaying]);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({ id: seg.id });
 
@@ -139,51 +173,131 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
             )}
           </span>
         ) : (
-          <span>
-            ↻ Loops{' '}
+          <span className="loop-mode-fields">
+            ↻{' '}
             {readOnly ? (
-              <span style={{ fontWeight: 600 }}>{editRepeat}</span>
+              seg.targetDuration != null
+                ? <span>Loops for <span style={{ fontWeight: 600 }}>{editTargetDuration}</span> {{ seconds: 's', minutes: 'min', hours: 'hr' }[seg.targetDurationUnit] || 's'}</span>
+                : <span>Loops <span style={{ fontWeight: 600 }}>{editRepeat}</span> times</span>
             ) : (
-              <input
-                className={`pause-input${(() => {
-                  const v = String(editRepeat);
-                  const isVar = /\{\w+\}/.test(v);
-                  const isValid = isVar || (v !== '' && !isNaN(Number(v)));
-                  return (!isValid ? ' pause-input-error' : '') + (isVar ? ' pause-input-var' : '');
-                })()}`}
-                type="text"
-                value={editRepeat}
-                onClick={e => e.stopPropagation()}
-                onChange={e => setEditRepeat(e.target.value)}
-                onBlur={() => {
-                  const v = String(editRepeat);
-                  const varMatch = v.match(/^\{(\w+)\}$/);
-                  if (varMatch) {
-                    onUpdate(seg.id, { variable: varMatch[1], repeat: undefined });
-                  } else {
-                    onUpdate(seg.id, { variable: undefined, repeat: v });
-                  }
-                }}
-                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-              />
+              <>
+                <select
+                  className="loop-mode-select"
+                  value={seg.targetDuration != null ? 'duration' : 'times'}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => {
+                    if (e.target.value === 'duration') {
+                      onUpdate(seg.id, { targetDuration: '60' });
+                    } else {
+                      onUpdate(seg.id, { targetDuration: undefined, repeat: seg.repeat || 3 });
+                    }
+                  }}
+                >
+                  <option value="times">times</option>
+                  <option value="duration">for duration</option>
+                </select>
+                {seg.targetDuration != null ? (
+                  <>
+                    <input
+                      className={`target-duration-input${(() => {
+                        const v = String(editTargetDuration);
+                        const isVar = /\{\w+\}/.test(v);
+                        const isValid = isVar || (v !== '' && !isNaN(Number(v)));
+                        return (!isValid ? ' pause-input-error' : '') + (isVar ? ' pause-input-var' : '');
+                      })()}`}
+                      type="text"
+                      value={editTargetDuration}
+                      onClick={e => e.stopPropagation()}
+                      onChange={e => setEditTargetDuration(e.target.value)}
+                      onBlur={() => {
+                        const v = String(editTargetDuration);
+                        if (v !== String(seg.targetDuration)) {
+                          onUpdate(seg.id, { targetDuration: v === '' ? undefined : v });
+                        }
+                      }}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                    />
+                    {!/\{\w+\}/.test(String(editTargetDuration)) ? (
+                      <select
+                        className="loop-mode-select"
+                        value={seg.targetDurationUnit || 'seconds'}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => onUpdate(seg.id, { targetDurationUnit: e.target.value })}
+                      >
+                        <option value="seconds">s</option>
+                        <option value="minutes">min</option>
+                        <option value="hours">hr</option>
+                      </select>
+                    ) : (
+                      <span className="target-duration-unit">({(() => {
+                        const varMatch = String(editTargetDuration).match(/^\{(\w+)\}$/);
+                        const varUnit = varMatch && variables[varMatch[1]] && typeof variables[varMatch[1]] === 'object'
+                          ? variables[varMatch[1]].unit : null;
+                        return varUnit || 'var';
+                      })()})</span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <input
+                      className={`pause-input${(() => {
+                        const v = String(editRepeat);
+                        const isVar = /\{\w+\}/.test(v);
+                        const isValid = isVar || (v !== '' && !isNaN(Number(v)));
+                        return (!isValid ? ' pause-input-error' : '') + (isVar ? ' pause-input-var' : '');
+                      })()}`}
+                      type="text"
+                      value={editRepeat}
+                      onClick={e => e.stopPropagation()}
+                      onChange={e => setEditRepeat(e.target.value)}
+                      onBlur={() => {
+                        const v = String(editRepeat);
+                        const varMatch = v.match(/^\{(\w+)\}$/);
+                        if (varMatch) {
+                          onUpdate(seg.id, { variable: varMatch[1], repeat: undefined });
+                        } else {
+                          onUpdate(seg.id, { variable: undefined, repeat: v });
+                        }
+                      }}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                    />
+                  </>
+                )}
+              </>
             )}
-            {' '}times
           </span>
         )}
         <span className="seg-count">{seg.segments.length} segments</span>
         <span style={{ marginLeft: 'auto' }} className="seg-actions">
           {!isSection && (
             <span className="loop-counter">
-              {loopCounters[seg.id]
-                ? loopCounters[seg.id].total - loopCounters[seg.id].current
-                : (() => {
-                    const varName = seg.variable;
-                    const val = varName && variables[varName] != null
-                      ? (typeof variables[varName] === 'object' ? variables[varName].value : variables[varName])
-                      : seg.repeat;
-                    return Number(val) || 0;
-                  })()
-              }
+              {(() => {
+                if (lc && lc.iterDuration != null && isPlayingParent) {
+                  // Live countdown while playing
+                  const { current, total, iterDuration, startTime, loopStartTime } = lc;
+                  const elapsed = (now - startTime) / 1000;
+                  const iterRemaining = Math.max(0, Math.round(iterDuration - elapsed));
+                  const totalElapsed = (now - loopStartTime) / 1000;
+                  const totalTime = total * iterDuration;
+                  const totalRemaining = Math.max(0, Math.round(totalTime - totalElapsed));
+                  return <>Round {current}/{total}<span className="loop-counter-sep">|</span>{formatDuration(iterRemaining)}<span className="loop-counter-sep">|</span>{formatDuration(totalRemaining)}</>;
+                }
+                // Static display
+                const iterDur = computeFixedDuration(seg.segments, variables, components);
+                if (isDurationLoop) {
+                  const repeat = computeDurationRepeat(seg, variables, components);
+                  return <>{repeat} rounds × {formatDuration(iterDur)}<span className="loop-counter-sep">|</span>{formatDuration(repeat * iterDur)}</>;
+                }
+                const varName = seg.variable;
+                const repeat = varName && variables[varName] != null
+                  ? (typeof variables[varName] === 'object' ? variables[varName].value : variables[varName])
+                  : seg.repeat;
+                const n = Number(repeat) || 0;
+                if (iterDur > 0) {
+                  return <>{n} rounds × {formatDuration(iterDur)}<span className="loop-counter-sep">|</span>{formatDuration(n * iterDur)}</>;
+                }
+                return n;
+              })()}
             </span>
           )}
           <button onClick={e => { e.stopPropagation(); onPlay(seg.id, true); }}>
@@ -203,7 +317,9 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
       {!collapsed && (
         <div className="loop-bracket">
           {seg.segments.length === 0 ? (
-            readOnly ? <p className="empty-hint">No segments.</p> : <EmptyDropZone id={seg.id} forceHighlight={dropHighlight} />
+            readOnly ? null : (
+              <AddZone onAdd={newSeg => onInsert(seg.id, 'append', newSeg)} />
+            )
           ) : (
             <>
               <Timeline
@@ -229,6 +345,7 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
                 onContextMenu={onContextMenu}
                 fullScript={fullScript}
                 readOnly={readOnly}
+                containerId={seg.id}
               />
               {!readOnly && <BottomDropZone id={seg.id} forceHighlight={dropHighlight} />}
             </>
