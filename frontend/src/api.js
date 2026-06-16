@@ -12,7 +12,7 @@ export function apiFetch(url, opts = {}) {
   return fetch(url, { ...opts, headers }).then(res => {
     if (res.status === 403) {
       clearToken();
-      window.location.reload();
+      window.location.href = '/';
     }
     return res;
   });
