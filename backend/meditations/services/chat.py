@@ -112,6 +112,8 @@ Rules:
 PLAYER_PROMPT = """
 You are currently on the PLAYER page. The user is playing through a programme's daily practice.
 
+The programme structure below marks the user's current position with "◀ CURRENTLY VIEWING". Focus your answers on that specific day — explain what's in it, why those exercises are there, and how they fit into the programme's progression. When the user asks general questions like "what am I doing today?" or "tell me about this day", answer about the marked day.
+
 You can see the full programme structure. You can help the user understand:
 - What exercises are in today's practice and why
 - How the programme progresses across weeks
@@ -221,16 +223,20 @@ def _build_exercise_context(meditation):
     return ctx
 
 
-def _build_practice_context(practice):
+def _build_practice_context(practice, current_week=None, current_day=None):
     """Build context string for a specific programme."""
     ctx = f"Programme: {practice.display_name or practice.name}\n\n"
     weeks = practice.items or []
     if weeks and isinstance(weeks[0], dict) and "days" in weeks[0]:
         for wi, week in enumerate(weeks):
-            ctx += f"\n## {week.get('label', f'Week {wi+1}')}\n"
+            is_current_week = (current_week is not None and wi == current_week)
+            week_marker = " ◀ CURRENT WEEK" if is_current_week else ""
+            ctx += f"\n## {week.get('label', f'Week {wi+1}')}{week_marker}\n"
             for di, day in enumerate(week.get("days", [])):
                 day_items = day.get("items", [])
-                ctx += f"\n### {day.get('label', f'Day {di+1}')} ({len(day_items)} stages)\n"
+                is_current_day = is_current_week and (current_day is not None and di == current_day)
+                day_marker = " ◀ CURRENTLY VIEWING" if is_current_day else ""
+                ctx += f"\n### {day.get('label', f'Day {di+1}')} ({len(day_items)} stages){day_marker}\n"
                 for i, item in enumerate(day_items, 1):
                     ctx += f"  {i}. {item.get('meditation_display', '')} > {item.get('stage_name', '')}\n"
                     variables = item.get("variables", {})
@@ -242,6 +248,36 @@ def _build_practice_context(practice):
             ctx += f"  {i}. {item.get('meditation_display', '')} > {item.get('stage_name', '')}\n"
     else:
         ctx += "No items added yet.\n"
+
+    # For the player, include detailed exercise info for the current day's items
+    if current_week is not None and current_day is not None:
+        try:
+            current_day_obj = weeks[current_week]["days"][current_day]
+            current_items = current_day_obj.get("items", [])
+            if current_items:
+                exercise_names = set(item.get("meditation") for item in current_items if item.get("meditation"))
+                exercises = Meditation.objects.filter(name__in=exercise_names)
+                exercise_map = {m.name: m for m in exercises}
+                ctx += "\n\nDetailed exercise info for today's stages:\n"
+                for item in current_items:
+                    m = exercise_map.get(item.get("meditation"))
+                    if not m:
+                        continue
+                    instructions = m.instructions or {}
+                    ctx += f"\n--- {m.display_name or m.name} ---\n"
+                    if instructions.get("description"):
+                        ctx += f"{instructions['description']}\n"
+                    for s in instructions.get("stages", []):
+                        if s.get("id") == item.get("stage_id"):
+                            if s.get("description"):
+                                ctx += f"Stage description: {s['description']}\n"
+                            if s.get("directions"):
+                                ctx += f"Directions: {s['directions']}\n"
+                            if s.get("progression"):
+                                ctx += f"Progression: {s['progression']}\n"
+                            break
+        except (IndexError, KeyError, TypeError):
+            pass
 
     # Include available exercises for adding stages
     ctx += "\n\nAvailable exercises and stages:\n"
@@ -334,7 +370,9 @@ def chat(context, history, message, read_only=False):
         if not practice:
             return {"reply": "Programme not found.", "mutations": None}
         page_prompt = PLAYER_PROMPT if page == "player" else PRACTICE_PROMPT
-        state_context = _build_practice_context(practice)
+        current_week = context.get("currentWeek") if page == "player" else None
+        current_day = context.get("currentDay") if page == "player" else None
+        state_context = _build_practice_context(practice, current_week, current_day)
     elif page == "practices":
         page_prompt = PRACTICES_LIST_PROMPT
         state_context = _build_practices_list_context()

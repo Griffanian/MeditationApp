@@ -54,7 +54,7 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 
 /* App layout — global sidebar */
 .app-layout { display: flex; flex-direction: column; min-height: 100vh; margin: -20px; }
-.app-body { display: flex; flex: 1; min-height: 0; }
+.app-body { display: flex; flex: 1; min-height: 0; padding-top: 45px; }
 .app-main { flex: 1; min-width: 0; padding: 20px; margin-right: 340px; direction: rtl; }
 .app-main > * { direction: ltr; }
 .editor-sidebar {
@@ -308,7 +308,20 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 }
 .chat-msg-assistant .chat-msg-bubble {
   background: rgba(255,255,255,0.06); color: #ccc; border-bottom-left-radius: 4px;
+  white-space: normal;
 }
+.chat-msg-assistant .chat-msg-bubble p { margin: 0 0 8px 0; }
+.chat-msg-assistant .chat-msg-bubble p:last-child { margin-bottom: 0; }
+.chat-msg-assistant .chat-msg-bubble ul,
+.chat-msg-assistant .chat-msg-bubble ol { margin: 4px 0 8px 0; padding-left: 20px; }
+.chat-msg-assistant .chat-msg-bubble li { margin-bottom: 2px; }
+.chat-msg-assistant .chat-msg-bubble h1,
+.chat-msg-assistant .chat-msg-bubble h2,
+.chat-msg-assistant .chat-msg-bubble h3 { font-size: 13px; font-weight: 600; margin: 8px 0 4px 0; color: #e0e0e0; }
+.chat-msg-assistant .chat-msg-bubble code { background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+.chat-msg-assistant .chat-msg-bubble pre { background: rgba(255,255,255,0.06); padding: 8px; border-radius: 6px; overflow-x: auto; margin: 4px 0; }
+.chat-msg-assistant .chat-msg-bubble pre code { background: none; padding: 0; }
+.chat-msg-assistant .chat-msg-bubble strong { color: #e0e0e0; }
 .chat-typing { color: #888; font-style: italic; }
 .chat-input-row { display: flex; gap: 8px; margin-top: 8px; align-items: flex-end; }
 .chat-input {
@@ -1217,8 +1230,10 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 .player-stage-body {
   flex: 1; min-width: 0; text-decoration: none; cursor: pointer;
 }
-.player-stage-body:hover .player-stage-exercise { color: #a0c4ff; }
-.player-stage-exercise { font-size: 14px; color: #ccc; font-weight: 500; display: block; }
+.player-stage-body:hover .player-stage-exercise { color: #c0d8ff; text-decoration: underline; }
+.player-stage-body:hover .player-stage-exercise::after { color: #a0c4ff; }
+.player-stage-exercise { font-size: 14px; color: #a0c4ff; font-weight: 500; display: block; transition: color 0.15s; }
+.player-stage-exercise::after { content: ' →'; font-size: 11px; color: #556; transition: color 0.15s; }
 .player-stage-detail { font-size: 12px; color: #666; display: block; }
 .player-stage-durations { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
 .player-stage-exercise-dur { font-size: 12px; color: #7ecba1; }
@@ -1446,9 +1461,11 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 
 .practice-item-info { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 .practice-item-exercise-link {
-  font-size: 14px; font-weight: 600; color: #a0c4ff; text-decoration: none;
+  font-size: 14px; font-weight: 600; color: #a0c4ff; text-decoration: none; transition: color 0.15s;
 }
-.practice-item-exercise-link:hover { text-decoration: underline; }
+.practice-item-exercise-link::after { content: ' →'; font-size: 11px; color: #556; transition: color 0.15s; }
+.practice-item-exercise-link:hover { color: #c0d8ff; text-decoration: underline; }
+.practice-item-exercise-link:hover::after { color: #a0c4ff; }
 .practice-item-exercise {
   font-size: 14px; font-weight: 600; color: #e0e0e0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1576,7 +1593,7 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
   padding: 12px 20px;
   background: #0d1526; border-bottom: 1px solid #2a2a4a;
   flex-shrink: 0;
-  position: sticky; top: 0; z-index: 100;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
 }
 .app-header-brand {
   font-size: 18px; font-weight: 700; color: #cdb4db;

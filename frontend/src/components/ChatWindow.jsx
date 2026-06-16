@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { sendChatMessage } from '../api';
 import { useLocalState } from '../utils';
 
@@ -76,7 +77,15 @@ export default function ChatWindow({ context, storageKey, onMutations, readOnly 
 
     try {
       const history = messages.map(m => ({ role: m.role, content: m.content }));
-      const result = await sendChatMessage(text, history, context);
+      // For the player page, read the current week/day fresh from localStorage
+      let sendContext = context;
+      if (context.page === 'player' && context.practice) {
+        let currentWeek = 0, currentDay = 0;
+        try { currentWeek = JSON.parse(localStorage.getItem(`player:${context.practice}:week`)) || 0; } catch {}
+        try { currentDay = JSON.parse(localStorage.getItem(`player:${context.practice}:day`)) || 0; } catch {}
+        sendContext = { ...context, currentWeek, currentDay };
+      }
+      const result = await sendChatMessage(text, history, sendContext);
       const assistantMsg = {
         role: 'assistant',
         content: result.reply,
@@ -126,7 +135,7 @@ export default function ChatWindow({ context, storageKey, onMutations, readOnly 
         {messages.map((msg, i) => (
           <div key={i} className={`chat-msg chat-msg-${msg.role}`}>
             <div className="chat-msg-bubble">
-              {msg.content}
+              {msg.role === 'assistant' ? <ReactMarkdown>{msg.content}</ReactMarkdown> : msg.content}
               {msg.mutations && (
                 <MutationSummary changes={msg.changes} errors={msg.mutation_errors} />
               )}

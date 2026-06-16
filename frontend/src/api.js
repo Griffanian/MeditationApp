@@ -52,6 +52,35 @@ export function logoutUser() {
   clearToken();
 }
 
+export async function fetchGroups() {
+  const res = await apiFetch(`${BASE}/api/groups`);
+  return safeJson(res, []);
+}
+
+export async function createGroup(displayName) {
+  const res = await apiFetch(`${BASE}/api/groups`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display_name: displayName }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to create group');
+  return data;
+}
+
+export async function updateGroup(name, updates) {
+  const res = await apiFetch(`${BASE}/api/groups/${name}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  return res.json();
+}
+
+export async function deleteGroup(name) {
+  await apiFetch(`${BASE}/api/groups/${name}`, { method: 'DELETE' });
+}
+
 export async function fetchCategories() {
   const res = await apiFetch(`${BASE}/api/categories`);
   return safeJson(res, []);

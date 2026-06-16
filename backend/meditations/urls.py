@@ -8,6 +8,10 @@ urlpatterns = [
     path("api/auth/logout", auth.LogoutView.as_view()),
     path("api/auth/status", auth.AuthStatusView.as_view()),
 
+    # Groups
+    path("api/groups", meditations.GroupListView.as_view()),
+    path("api/groups/<str:name>", meditations.GroupDetailView.as_view()),
+
     # Categories
     path("api/categories", meditations.CategoryListView.as_view()),
     path("api/categories/<str:category>", meditations.CategoryDetailView.as_view()),

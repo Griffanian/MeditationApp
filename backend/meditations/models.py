@@ -1,11 +1,26 @@
 from django.db import models
 
 
+class Group(models.Model):
+    name = models.SlugField(max_length=200, unique=True, primary_key=True)
+    display_name = models.CharField(max_length=200)
+    sort_order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "display_name"]
+
+    def __str__(self):
+        return self.display_name
+
+
 class Category(models.Model):
     name = models.CharField(max_length=200, unique=True, primary_key=True)
     display_name = models.CharField(max_length=200)
     sort_order = models.IntegerField(default=0)
-    group = models.CharField(max_length=200, blank=True, default="")
+    group = models.ForeignKey(
+        Group, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="categories",
+    )
 
     class Meta:
         ordering = ["sort_order", "display_name"]

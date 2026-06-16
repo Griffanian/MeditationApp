@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import Category, Meditation, Stage
+from ..models import Category, Group, Meditation, Stage
 from ..permissions import IsAdmin, IsAdminOrReadOnly
 from ..services import storage
 from ..services.chat import chat
@@ -83,13 +83,69 @@ class MetaView(APIView):
         return Response({"status": "ok"})
 
 
+def _serialize_category(cat):
+    return {
+        "name": cat.name,
+        "display_name": cat.display_name,
+        "sort_order": cat.sort_order,
+        "group": cat.group_id or "",
+        "group_display": cat.group.display_name if cat.group else "",
+    }
+
+
+def _resolve_group(group_str):
+    """Look up a Group by ID. Returns None for empty string."""
+    if not group_str:
+        return None
+    return Group.objects.filter(name=group_str).first()
+
+
+class GroupListView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
+    def get(self, request):
+        return Response([
+            {"name": g.name, "display_name": g.display_name, "sort_order": g.sort_order}
+            for g in Group.objects.all()
+        ])
+
+    def post(self, request):
+        display_name = (request.data.get("display_name") or "").strip()
+        if not display_name:
+            return Response({"error": "display_name required"}, status=400)
+        slug = f"group-{uuid.uuid4().hex[:8]}"
+        group = Group.objects.create(name=slug, display_name=display_name, sort_order=50)
+        return Response({
+            "name": group.name, "display_name": group.display_name, "sort_order": group.sort_order,
+        }, status=201)
+
+
+class GroupDetailView(APIView):
+    permission_classes = [IsAdmin]
+
+    def put(self, request, name):
+        group = get_object_or_404(Group, name=name)
+        if "display_name" in request.data:
+            group.display_name = request.data["display_name"]
+        if "sort_order" in request.data:
+            group.sort_order = request.data["sort_order"]
+        group.save()
+        return Response({"name": group.name, "display_name": group.display_name})
+
+    def delete(self, request, name):
+        group = get_object_or_404(Group, name=name)
+        group.categories.update(group=None)
+        group.delete()
+        return Response({"status": "ok"})
+
+
 class CategoryListView(APIView):
     permission_classes = [IsAdminOrReadOnly]
 
     def get(self, request):
         return Response([
-            {"name": c.name, "display_name": c.display_name, "sort_order": c.sort_order, "group": c.group}
-            for c in Category.objects.all()
+            _serialize_category(c)
+            for c in Category.objects.select_related("group").all()
         ])
 
     def post(self, request):
@@ -97,14 +153,11 @@ class CategoryListView(APIView):
         if not display_name:
             return Response({"error": "display_name required"}, status=400)
         cat_id = f"cat-{uuid.uuid4().hex[:12]}"
-        group = (request.data.get("group") or "").strip()
+        group = _resolve_group((request.data.get("group") or "").strip())
         cat = Category.objects.create(
             name=cat_id, display_name=display_name, sort_order=50, group=group,
         )
-        return Response({
-            "name": cat.name, "display_name": cat.display_name,
-            "sort_order": cat.sort_order, "group": cat.group,
-        }, status=201)
+        return Response(_serialize_category(cat), status=201)
 
 
 class CategoryDetailView(APIView):
@@ -117,7 +170,7 @@ class CategoryDetailView(APIView):
         if "sort_order" in request.data:
             cat.sort_order = request.data["sort_order"]
         if "group" in request.data:
-            cat.group = request.data["group"]
+            cat.group = _resolve_group(request.data["group"])
         cat.save()
         return Response({"status": "ok"})
 

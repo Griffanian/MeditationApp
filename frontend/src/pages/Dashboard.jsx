@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
-import { fetchCategories, createCategory, updateCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveMeta, saveStageVariables, assembleStage, BASE } from '../api';
+import { fetchGroups, createGroup, updateGroup, deleteGroup, fetchCategories, createCategory, updateCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveMeta, saveStageVariables, assembleStage, BASE } from '../api';
 import { useAuth } from '../AuthContext';
 import { useLocalState } from '../utils';
 import DashCard from '../components/DashCard';
@@ -12,6 +12,7 @@ import GroupDropZone from '../components/GroupDropZone';
 export default function Dashboard() {
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [groups, setGroups] = useState([]);
   const [categories, setCategories] = useState([]);
   const [meditations, setMeditations] = useState([]);
   const [assembling, setAssembling] = useState(null);
@@ -20,12 +21,12 @@ export default function Dashboard() {
   const [editingCategory, setEditingCategory] = useState(null);
   const [editCatName, setEditCatName] = useState('');
   const [expandedCats, setExpandedCats] = useLocalState('dashboard:expandedCats', {});
-  const [customGroups, setCustomGroups] = useLocalState('dashboard:groups', []);
   const audioRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     Promise.all([
+      fetchGroups().then(setGroups),
       fetchCategories().then(setCategories),
       fetchMeditations().then(setMeditations),
     ]).finally(() => setLoading(false));
@@ -66,18 +67,11 @@ export default function Dashboard() {
     }
   }
 
-  async function handleSetGroup(cat, newGroup) {
-    // Persist the old group as a custom group if it would become empty
-    const oldGroup = cat.group || '';
-    if (oldGroup) {
-      const remaining = categories.filter(c => c.group === oldGroup && c.name !== cat.name);
-      if (remaining.length === 0) {
-        setCustomGroups(prev => prev.includes(oldGroup) ? prev : [...prev, oldGroup]);
-      }
-    }
-    await updateCategory(cat.name, { group: newGroup });
+  async function handleSetGroup(cat, newGroupId) {
+    await updateCategory(cat.name, { group: newGroupId });
+    const grp = groups.find(g => g.name === newGroupId);
     setCategories(cats =>
-      cats.map(c => c.name === cat.name ? { ...c, group: newGroup } : c)
+      cats.map(c => c.name === cat.name ? { ...c, group: newGroupId, group_display: grp?.display_name || '' } : c)
     );
   }
 
@@ -251,15 +245,16 @@ export default function Dashboard() {
 
   const allCats = [...categories, ...extraCats.map(k => ({ name: k, display_name: k, group: '' }))];
 
-  // Collect distinct group names: from categories + any custom (possibly empty) groups
-  const groupNames = [];
-  const seen = new Set();
+  // Build group list: ungrouped ('') + all DB groups
+  const groupIds = ['', ...groups.map(g => g.name)];
+  const groupDisplayMap = {};
+  for (const g of groups) groupDisplayMap[g.name] = g.display_name;
+
+  // Also include any group IDs referenced by categories but not in groups list (shouldn't happen but safety)
+  const seen = new Set(groupIds);
   for (const cat of allCats) {
     const g = cat.group || '';
-    if (!seen.has(g)) { seen.add(g); groupNames.push(g); }
-  }
-  for (const g of customGroups) {
-    if (!seen.has(g)) { seen.add(g); groupNames.push(g); }
+    if (!seen.has(g)) { seen.add(g); groupIds.push(g); }
   }
 
   function renderCategory(cat) {
@@ -391,9 +386,9 @@ export default function Dashboard() {
 
   const activeId = activeDrag ? (activeDrag.type === 'section' ? `section:${activeDrag.cat.name}` : null) : null;
 
-  const categoryContent = groupNames.map(groupName => {
-    const catsInGroup = allCats.filter(c => (c.group || '') === groupName);
-    if (!groupName) {
+  const categoryContent = groupIds.map(groupId => {
+    const catsInGroup = allCats.filter(c => (c.group || '') === groupId);
+    if (!groupId) {
       // Ungrouped categories — wrap in a drop zone so sections can be dragged out of groups
       return (
         <GroupDropZone key="group:" groupName="" active={activeId}>
@@ -401,16 +396,17 @@ export default function Dashboard() {
         </GroupDropZone>
       );
     }
-    const isGroupCollapsed = !expandedCats[`group:${groupName}`];
+    const groupDisplay = groupDisplayMap[groupId] || groupId;
+    const isGroupCollapsed = !expandedCats[`group:${groupId}`];
     return (
-      <GroupDropZone key={`group:${groupName}`} groupName={groupName} active={activeId}>
+      <GroupDropZone key={`group:${groupId}`} groupName={groupId} active={activeId}>
         <div className="meta-category">
-          <div className="meta-category-header" onClick={() => setExpandedCats(prev => ({ ...prev, [`group:${groupName}`]: !prev[`group:${groupName}`] }))}>
+          <div className="meta-category-header" onClick={() => setExpandedCats(prev => ({ ...prev, [`group:${groupId}`]: !prev[`group:${groupId}`] }))}>
             <span className="category-collapse-btn">{isGroupCollapsed ? '▸' : '▾'}</span>
-            <h2 className="meta-category-title">{groupName}</h2>
-            {isAdmin && <button className="btn-add-in-group" onClick={e => { e.stopPropagation(); handleNewSection(groupName); }}>+ Section</button>}
+            <h2 className="meta-category-title">{groupDisplay}</h2>
+            {isAdmin && <button className="btn-add-in-group" onClick={e => { e.stopPropagation(); handleNewSection(groupId); }}>+ Section</button>}
             {isAdmin && catsInGroup.length === 0 && (
-              <button className="category-delete-btn" onClick={e => { e.stopPropagation(); setCustomGroups(prev => prev.filter(g => g !== groupName)); }}>✕</button>
+              <button className="category-delete-btn" onClick={e => { e.stopPropagation(); deleteGroup(groupId).then(() => setGroups(prev => prev.filter(g => g.name !== groupId))); }}>✕</button>
             )}
           </div>
           {!isGroupCollapsed && (catsInGroup.length > 0
@@ -446,13 +442,14 @@ export default function Dashboard() {
 
       {isAdmin && <div className="new-section-buttons">
         <button className="btn-new-section" onClick={() => handleNewSection()}>+ New Section</button>
-        <button className="btn-new-section" onClick={() => {
-          const name = prompt('Group name:');
-          if (!name || !name.trim()) return;
-          const trimmed = name.trim();
-          if (seen.has(trimmed)) return;
-          setCustomGroups(prev => [...prev, trimmed]);
-          setExpandedCats(prev => ({ ...prev, [`group:${trimmed}`]: true }));
+        <button className="btn-new-section" onClick={async () => {
+          const displayName = prompt('Group name:');
+          if (!displayName || !displayName.trim()) return;
+          try {
+            const grp = await createGroup(displayName.trim());
+            setGroups(prev => [...prev, grp]);
+            setExpandedCats(prev => ({ ...prev, [`group:${grp.name}`]: true }));
+          } catch (err) { alert(err.message); }
         }}>+ New Group</button>
       </div>}
 
