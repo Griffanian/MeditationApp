@@ -303,7 +303,7 @@ export async function createPractice(displayName) {
 
 export async function fetchPractice(name) {
   const res = await apiFetch(`${BASE}/api/practices/${name}`);
-  return res.json();
+  return safeJson(res, { name, display_name: name, items: [] });
 }
 
 export async function savePractice(name, data) {
