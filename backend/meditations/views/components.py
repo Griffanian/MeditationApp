@@ -297,6 +297,12 @@ def serve_asset(request, filename):
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
+def serve_programme_audio(request, name, filename):
+    return _redirect_to_storage(f"programmes/{name}/{filename}")
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
 def serve_pdf(request, name):
     path = storage.pdf_path(name)
     if not storage.file_exists(path):

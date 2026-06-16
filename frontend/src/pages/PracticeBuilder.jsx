@@ -257,9 +257,14 @@ export default function PracticeBuilder() {
 
   return (
     <div className="practice-builder">
-      <h2 className="page-title">Programme Builder</h2>
+      <nav className="breadcrumb">
+        <Link to="/practices" className="breadcrumb-link">Programmes</Link>
+        <span className="breadcrumb-sep">/</span>
+        <span className="breadcrumb-current">{practice.display_name}</span>
+        <span className="breadcrumb-sep">/</span>
+        <span className="breadcrumb-current">Edit</span>
+      </nav>
       <div className="practice-top-bar">
-        <Link to="/practices" className="back-link">← Back</Link>
         {editingTitle ? (
           <input className="title-input" value={titleDraft} autoFocus
             onChange={e => setTitleDraft(e.target.value)} onBlur={saveTitle}

@@ -305,7 +305,15 @@ def _build_practices_list_context():
     return ctx
 
 
-def chat(context, history, message):
+READ_ONLY_PROMPT = """
+IMPORTANT: This user is a viewer, not an admin. You MUST NOT produce any mutations blocks.
+You can answer questions about the app, explain exercises, describe how programmes work,
+and help them understand their practice — but you cannot make any changes.
+If they ask you to change something, politely explain that only admins can make edits.
+"""
+
+
+def chat(context, history, message, read_only=False):
     """Process a chat message with route-aware context.
 
     context dict keys:
@@ -334,7 +342,10 @@ def chat(context, history, message):
         page_prompt = DASHBOARD_PROMPT
         state_context = _build_dashboard_context()
 
-    system = BASE_PROMPT + page_prompt + f"\n\nCurrent state:\n{state_context}"
+    system = BASE_PROMPT + page_prompt
+    if read_only:
+        system += READ_ONLY_PROMPT
+    system += f"\n\nCurrent state:\n{state_context}"
 
     messages = []
     for entry in history:

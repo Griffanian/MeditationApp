@@ -283,6 +283,20 @@ export async function assembleAudio(name) {
   return res.json();
 }
 
+export async function assembleDayAudio(practiceName, week, day) {
+  const res = await apiFetch(`${BASE}/api/practices/${practiceName}/assemble-day`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ week, day }),
+  });
+  if (!res.ok) {
+    let msg = `Day assembly failed (${res.status})`;
+    try { const data = await res.json(); msg = data.error || msg; } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
 // --- Practices ---
 
 export async function fetchPractices() {

@@ -51,7 +51,7 @@ function MutationSummary({ changes, errors }) {
   );
 }
 
-export default function ChatWindow({ context, storageKey, onMutations }) {
+export default function ChatWindow({ context, storageKey, onMutations, readOnly }) {
   const [messages, setMessages] = useLocalState(`chat:${storageKey}`, []);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -103,7 +103,13 @@ export default function ChatWindow({ context, storageKey, onMutations }) {
     }
   }
 
-  const placeholders = {
+  const placeholders = readOnly ? {
+    exercise: 'Ask about this exercise...',
+    practice: 'Ask about this programme...',
+    player: 'Ask about today\'s practice...',
+    dashboard: 'Ask about the exercises...',
+    practices: 'Ask about the programmes...',
+  } : {
     exercise: 'Ask about this exercise or tell me to change something...',
     practice: 'Ask about this programme or tell me to rearrange stages...',
     player: 'Ask about today\'s practice or the programme...',

@@ -142,9 +142,12 @@ export default function Editor() {
 
   return (
     <div>
-      <h2 className="page-title">{isAdmin ? 'Exercise Editor' : 'Exercise'}</h2>
+      <nav className="breadcrumb">
+        <Link to="/exercises" className="breadcrumb-link">Exercise Bank</Link>
+        <span className="breadcrumb-sep">/</span>
+        <span className="breadcrumb-current">{displayName}</span>
+      </nav>
         <h1>
-          <Link to="/" className="back-link">← </Link>
           {isAdmin && editingTitle ? (
             <input
               className="title-input"

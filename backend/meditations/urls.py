@@ -69,6 +69,7 @@ urlpatterns = [
     path("api/practices", practices.PracticeListView.as_view()),
     path("api/practices/stages", practices.PracticeStagesView.as_view()),
     path("api/practices/<str:name>", practices.PracticeDetailView.as_view()),
+    path("api/practices/<str:name>/assemble-day", assembly.DayAssembleView.as_view()),
 
     # Audio & PDF serving — redirect to Supabase Storage public URLs
     path("audio/meditation/<str:name>/component/<str:filename>", components.serve_component),
@@ -76,5 +77,6 @@ urlpatterns = [
     path("audio/meditation/<str:name>/stage/<str:stage_id>/component/<str:filename>", components.serve_stage_component),
     path("audio/meditation/<str:name>/stage/<str:stage_id>/output/<str:filename>", components.serve_stage_output),
     path("audio/asset/<str:filename>", components.serve_asset),
+    path("audio/programme/<str:name>/<str:filename>", components.serve_programme_audio),
     path("pdf/meditation/<str:name>/instructions.pdf", components.serve_pdf),
 ]

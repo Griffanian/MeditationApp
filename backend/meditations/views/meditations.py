@@ -373,20 +373,23 @@ def _diff_practice_items(old_weeks, new_weeks):
 
 class ChatView(APIView):
     """General context-aware chat endpoint."""
-    permission_classes = [IsAdmin]
     def post(self, request):
         message = request.data.get("message", "")
         history = request.data.get("history", [])
         context = request.data.get("context", {})
+        read_only = not (request.user and request.user.is_staff)
         if not message:
             return Response({"error": "message required"}, status=400)
         try:
-            result = chat(context, history, message)
+            result = chat(context, history, message, read_only=read_only)
         except Exception as e:
             return Response({"error": str(e)}, status=500)
 
-        # Apply mutations if present
+        # Apply mutations if present (never for read-only users)
         mutations = result.get("mutations")
+        if read_only:
+            result.pop("mutations", None)
+            mutations = None
         if mutations:
             errors = []
             changes = []

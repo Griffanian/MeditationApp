@@ -23,7 +23,7 @@ function useRouteContext() {
   return { context: { page: 'dashboard' }, storageKey: 'dashboard' };
 }
 
-export default function ChatSidebar({ onMutations }) {
+export default function ChatSidebar({ onMutations, readOnly }) {
   const { context, storageKey } = useRouteContext();
 
   return (
@@ -34,6 +34,7 @@ export default function ChatSidebar({ onMutations }) {
         context={context}
         storageKey={storageKey}
         onMutations={onMutations}
+        readOnly={readOnly}
       />
     </div>
   );

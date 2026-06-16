@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import AssembledOutput, Meditation, Stage
+from ..models import AssembledOutput, Meditation, Practice, Stage
 from ..services import storage
 from ..services.synthesize import (
     _collect_variables,
@@ -175,3 +175,145 @@ class RootAssembleView(AssemblyMixin, APIView):
 class StageAssembleView(AssemblyMixin, APIView):
     def post(self, request, name, stage_id):
         return self._assemble(name, stage_id)
+
+
+class DayAssembleView(APIView):
+    """Assemble all stages for a programme day into one continuous MP3."""
+
+    def post(self, request, name):
+        practice = get_object_or_404(Practice, name=name)
+        week_idx = request.data.get("week", 0)
+        day_idx = request.data.get("day", 0)
+
+        weeks = practice.items or []
+        if not weeks or week_idx >= len(weeks):
+            return Response({"error": "Invalid week"}, status=400)
+        week = weeks[week_idx]
+        days = week.get("days", [])
+        if not days or day_idx >= len(days):
+            return Response({"error": "Invalid day"}, status=400)
+        day_items = days[day_idx].get("items", [])
+        if not day_items:
+            return Response({"error": "Day has no stages"}, status=400)
+
+        # Build a content hash from all stages + their variables
+        hash_input = []
+        for item in day_items:
+            stage = Stage.objects.filter(
+                meditation_id=item["meditation"], stage_id=item["stage_id"]
+            ).first()
+            if not stage or not stage.script:
+                continue
+            merged_vars = dict(stage.variables or {})
+            if item.get("variables"):
+                merged_vars.update(item["variables"])
+            hash_input.append({
+                "s": stage.script,
+                "v": merged_vars,
+            })
+
+        content_hash = hashlib.md5(
+            json.dumps(hash_input, sort_keys=True).encode()
+        ).hexdigest()[:12]
+
+        # Check cache
+        cache_key = f"day_{name}_{week_idx}_{day_idx}"
+        filename = f"day_{content_hash}.mp3"
+        file_path = f"programmes/{name}/{filename}"
+
+        # Look for existing cached file by checking storage
+        try:
+            existing = storage.download_file(file_path)
+            if existing:
+                # File exists — compute timestamps from individual durations
+                timestamps = self._compute_timestamps(day_items)
+                return Response({
+                    "status": "cached",
+                    "url": f"/audio/programme/{name}/{filename}",
+                    "timestamps": timestamps,
+                })
+        except Exception:
+            pass
+
+        # Assemble each stage and concatenate
+        from pydub import AudioSegment as PydubSegment
+
+        combined = PydubSegment.empty()
+        timestamps = []
+        mixin = AssemblyMixin()
+
+        for item in day_items:
+            med_name = item["meditation"]
+            stage_id = item["stage_id"]
+            stage = Stage.objects.filter(
+                meditation_id=med_name, stage_id=stage_id
+            ).first()
+            if not stage or not stage.script:
+                continue
+
+            merged_vars = dict(stage.variables or {})
+            if item.get("variables"):
+                merged_vars.update(item["variables"])
+
+            # Generate components and assemble this stage
+            generate_components(stage.script, med_name, stage_id, extra_variables=merged_vars)
+            stage_audio = assemble(stage.script, med_name, stage_id, variables=merged_vars)
+
+            timestamps.append({
+                "id": item.get("id", ""),
+                "start": len(combined) / 1000,
+                "duration": len(stage_audio) / 1000,
+                "meditation": med_name,
+                "meditation_display": item.get("meditation_display", ""),
+                "stage_name": item.get("stage_name", ""),
+            })
+
+            combined += stage_audio
+
+        if len(combined) == 0:
+            return Response({"error": "No audio produced"}, status=400)
+
+        # Export and upload
+        buf = io.BytesIO()
+        combined.export(buf, format="mp3", bitrate="192k")
+        buf.seek(0)
+        storage.upload_file(file_path, buf.read(), content_type="audio/mpeg")
+
+        return Response({
+            "status": "ok",
+            "url": f"/audio/programme/{name}/{filename}",
+            "timestamps": timestamps,
+        })
+
+    def _compute_timestamps(self, day_items):
+        """Recompute timestamps from cached individual stage outputs."""
+        timestamps = []
+        offset = 0.0
+        mixin = AssemblyMixin()
+        for item in day_items:
+            stage = Stage.objects.filter(
+                meditation_id=item["meditation"], stage_id=item["stage_id"]
+            ).first()
+            if not stage or not stage.script:
+                continue
+            merged_vars = dict(stage.variables or {})
+            if item.get("variables"):
+                merged_vars.update(item["variables"])
+            h = mixin._content_hash(stage.script, merged_vars)
+            try:
+                output = AssembledOutput.objects.get(
+                    meditation_id=item["meditation"], stage=stage, script_hash=h
+                )
+                dur = output.duration
+            except AssembledOutput.DoesNotExist:
+                dur = 0
+            timestamps.append({
+                "id": item.get("id", ""),
+                "start": offset,
+                "duration": dur,
+                "meditation": item["meditation"],
+                "meditation_display": item.get("meditation_display", ""),
+                "stage_name": item.get("stage_name", ""),
+            })
+            offset += dur
+        return timestamps

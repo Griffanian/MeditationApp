@@ -350,7 +350,12 @@ export default function Dashboard() {
                             <div className="dash-stage-vars">
                               {vars.map(([varName, varData]) => (
                                 <span key={varName} className="dash-var-group">
-                                  <span className="dash-var-label">{(typeof varData === 'object' && varData.displayName) || varName}</span>
+                                  <span className="dash-var-label">
+                                    {(typeof varData === 'object' && varData.displayName) || varName}
+                                    {typeof varData === 'object' && varData.unit && (
+                                      <span className="dash-var-unit"> ({varData.unit === 'minutes' ? 'mins' : varData.unit === 'seconds' ? 'secs' : varData.unit})</span>
+                                    )}
+                                  </span>
                                   <input
                                     className="dash-loop-input"
                                     type="number"
@@ -419,12 +424,8 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="nav-bar">
-        <Link to="/" className="nav-link nav-link-active">Exercises</Link>
-        <Link to="/practices" className="nav-link">Programmes</Link>
-      </div>
-
-      <h1>Exercises</h1>
+      <h1>Exercise Bank</h1>
+      <p className="section-description">All available exercises, organised by the system they come from. Each exercise shows its stages with adjustable defaults for duration, rounds, or breath counts. Exercises are assembled into programmes.</p>
 
       {isAdmin ? (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>

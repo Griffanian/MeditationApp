@@ -1,7 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchPractices, createPractice, deletePractice } from '../api';
 import { useAuth } from '../AuthContext';
+
+function getProgress(pracName, weeks) {
+  try {
+    const stored = localStorage.getItem(`player:${pracName}:completed`);
+    if (!stored) return null;
+    const completed = JSON.parse(stored);
+    const completedCount = Object.keys(completed).filter(k => completed[k]).length;
+    if (completedCount === 0) return null;
+    const hasWeeks = weeks.length > 0 && weeks[0]?.days;
+    const totalDays = hasWeeks ? weeks.reduce((sum, w) => sum + (w.days?.length || 0), 0) : weeks.length;
+    if (totalDays === 0) return null;
+    return { done: completedCount, total: totalDays, pct: Math.round((completedCount / totalDays) * 100) };
+  } catch { return null; }
+}
 
 export default function Practices() {
   const { isAdmin } = useAuth();
@@ -40,14 +54,14 @@ export default function Practices() {
 
   return (
     <div>
-      <div className="nav-bar">
-        <Link to="/" className="nav-link">Exercises</Link>
-        <Link to="/practices" className="nav-link nav-link-active">Programmes</Link>
-      </div>
-
       <h1>Programmes</h1>
+      <p className="section-description">Guided meditation courses structured by week and day. Pick a programme and follow along at your own pace.</p>
 
-      {loading ? <div className="loading-page"><div className="loading-spinner" />Loading programmes...</div> : <div className="med-grid">
+      {loading ? <div className="loading-page"><div className="loading-spinner" />Loading programmes...</div> : practices.length === 0 && !isAdmin ? (
+        <div className="empty-state">
+          <p className="empty-state-text">No programmes available yet.</p>
+        </div>
+      ) : <div className="med-grid">
         {practices.map(prac => {
           const weeks = prac.items || [];
           const hasWeeks = weeks.length > 0 && weeks[0]?.days;
@@ -79,8 +93,23 @@ export default function Practices() {
                   : `${weeks.length} stage${weeks.length !== 1 ? 's' : ''}`
                 }
               </div>
+              {(() => {
+                const progress = getProgress(prac.name, weeks);
+                if (!progress) return null;
+                return (
+                  <div className="prog-card-progress">
+                    <div className="prog-card-progress-bar">
+                      <div className="prog-card-progress-fill" style={{ width: `${progress.pct}%` }} />
+                    </div>
+                    <span className="prog-card-progress-label">{progress.done}/{progress.total} days</span>
+                  </div>
+                );
+              })()}
               <div className="prog-card-actions">
-                <Link to={`/play/${prac.name}`} className="prog-card-play-btn">▶ Play</Link>
+                <Link to={`/play/${prac.name}`} className="prog-card-play-btn">▶ {(() => {
+                  const progress = getProgress(prac.name, weeks);
+                  return progress ? 'Continue' : 'Start';
+                })()}</Link>
                 {isAdmin && <Link to={`/practice/${prac.name}`} className="prog-card-edit-btn">Edit</Link>}
               </div>
             </div>
