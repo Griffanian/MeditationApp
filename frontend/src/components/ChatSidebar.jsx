@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import ChatWindow from './ChatWindow';
 
@@ -25,12 +26,21 @@ function useRouteContext() {
 
 export default function ChatSidebar({ onMutations, readOnly }) {
   const { context, storageKey } = useRouteContext();
+  const [clearCount, setClearCount] = useState(0);
+
+  function handleClear() {
+    try { localStorage.removeItem(`chat:${storageKey}`); } catch {}
+    setClearCount(c => c + 1);
+  }
 
   return (
     <div className="editor-sidebar">
-      <div className="editor-sidebar-header">AI Chat</div>
+      <div className="editor-sidebar-header">
+        <span>AI Chat</span>
+        <button className="chat-clear-btn" onClick={handleClear} title="Clear chat">Clear</button>
+      </div>
       <ChatWindow
-        key={storageKey}
+        key={`${storageKey}-${clearCount}`}
         context={context}
         storageKey={storageKey}
         onMutations={onMutations}

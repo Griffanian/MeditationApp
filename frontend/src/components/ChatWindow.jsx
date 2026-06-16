@@ -112,25 +112,84 @@ export default function ChatWindow({ context, storageKey, onMutations, readOnly 
     }
   }
 
-  const placeholders = readOnly ? {
-    exercise: 'Ask about this exercise...',
-    practice: 'Ask about this programme...',
-    player: 'Ask about today\'s practice...',
-    dashboard: 'Ask about the exercises...',
-    practices: 'Ask about the programmes...',
-  } : {
-    exercise: 'Ask about this exercise or tell me to change something...',
-    practice: 'Ask about this programme or tell me to rearrange stages...',
-    player: 'Ask about today\'s practice or the programme...',
-    dashboard: 'Ask about your exercises...',
-    practices: 'Ask about your programmes...',
+  const suggestions = {
+    player: [
+      "What am I practising today?",
+      "How does this week progress?",
+      "Explain today's exercises",
+    ],
+    exercise: readOnly ? [
+      "What is this exercise?",
+      "How do the stages progress?",
+      "What should I focus on?",
+    ] : [
+      "What is this exercise?",
+      "How do the stages progress?",
+      "Add a new stage",
+    ],
+    practice: [
+      "Describe this programme",
+      "How does it progress?",
+      "What exercises are included?",
+    ],
+    dashboard: [
+      "What exercises do I have?",
+      "Suggest a practice routine",
+      "Explain the categories",
+    ],
+    practices: [
+      "What programmes are available?",
+      "Suggest a new programme",
+      "Compare the programmes",
+    ],
   };
+
+  function handleSuggestion(text) {
+    setInput(text);
+    // Auto-send
+    const userMsg = { role: 'user', content: text };
+    setMessages(prev => [...prev, userMsg]);
+    setSending(true);
+    const history = messages.map(m => ({ role: m.role, content: m.content }));
+    let sendContext = context;
+    if (context.page === 'player' && context.practice) {
+      let currentWeek = 0, currentDay = 0;
+      try { currentWeek = JSON.parse(localStorage.getItem(`player:${context.practice}:week`)) || 0; } catch {}
+      try { currentDay = JSON.parse(localStorage.getItem(`player:${context.practice}:day`)) || 0; } catch {}
+      sendContext = { ...context, currentWeek, currentDay };
+    }
+    sendChatMessage(text, history, sendContext).then(result => {
+      const assistantMsg = {
+        role: 'assistant',
+        content: result.reply,
+        mutations: result.mutations || null,
+        mutation_errors: result.mutation_errors || null,
+        changes: result.changes || null,
+      };
+      setMessages(prev => [...prev, assistantMsg]);
+      if (result.mutations && onMutations) {
+        try { onMutations(result.mutations); } catch {}
+      }
+      if (result.created_programme) {
+        window.location.href = `/practice/${result.created_programme}`;
+      }
+    }).catch(err => {
+      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}` }]);
+    }).finally(() => {
+      setSending(false);
+      setInput('');
+    });
+  }
 
   return (
     <div className="chat-window">
       <div className="chat-messages">
         {messages.length === 0 && (
-          <p className="chat-placeholder">{placeholders[context?.page] || 'Ask me anything...'}</p>
+          <div className="chat-suggestions">
+            {(suggestions[context?.page] || suggestions.dashboard).map((s, i) => (
+              <button key={i} className="chat-suggestion-btn" onClick={() => handleSuggestion(s)}>{s}</button>
+            ))}
+          </div>
         )}
         {messages.map((msg, i) => (
           <div key={i} className={`chat-msg chat-msg-${msg.role}`}>

@@ -66,7 +66,14 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 }
 .editor-sidebar-header {
   font-size: 16px; color: #a0c4ff; font-weight: 600; margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between;
 }
+.chat-clear-btn {
+  background: none; border: 1px solid #333; border-radius: 4px;
+  color: #888; font-size: 11px; padding: 2px 8px; cursor: pointer;
+  font-family: inherit;
+}
+.chat-clear-btn:hover { color: #e0e0e0; border-color: #888; }
 .editor-sidebar .chat-window { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .editor-sidebar .chat-messages { flex: 1; max-height: none; overflow-y: auto; }
 
@@ -339,6 +346,20 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 }
 .chat-send:hover { background: #3a5a8a; }
 .chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Chat suggestion buttons */
+.chat-suggestions {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 0; margin: auto 0;
+}
+.chat-suggestion-btn {
+  padding: 8px 12px; font-size: 13px; font-family: inherit;
+  background: rgba(255,255,255,0.04); border: 1px solid #333;
+  border-radius: 8px; color: #a0c4ff; cursor: pointer;
+  text-align: left; transition: background 0.15s, border-color 0.15s;
+}
+.chat-suggestion-btn:hover { background: rgba(160,196,255,0.1); border-color: #4a6fa5; }
+
 .chat-mutations { margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px; }
 .chat-mutations-toggle {
   background: none; border: none; color: #8ab4f8; cursor: pointer;
