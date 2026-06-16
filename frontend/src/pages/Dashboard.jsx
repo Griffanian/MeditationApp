@@ -404,7 +404,7 @@ export default function Dashboard() {
           <div className="meta-category-header" onClick={() => setExpandedCats(prev => ({ ...prev, [`group:${groupId}`]: !prev[`group:${groupId}`] }))}>
             <span className="category-collapse-btn">{isGroupCollapsed ? '▸' : '▾'}</span>
             <h2 className="meta-category-title">{groupDisplay}</h2>
-            {isAdmin && <button className="btn-add-in-group" onClick={e => { e.stopPropagation(); handleNewSection(groupId); }}>+ Section</button>}
+
             {isAdmin && catsInGroup.length === 0 && (
               <button className="category-delete-btn" onClick={e => { e.stopPropagation(); deleteGroup(groupId).then(() => setGroups(prev => prev.filter(g => g.name !== groupId))); }}>✕</button>
             )}
@@ -421,7 +421,7 @@ export default function Dashboard() {
   return (
     <div>
       <h1>Exercise Bank</h1>
-      <p className="section-description">All available exercises, organised by the system they come from. Each exercise shows its stages with adjustable defaults for duration, rounds, or breath counts. Exercises are assembled into programmes.</p>
+      <p className="section-description">All available exercises, organised by system and category. Each exercise has progressive stages that build on each other, so you can track your development over time. Stages show adjustable defaults for duration, rounds, or breath counts, and are assembled into programmes.</p>
 
       {isAdmin ? (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>

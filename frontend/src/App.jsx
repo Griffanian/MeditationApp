@@ -26,7 +26,7 @@ function AppHeader({ isAdmin, onLogout }) {
 
   return (
     <header className="app-header">
-      <span className="app-header-brand">Progress Meditation</span>
+      <NavLink to="/" className="app-header-brand">Progress Meditation</NavLink>
       <nav className="app-header-nav">
         <NavLink to="/exercises" className={() => `app-header-link${isExercises ? ' active' : ''}`}>
           Exercise Bank

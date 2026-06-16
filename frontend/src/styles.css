@@ -1598,8 +1598,9 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 .app-header-brand {
   font-size: 18px; font-weight: 700; color: #cdb4db;
   letter-spacing: 0.5px; margin-right: 12px;
-  font-style: italic;
+  font-style: italic; text-decoration: none;
 }
+.app-header-brand:hover { opacity: 0.8; }
 .app-header-nav {
   display: flex; gap: 2px; flex: 1;
 }
