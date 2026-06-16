@@ -5,7 +5,7 @@ export function setToken(token) { localStorage.setItem('auth_token', token); }
 export function clearToken() { localStorage.removeItem('auth_token'); }
 
 // Wrapper around fetch that adds auth header and kicks to login on 403.
-function apiFetch(url, opts = {}) {
+export function apiFetch(url, opts = {}) {
   const token = getToken();
   const headers = { ...(opts.headers || {}) };
   if (token) headers['Authorization'] = `Token ${token}`;

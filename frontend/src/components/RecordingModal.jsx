@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js';
 import { stopPlayback, registerExternalStop, unregisterExternalStop } from '../playback';
-import { BASE } from '../api';
+import { BASE, apiFetch } from '../api';
 
 const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
   'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
@@ -234,7 +234,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
   async function handleGenerate() {
     setGenerating(true);
     try {
-      const res = await fetch(`/api/meditations/${meditationName}/stages/${stageId}/generate-audio/${seg.id}`, {
+      const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/generate-audio/${seg.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: seg.text }),
@@ -393,7 +393,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
                     )}
                     <button className="modal-btn-sm modal-btn-delete" onClick={async () => {
                       if (!window.confirm('Are you sure you want to delete this recording?')) return;
-                      await fetch(`/api/meditations/${meditationName}/stages/${stageId}/delete-component/${seg.id}`, { method: 'DELETE' });
+                      await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/delete-component/${seg.id}`, { method: 'DELETE' });
                       onDone();
                     }}>🗑 Delete</button>
                   </>

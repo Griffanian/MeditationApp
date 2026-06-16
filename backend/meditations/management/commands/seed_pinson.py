@@ -117,7 +117,7 @@ HABATA_HASHKATA_SCRIPT = [
                     "tissue and relaxing the upper body."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
             {
                 "type": "speech", "id": "focal_intro",
                 "text": (
@@ -160,7 +160,7 @@ HABATA_HASHKATA_SCRIPT = [
                     "As they come, so they go."
                 ),
             },
-            {"type": "pause", "duration_seconds": 12},
+            {"type": "pause", "duration_seconds": 5},
             {
                 "type": "speech", "id": "deep_breaths",
                 "text": (
@@ -168,7 +168,7 @@ HABATA_HASHKATA_SCRIPT = [
                     "With each exhale, let it all go. Simply be."
                 ),
             },
-            {"type": "pause", "duration_seconds": 20},
+            {"type": "pause", "duration_seconds": 8},
         ],
     },
     {
@@ -182,7 +182,7 @@ HABATA_HASHKATA_SCRIPT = [
                     "Simply observe. Without judgment."
                 ),
             },
-            {"type": "pause", "duration_seconds": 20},
+            {"type": "pause", "duration_seconds": 8},
         ],
     },
     {
@@ -246,19 +246,19 @@ HABATA_HASHKATA_SCRIPT = [
                     "of gratitude."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
         ],
     },
 ]
 
 HABATA_HASHKATA_VARS = {
     "focalDuration": {
-        "value": 120,
+        "value": 30,
         "displayName": "Focal Point Duration",
         "unit": "seconds",
     },
     "questionDuration": {
-        "value": 120,
+        "value": 30,
         "displayName": "Question Duration",
         "unit": "seconds",
     },
@@ -285,7 +285,7 @@ DAILY_HASHKATA_SCRIPT = [
                     "noise, chaos, and fluctuations. Simply be."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
             {
                 "type": "speech", "id": "observe",
                 "text": (
@@ -294,7 +294,7 @@ DAILY_HASHKATA_SCRIPT = [
                     "or changing a thing, observe it all."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
         ],
     },
     {
@@ -324,7 +324,7 @@ DAILY_HASHKATA_SCRIPT = [
                     "to your focal point."
                 ),
             },
-            {"type": "pause", "duration_seconds": 20},
+            {"type": "pause", "duration_seconds": 8},
             {
                 "type": "speech", "id": "many_thoughts",
                 "text": (
@@ -357,7 +357,7 @@ DAILY_HASHKATA_SCRIPT = [
                     "Sit with it."
                 ),
             },
-            {"type": "pause", "duration_seconds": 30},
+            {"type": "pause", "duration_seconds": 10},
         ],
     },
     {
@@ -379,12 +379,12 @@ DAILY_HASHKATA_SCRIPT = [
 
 DAILY_HASHKATA_VARS = {
     "anchorDuration": {
-        "value": 60,
+        "value": 20,
         "displayName": "Anchor Duration",
         "unit": "seconds",
     },
     "questionDuration": {
-        "value": 90,
+        "value": 30,
         "displayName": "Question Duration",
         "unit": "seconds",
     },
@@ -411,7 +411,7 @@ OBSERVING_THOUGHTS_SCRIPT = [
                     "visual to accompany these words."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
         ],
     },
     {
@@ -426,7 +426,7 @@ OBSERVING_THOUGHTS_SCRIPT = [
                     "Hold your center."
                 ),
             },
-            {"type": "pause", "duration_seconds": 20},
+            {"type": "pause", "duration_seconds": 8},
             {
                 "type": "speech", "id": "return",
                 "text": (
@@ -434,7 +434,7 @@ OBSERVING_THOUGHTS_SCRIPT = [
                     "on observation."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
         ],
     },
     {
@@ -449,7 +449,7 @@ OBSERVING_THOUGHTS_SCRIPT = [
                     "of emotions or judgments that tempt to overshadow."
                 ),
             },
-            {"type": "pause", "duration_seconds": 20},
+            {"type": "pause", "duration_seconds": 8},
             {
                 "type": "speech", "id": "resist",
                 "text": (
@@ -484,7 +484,7 @@ OBSERVING_THOUGHTS_SCRIPT = [
                     "yourself: I am going to deal with this issue."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
             {
                 "type": "speech", "id": "seal",
                 "text": (
@@ -500,7 +500,7 @@ OBSERVING_THOUGHTS_SCRIPT = [
 
 OBSERVING_THOUGHTS_VARS = {
     "observeDuration": {
-        "value": 120,
+        "value": 30,
         "displayName": "Observation Duration",
         "unit": "seconds",
     },
@@ -709,7 +709,7 @@ LOWER_UNITY_SCRIPT = [
                     "noise, chaos, and movement. Simply be."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
             {
                 "type": "speech", "id": "observe",
                 "text": (
@@ -718,7 +718,7 @@ LOWER_UNITY_SCRIPT = [
                     "or changing a thing, observe it all."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
         ],
     },
     {
@@ -734,7 +734,7 @@ LOWER_UNITY_SCRIPT = [
                     "slow, or fast is not relevant. Let it be natural."
                 ),
             },
-            {"type": "pause", "duration_seconds": 20},
+            {"type": "pause", "duration_seconds": 8},
             {
                 "type": "speech", "id": "wander",
                 "text": (
@@ -744,7 +744,7 @@ LOWER_UNITY_SCRIPT = [
                     "your attention on the breath."
                 ),
             },
-            {"type": "pause", "duration_seconds": 20},
+            {"type": "pause", "duration_seconds": 8},
         ],
     },
     {
@@ -767,7 +767,7 @@ LOWER_UNITY_SCRIPT = [
                     "the Divine Cosmic Exhale."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
             {
                 "type": "speech", "id": "exhale",
                 "text": (
@@ -777,7 +777,7 @@ LOWER_UNITY_SCRIPT = [
                     "to the Divine Cosmic Inhale."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
         ],
     },
     {
@@ -829,7 +829,7 @@ LOWER_UNITY_SCRIPT = [
 
 LOWER_UNITY_VARS = {
     "dwellDuration": {
-        "value": 120,
+        "value": 30,
         "displayName": "Dwelling Duration",
         "unit": "seconds",
     },
@@ -872,7 +872,7 @@ HIGHER_UNITY_SCRIPT = [
                     "fade away."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
             {
                 "type": "speech", "id": "observe",
                 "text": (
@@ -881,7 +881,7 @@ HIGHER_UNITY_SCRIPT = [
                     "or changing a thing."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
         ],
     },
     {
@@ -895,7 +895,7 @@ HIGHER_UNITY_SCRIPT = [
                     "breath flow in and out through the nostrils."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
             {
                 "type": "speech", "id": "wander",
                 "text": (
@@ -905,12 +905,12 @@ HIGHER_UNITY_SCRIPT = [
                     "this steady space. Your center."
                 ),
             },
-            {"type": "pause", "duration_seconds": 20},
+            {"type": "pause", "duration_seconds": 8},
             {
                 "type": "speech", "id": "settle",
                 "text": "Keep focus on your breath as the mind settles.",
             },
-            {"type": "pause", "duration_seconds": 20},
+            {"type": "pause", "duration_seconds": 8},
         ],
     },
     {
@@ -966,7 +966,7 @@ HIGHER_UNITY_SCRIPT = [
 
 HIGHER_UNITY_VARS = {
     "unityDuration": {
-        "value": 120,
+        "value": 30,
         "displayName": "Unity Dwelling Duration",
         "unit": "seconds",
     },
@@ -992,7 +992,7 @@ THREE_STAGES_SCRIPT = [
                     "without manipulation. Simply be."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
         ],
     },
     {
@@ -1114,7 +1114,7 @@ THREE_STAGES_SCRIPT = [
 
 THREE_STAGES_VARS = {
     "cycleDuration": {
-        "value": 120,
+        "value": 30,
         "displayName": "Cycle Practice Duration",
         "unit": "seconds",
     },
@@ -1140,7 +1140,7 @@ FEAR_AWE_PLEASURE_SCRIPT = [
                     "Let it flow without forcing."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
         ],
     },
     {
@@ -1155,7 +1155,7 @@ FEAR_AWE_PLEASURE_SCRIPT = [
                     "Anxiety. Contraction. The Tzimtzum within."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
             {
                 "type": "speech", "id": "fear_exhale",
                 "text": (
@@ -1233,17 +1233,17 @@ FEAR_AWE_PLEASURE_SCRIPT = [
 
 FEAR_AWE_PLEASURE_VARS = {
     "fearDuration": {
-        "value": 90,
+        "value": 20,
         "displayName": "Fear Release Duration",
         "unit": "seconds",
     },
     "aweDuration": {
-        "value": 90,
+        "value": 20,
         "displayName": "Awe Duration",
         "unit": "seconds",
     },
     "pleasureDuration": {
-        "value": 120,
+        "value": 30,
         "displayName": "Pleasure Duration",
         "unit": "seconds",
     },
@@ -1270,7 +1270,7 @@ RENEWAL_SCRIPT = [
                     "Bring awareness to the breath."
                 ),
             },
-            {"type": "pause", "duration_seconds": 15},
+            {"type": "pause", "duration_seconds": 6},
         ],
     },
     {
@@ -1285,7 +1285,7 @@ RENEWAL_SCRIPT = [
                     "giving back the breath."
                 ),
             },
-            {"type": "pause", "duration_seconds": 20},
+            {"type": "pause", "duration_seconds": 8},
         ],
     },
     {
@@ -1301,7 +1301,7 @@ RENEWAL_SCRIPT = [
                     "the Supernal Breath, is a revealing of Light."
                 ),
             },
-            {"type": "pause", "duration_seconds": 20},
+            {"type": "pause", "duration_seconds": 8},
             {
                 "type": "speech", "id": "dwell_empty",
                 "text": (
@@ -1369,7 +1369,7 @@ RENEWAL_SCRIPT = [
 
 RENEWAL_VARS = {
     "renewalDuration": {
-        "value": 120,
+        "value": 30,
         "displayName": "Renewal Dwelling Duration",
         "unit": "seconds",
     },
@@ -1527,7 +1527,7 @@ DAILY_BREATHING_VARS = {
         "unit": "seconds",
     },
     "silentDuration": {
-        "value": 120,
+        "value": 30,
         "displayName": "Silent Practice Duration",
         "unit": "seconds",
     },
@@ -1558,8 +1558,19 @@ BREATHING_STAGES = [
 # PROGRAMME — 4-week progressive structure
 # ─────────────────────────────────────────────────────────────────────
 
+def _vars(base, **overrides):
+    """Clone a variable dict with overridden values."""
+    out = {}
+    for k, v in base.items():
+        entry = dict(v)
+        if k in overrides:
+            entry["value"] = overrides[k]
+        out[k] = entry
+    return out
+
+
 def _build_programme():
-    """Build a 4-week progressive programme from the 9 practices."""
+    """Build a 4-week progressive programme with increasing durations."""
 
     def _day(label, meditation, stage_id, stage_name, variables):
         return {
@@ -1586,39 +1597,45 @@ def _build_programme():
         {
             "label": "Week 1 — Quieting the Mind",
             "days": [
+                # Short focal/question: 30s (defaults)
                 _day("Day 1", q, "habata-hashkata",
                      "1. Habata / Hashkata", HABATA_HASHKATA_VARS),
                 _day("Day 2", q, "habata-hashkata",
                      "1. Habata / Hashkata", HABATA_HASHKATA_VARS),
+                # Bump to 45s
                 _day("Day 3", q, "habata-hashkata",
-                     "1. Habata / Hashkata", HABATA_HASHKATA_VARS),
+                     "1. Habata / Hashkata",
+                     _vars(HABATA_HASHKATA_VARS, focalDuration=45, questionDuration=45)),
                 _day("Day 4", q, "daily-hashkata",
                      "2. Hashkata for Daily Living", DAILY_HASHKATA_VARS),
                 _day("Day 5", q, "daily-hashkata",
-                     "2. Hashkata for Daily Living", DAILY_HASHKATA_VARS),
+                     "2. Hashkata for Daily Living",
+                     _vars(DAILY_HASHKATA_VARS, anchorDuration=30, questionDuration=45)),
                 _day("Day 6", q, "observing-thoughts",
                      "3. Observing One's Thoughts", OBSERVING_THOUGHTS_VARS),
                 _day("Day 7", q, "observing-thoughts",
-                     "3. Observing One's Thoughts", OBSERVING_THOUGHTS_VARS),
+                     "3. Observing One's Thoughts",
+                     _vars(OBSERVING_THOUGHTS_VARS, observeDuration=45)),
             ],
         },
         {
             "label": "Week 2 — Entering the Breath",
             "days": [
+                # Dwell starts at 30s, builds to 60s
                 _day("Day 1", b, "lower-unity",
                      "4. Lower Unity", LOWER_UNITY_VARS),
                 _day("Day 2", b, "lower-unity",
-                     "4. Lower Unity", LOWER_UNITY_VARS),
+                     "4. Lower Unity", _vars(LOWER_UNITY_VARS, dwellDuration=45)),
                 _day("Day 3", b, "lower-unity",
-                     "4. Lower Unity", LOWER_UNITY_VARS),
+                     "4. Lower Unity", _vars(LOWER_UNITY_VARS, dwellDuration=60)),
                 _day("Day 4", b, "higher-unity",
                      "5. Higher Unity", HIGHER_UNITY_VARS),
                 _day("Day 5", b, "higher-unity",
-                     "5. Higher Unity", HIGHER_UNITY_VARS),
+                     "5. Higher Unity", _vars(HIGHER_UNITY_VARS, unityDuration=45)),
                 _day("Day 6", b, "higher-unity",
-                     "5. Higher Unity", HIGHER_UNITY_VARS),
+                     "5. Higher Unity", _vars(HIGHER_UNITY_VARS, unityDuration=60)),
                 _day("Day 7", b, "higher-unity",
-                     "5. Higher Unity", HIGHER_UNITY_VARS),
+                     "5. Higher Unity", _vars(HIGHER_UNITY_VARS, unityDuration=60)),
             ],
         },
         {
@@ -1627,17 +1644,20 @@ def _build_programme():
                 _day("Day 1", b, "three-stages",
                      "6. Three Stages", THREE_STAGES_VARS),
                 _day("Day 2", b, "three-stages",
-                     "6. Three Stages", THREE_STAGES_VARS),
+                     "6. Three Stages", _vars(THREE_STAGES_VARS, cycleDuration=45)),
                 _day("Day 3", b, "three-stages",
-                     "6. Three Stages", THREE_STAGES_VARS),
+                     "6. Three Stages", _vars(THREE_STAGES_VARS, cycleDuration=60)),
                 _day("Day 4", b, "fear-awe-pleasure",
                      "7. Fear, Awe, Pleasure", FEAR_AWE_PLEASURE_VARS),
                 _day("Day 5", b, "fear-awe-pleasure",
-                     "7. Fear, Awe, Pleasure", FEAR_AWE_PLEASURE_VARS),
+                     "7. Fear, Awe, Pleasure",
+                     _vars(FEAR_AWE_PLEASURE_VARS, fearDuration=30, aweDuration=30, pleasureDuration=45)),
                 _day("Day 6", b, "fear-awe-pleasure",
-                     "7. Fear, Awe, Pleasure", FEAR_AWE_PLEASURE_VARS),
+                     "7. Fear, Awe, Pleasure",
+                     _vars(FEAR_AWE_PLEASURE_VARS, fearDuration=45, aweDuration=45, pleasureDuration=60)),
                 _day("Day 7", b, "fear-awe-pleasure",
-                     "7. Fear, Awe, Pleasure", FEAR_AWE_PLEASURE_VARS),
+                     "7. Fear, Awe, Pleasure",
+                     _vars(FEAR_AWE_PLEASURE_VARS, fearDuration=45, aweDuration=45, pleasureDuration=60)),
             ],
         },
         {
@@ -1646,17 +1666,20 @@ def _build_programme():
                 _day("Day 1", b, "renewal",
                      "8. Renewal", RENEWAL_VARS),
                 _day("Day 2", b, "renewal",
-                     "8. Renewal", RENEWAL_VARS),
+                     "8. Renewal", _vars(RENEWAL_VARS, renewalDuration=45)),
                 _day("Day 3", b, "renewal",
-                     "8. Renewal", RENEWAL_VARS),
+                     "8. Renewal", _vars(RENEWAL_VARS, renewalDuration=60)),
                 _day("Day 4", b, "daily-breathing",
                      "9. Daily Breathing Technique", DAILY_BREATHING_VARS),
                 _day("Day 5", b, "daily-breathing",
-                     "9. Daily Breathing Technique", DAILY_BREATHING_VARS),
+                     "9. Daily Breathing Technique",
+                     _vars(DAILY_BREATHING_VARS, silentDuration=45, breathRounds=7)),
                 _day("Day 6", b, "daily-breathing",
-                     "9. Daily Breathing Technique", DAILY_BREATHING_VARS),
+                     "9. Daily Breathing Technique",
+                     _vars(DAILY_BREATHING_VARS, silentDuration=60, breathRounds=9)),
                 _day("Day 7", b, "daily-breathing",
-                     "9. Daily Breathing Technique", DAILY_BREATHING_VARS),
+                     "9. Daily Breathing Technique",
+                     _vars(DAILY_BREATHING_VARS, silentDuration=90, breathRounds=9)),
             ],
         },
     ]

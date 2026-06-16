@@ -3,7 +3,8 @@ import re
 
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -235,31 +236,37 @@ def _redirect_to_storage(path):
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def serve_component(request, name, filename):
     return _redirect_to_storage(f"meditations/{name}/components/{filename}")
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def serve_output(request, name, filename):
     return _redirect_to_storage(f"meditations/{name}/{filename}")
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def serve_stage_component(request, name, stage_id, filename):
     return _redirect_to_storage(f"meditations/{name}/stages/{stage_id}/components/{filename}")
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def serve_stage_output(request, name, stage_id, filename):
     return _redirect_to_storage(f"meditations/{name}/stages/{stage_id}/{filename}")
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def serve_asset(request, filename):
     return _redirect_to_storage(f"assets/{filename}")
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def serve_pdf(request, name):
     path = storage.pdf_path(name)
     if not storage.file_exists(path):
