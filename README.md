@@ -57,17 +57,37 @@ An AI-powered guided meditation builder and editor. Generate structured meditati
    python manage.py migrate
    ```
 
-## Running
+## Running locally
 
 ```bash
-cd backend && source venv/bin/activate
+cd backend && source ../venv/bin/activate
 python manage.py runserver 5555 &
 cd ../frontend && npm run dev
 ```
 
-This starts the Django API server on port 5555 and the Vite dev server on port 3000. Vite proxies `/api`, `/audio`, and `/pdf` requests to the backend.
+This starts the Django API server on port 5555 and the Vite dev server on port 5173. Vite proxies `/api`, `/audio`, and `/pdf` requests to the backend.
 
-Open [http://localhost:3000](http://localhost:3000) to use the app.
+Open [http://localhost:5173](http://localhost:5173) to use the app.
+
+## Deployment (Render)
+
+The app is deployed on [Render](https://render.com/) with auto-deploy from the `main` branch on GitHub (`Griffanian/MeditationApp`).
+
+| Service | Type | URL | Region |
+|---------|------|-----|--------|
+| **Meditation Backend** | Web Service (Python/Gunicorn) | https://meditation-backend-43a3.onrender.com | Frankfurt |
+| **MeditationApp** | Static Site (React/Vite) | https://meditationapp-a6eg.onrender.com | — |
+
+- **Backend** builds with `pip install -r requirements.txt && python manage.py collectstatic --noinput` and runs `gunicorn config.wsgi:application`
+- **Frontend** builds with `npm install && npm run build`, publishes from `dist/`
+- Both services share the same environment group on Render
+- Database is hosted on **Supabase** (PostgreSQL), not Render
+- Audio files and assets are stored in **Supabase Storage**
+
+### Render Dashboard
+
+- Backend: https://dashboard.render.com/web/srv-d8ni960js32c73doddpg
+- Frontend: https://dashboard.render.com/static/srv-d8nf3iok1i2s73d9sou0
 
 ## Project Structure
 
@@ -109,6 +129,23 @@ MeditationApp/
     │   └── api.js                 # API client
     ├── package.json
     └── vite.config.js             # Dev server & API proxy config
+```
+
+## Django Admin
+
+The Django admin interface allows direct management of all database records (Groups, Categories, Meditations, Stages, Components, Assets, Practices, Assembled Outputs).
+
+| Environment | URL |
+|-------------|-----|
+| **Production** | https://meditation-backend-43a3.onrender.com/admin/ |
+| **Local** | http://localhost:5555/admin/ |
+
+To create a superuser for admin access:
+
+```bash
+cd backend
+source ../venv/bin/activate
+python manage.py createsuperuser
 ```
 
 ## Data Model

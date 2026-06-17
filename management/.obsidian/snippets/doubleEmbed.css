@@ -1,0 +1,21 @@
+/* Hide borders and margins between double embeds */
+.markdown-preview-view .markdown-preview-sizer {
+    padding: 0 !important;
+}
+
+/* Remove padding and margin from individual embeds */
+.markdown-preview-view .markdown-embed {
+    border: none !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Adjust spacing between double embeds */
+.markdown-preview-view .markdown-embed:nth-child(odd) {
+    margin-right: 0.5em !important;
+}
+
+/* Hide file name in embeds */
+.markdown-preview-view .markdown-embed .markdown-embed-title {
+    display: none !important;
+}
