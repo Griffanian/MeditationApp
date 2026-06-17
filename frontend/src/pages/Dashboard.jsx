@@ -21,6 +21,7 @@ export default function Dashboard() {
   const [editingCategory, setEditingCategory] = useState(null);
   const [editCatName, setEditCatName] = useState('');
   const [expandedCats, setExpandedCats] = useLocalState('dashboard:expandedCats', {});
+  const [selectedGroup, setSelectedGroup] = useLocalState('dashboard:selectedGroup', null); // null = first group
   const audioRef = useRef(null);
   const navigate = useNavigate();
 
@@ -386,42 +387,44 @@ export default function Dashboard() {
 
   const activeId = activeDrag ? (activeDrag.type === 'section' ? `section:${activeDrag.cat.name}` : null) : null;
 
-  const categoryContent = groupIds.map(groupId => {
-    const catsInGroup = allCats.filter(c => (c.group || '') === groupId);
-    if (!groupId) {
-      // Ungrouped categories — wrap in a drop zone so sections can be dragged out of groups
-      return (
-        <GroupDropZone key="group:" groupName="" active={activeId}>
-          {catsInGroup.map(renderCategory)}
-        </GroupDropZone>
-      );
-    }
-    const groupDisplay = groupDisplayMap[groupId] || groupId;
-    const isGroupCollapsed = !expandedCats[`group:${groupId}`];
-    return (
-      <GroupDropZone key={`group:${groupId}`} groupName={groupId} active={activeId}>
-        <div className="meta-category">
-          <div className="meta-category-header" onClick={() => setExpandedCats(prev => ({ ...prev, [`group:${groupId}`]: !prev[`group:${groupId}`] }))}>
-            <span className="category-collapse-btn">{isGroupCollapsed ? '▸' : '▾'}</span>
-            <h2 className="meta-category-title">{groupDisplay}</h2>
+  // Current page — default to first group
+  const activeGroup = selectedGroup != null && groupIds.includes(selectedGroup) ? selectedGroup : (groups.length > 0 ? groups[0].name : '');
+  const activeGroupDisplay = groupDisplayMap[activeGroup] || 'Other';
+  const visibleCats = allCats.filter(c => (c.group || '') === activeGroup);
+  const ungroupedCats = allCats.filter(c => !c.group);
 
-            {isAdmin && catsInGroup.length === 0 && (
-              <button className="category-delete-btn" onClick={e => { e.stopPropagation(); deleteGroup(groupId).then(() => setGroups(prev => prev.filter(g => g.name !== groupId))); }}>✕</button>
-            )}
-          </div>
-          {!isGroupCollapsed && (catsInGroup.length > 0
-            ? catsInGroup.map(renderCategory)
-            : <div className="empty-group-hint">Drag sections here</div>
-          )}
-        </div>
-      </GroupDropZone>
-    );
-  });
+  const categoryContent = visibleCats.map(renderCategory);
 
   return (
     <div>
       <h1>Exercise Bank</h1>
       <p className="section-description">All available exercises, organised by system and category. Each exercise has progressive stages that build on each other, so you can track your development over time. Stages show adjustable defaults for duration, rounds, or breath counts, and are assembled into programmes.</p>
+
+      {/* Group page tabs */}
+      <div className="group-tabs">
+        {groups.map(g => (
+          <button
+            key={g.name}
+            className={`group-tab${activeGroup === g.name ? ' active' : ''}`}
+            onClick={() => setSelectedGroup(g.name)}
+          >{g.display_name}</button>
+        ))}
+        {ungroupedCats.length > 0 && (
+          <button
+            className={`group-tab${activeGroup === '' ? ' active' : ''}`}
+            onClick={() => setSelectedGroup('')}
+          >Other</button>
+        )}
+        {isAdmin && <button className="group-tab group-tab-add" onClick={async () => {
+          const displayName = prompt('Group name:');
+          if (!displayName || !displayName.trim()) return;
+          try {
+            const grp = await createGroup(displayName.trim());
+            setGroups(prev => [...prev, grp]);
+            setSelectedGroup(grp.name);
+          } catch (err) { alert(err.message); }
+        }}>+</button>}
+      </div>
 
       {isAdmin ? (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -441,16 +444,7 @@ export default function Dashboard() {
       ) : categoryContent}
 
       {isAdmin && <div className="new-section-buttons">
-        <button className="btn-new-section" onClick={() => handleNewSection()}>+ New Section</button>
-        <button className="btn-new-section" onClick={async () => {
-          const displayName = prompt('Group name:');
-          if (!displayName || !displayName.trim()) return;
-          try {
-            const grp = await createGroup(displayName.trim());
-            setGroups(prev => [...prev, grp]);
-            setExpandedCats(prev => ({ ...prev, [`group:${grp.name}`]: true }));
-          } catch (err) { alert(err.message); }
-        }}>+ New Group</button>
+        <button className="btn-new-section" onClick={() => handleNewSection(activeGroup)}>+ New Section</button>
       </div>}
 
     </div>

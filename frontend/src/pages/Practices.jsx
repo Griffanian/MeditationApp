@@ -55,7 +55,7 @@ export default function Practices() {
   return (
     <div>
       <h1>Programmes</h1>
-      <p className="section-description">Guided meditation courses structured by week and day. Pick a programme and follow along at your own pace.</p>
+      <p className="section-description">Guided meditation courses structured by week and day. Pick a programme and follow along at your own pace, or build your own using exercises from the <Link to="/exercises" className="section-description-link">Exercise Bank</Link>.</p>
 
       {loading ? <div className="loading-page"><div className="loading-spinner" />Loading programmes...</div> : practices.length === 0 && !isAdmin ? (
         <div className="empty-state">

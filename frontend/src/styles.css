@@ -13,6 +13,10 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 .section-description {
   color: #888; font-size: 16px; margin-bottom: 20px; line-height: 1.6;
 }
+.section-description-link {
+  color: #a0c4ff; text-decoration: none;
+}
+.section-description-link:hover { text-decoration: underline; }
 
 /* Empty states */
 .empty-state {
@@ -836,6 +840,25 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 
 /* Timeline gap */
 .timeline { display: flex; flex-direction: column; gap: 3px; }
+
+/* Group page tabs */
+.group-tabs {
+  display: flex; gap: 2px; margin-bottom: 20px;
+  border-bottom: 1px solid #2a2a4a; padding-bottom: 0;
+}
+.group-tab {
+  padding: 10px 20px; font-size: 14px; font-family: inherit; font-weight: 500;
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: #888; cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.group-tab:hover { color: #ccc; }
+.group-tab.active {
+  color: #a0c4ff; border-bottom-color: #a0c4ff;
+}
+.group-tab-add {
+  color: #555; font-size: 18px; padding: 8px 14px;
+}
+.group-tab-add:hover { color: #a0c4ff; }
 
 /* Dashboard */
 .meta-category {
