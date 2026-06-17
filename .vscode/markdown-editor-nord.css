@@ -1,0 +1,170 @@
+/* Obsidian Nord Light Theme for vscode-markdown-editor */
+
+.milkdown {
+    --background-primary: #ffffff;
+    --background-secondary: #eceff4;
+    --background-secondary-alt: #e5e9f0;
+    --text-normal: #434c5e;
+    --text-faint: #2e3440;
+    --text-muted: #3b4252;
+
+    --red: #bf616a;
+    --orange: #d08770;
+    --yellow: #ebcb8b;
+    --green: #a3be8c;
+    --purple: #b48ead;
+    --frost0: #8fbcbb;
+    --frost1: #88c0d0;
+    --frost2: #81a1c1;
+    --frost3: #5e81ac;
+
+    background-color: var(--background-primary) !important;
+    color: var(--text-normal) !important;
+}
+
+/* Force light background on the editor root */
+.milkdown .editor,
+.milkdown .ProseMirror,
+.ProseMirror {
+    background-color: #ffffff !important;
+    color: #434c5e !important;
+}
+
+/* Headings - Nord colored like Obsidian */
+.milkdown h1,
+h1 {
+    color: #bf616a !important;
+}
+
+.milkdown h2,
+h2 {
+    color: #ebcb8b !important;
+}
+
+.milkdown h3,
+h3 {
+    color: #a3be8c !important;
+}
+
+.milkdown h4,
+h4 {
+    color: #b48ead !important;
+}
+
+.milkdown h5,
+h5 {
+    color: #8fbcbb !important;
+}
+
+.milkdown h6,
+h6 {
+    color: #81a1c1 !important;
+}
+
+/* Bold */
+strong, b {
+    color: #a3be8c !important;
+    font-weight: 600 !important;
+}
+
+/* Italic */
+em, i {
+    color: #a3be8c !important;
+}
+
+/* Links */
+a {
+    color: #d08770 !important;
+    text-decoration: none !important;
+}
+
+a:hover {
+    color: #81a1c1 !important;
+}
+
+/* Inline code */
+code:not(pre code) {
+    color: #88c0d0 !important;
+    background-color: #eceff4 !important;
+    border-radius: 4px;
+    padding: 0.1em 0.25em;
+}
+
+/* Code blocks */
+pre, pre code {
+    background-color: #eceff4 !important;
+    color: #88c0d0 !important;
+}
+
+/* Blockquotes */
+blockquote {
+    border-left: 3px solid #81a1c1 !important;
+    color: #4c566a !important;
+}
+
+/* Highlight/mark */
+mark {
+    background-color: #ebcb8b !important;
+    color: #2e3440 !important;
+}
+
+/* Tags */
+.tag {
+    color: #4c566a !important;
+    background-color: #e5e9f0 !important;
+    padding: 0.2em 0.5em;
+    border-radius: 0.5em;
+}
+
+/* Tables */
+table {
+    border: 1px solid #eceff4 !important;
+    border-collapse: collapse;
+}
+
+thead {
+    border-bottom: 2px solid #e5e9f0 !important;
+}
+
+th {
+    font-weight: 600 !important;
+    border: 1px solid #eceff4 !important;
+    background-color: rgba(236, 239, 244, 0.2) !important;
+}
+
+td {
+    border: 1px solid #eceff4 !important;
+}
+
+tbody tr:nth-child(even) {
+    background-color: rgba(236, 239, 244, 0.4) !important;
+}
+
+tbody tr:nth-child(odd) {
+    background-color: rgba(236, 239, 244, 0.8) !important;
+}
+
+/* Checkboxes */
+input[type="checkbox"] {
+    border: 1px solid #81a1c1;
+    border-radius: 0;
+}
+
+input[type="checkbox"]:checked {
+    background-color: #81a1c1;
+}
+
+/* Horizontal rule */
+hr {
+    border-color: #e5e9f0 !important;
+}
+
+/* Selection */
+::selection {
+    background-color: rgba(191, 97, 106, 0.6) !important;
+}
+
+/* List markers */
+ul, ol {
+    color: #434c5e !important;
+}

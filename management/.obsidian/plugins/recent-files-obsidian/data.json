@@ -1,28 +1,60 @@
 {
   "recentFiles": [
     {
-      "basename": "2026-06-17_meditation-app-architecture-and-integration-with-resilientminds",
-      "path": "meetings/2026-06-17_meditation-app-architecture-and-integration-with-resilientminds.md"
+      "basename": "Roger Jackson",
+      "path": "People/Roger Jackson.md"
     },
     {
-      "basename": "Meeting Notes",
-      "path": "Templates/Meeting Notes.md"
+      "basename": "Simon Bloom",
+      "path": "People/Simon Bloom.md"
+    },
+    {
+      "basename": "Miles Bloom",
+      "path": "People/Miles Bloom.md"
     },
     {
       "basename": "Person",
       "path": "Templates/Person.md"
     },
     {
+      "basename": "Organisation",
+      "path": "Templates/Organisation.md"
+    },
+    {
+      "basename": "Meeting Notes",
+      "path": "Templates/Meeting Notes.md"
+    },
+    {
+      "basename": "Infrastructure",
+      "path": "Infrastructure.md"
+    },
+    {
+      "basename": "Meditation App",
+      "path": "Organisations/Meditation App.md"
+    },
+    {
+      "basename": "Resilientminds",
+      "path": "Organisations/Resilientminds.md"
+    },
+    {
+      "basename": "2026-06-17_meditation-app-architecture-and-integration-with-resilientminds",
+      "path": "meetings/2026-06-17_meditation-app-architecture-and-integration-with-resilientminds.md"
+    },
+    {
+      "basename": "2026-06-16_perfect-stillness-practice-body-awareness-and-sitting-still",
+      "path": "meetings/2026-06-16_perfect-stillness-practice-body-awareness-and-sitting-still.md"
+    },
+    {
+      "basename": "2026-06-16_get-started-with-granola",
+      "path": "meetings/2026-06-16_get-started-with-granola.md"
+    },
+    {
+      "basename": "2026-06-16_gaia-sthiram-meditation-practice-body-stillness-and-sensory-awareness",
+      "path": "meetings/2026-06-16_gaia-sthiram-meditation-practice-body-stillness-and-sensory-awareness.md"
+    },
+    {
       "basename": "TODO",
       "path": "TODO.md"
-    },
-    {
-      "basename": "Roger Jackson",
-      "path": "People/Roger Jackson.md"
-    },
-    {
-      "basename": "Miles Bloom",
-      "path": "People/Miles Bloom.md"
     },
     {
       "basename": "Peter Smith meeting",
@@ -167,22 +199,6 @@
     {
       "basename": "Contamination of Ego States",
       "path": "General Notes/Contamination of Ego States.md"
-    },
-    {
-      "basename": "Linear-Algebra",
-      "path": "General Notes/Linear-Algebra.md"
-    },
-    {
-      "basename": "Matrices-",
-      "path": "General Notes/Matrices-.md"
-    },
-    {
-      "basename": "The Ring of Square Matrices",
-      "path": "General Notes/The Ring of Square Matrices.md"
-    },
-    {
-      "basename": "Matrix Multiplication",
-      "path": "General Notes/Matrix Multiplication.md"
     }
   ],
   "omittedPaths": [],

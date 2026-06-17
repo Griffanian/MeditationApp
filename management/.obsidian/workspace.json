@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "meetings/2026-06-17_meditation-app-architecture-and-integration-with-resilientminds.md",
+                "file": "People/Roger Jackson.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "2026-06-17_meditation-app-architecture-and-integration-with-resilientminds"
+              "title": "Roger Jackson"
             }
           }
         ]
@@ -174,7 +174,6 @@
   },
   "left-ribbon": {
     "hiddenItems": {
-      "granola-meetings-simple-sync:Sync Granola meetings": false,
       "switcher:Open quick switcher": false,
       "graph:Open graph view": false,
       "canvas:Create new canvas": false,
@@ -191,19 +190,32 @@
   },
   "active": "19b35cfccf05e958",
   "lastOpenFiles": [
+    "People/Simon Bloom.md",
+    "People/Roger Jackson.md",
+    "People/Miles Bloom.md",
+    "Templates/Person.md",
+    "Templates/Organisation.md",
+    "Templates/Meeting Notes.md",
+    "Infrastructure.md",
+    "Organisations/Meditation App.md",
+    "Finances.md",
+    "untitled folder",
+    "Finances.xlsx",
+    "Organisations/Resilientminds.md",
+    "meetings/2026-06-17_meditation-app-architecture-and-integration-with-resilientminds.md",
+    "meetings/2026-06-16_perfect-stillness-practice-body-awareness-and-sitting-still.md",
+    "meetings/2026-06-16_get-started-with-granola.md",
+    "meetings/2026-06-16_gaia-sthiram-meditation-practice-body-stillness-and-sensory-awareness.md",
+    "Organisations",
+    "meetings/2026-06-16_nadi-shuddhi-breathing-practice-alternate-nostril-technique.md",
     "Meetings1/2026-06-16 Gaia Sthiram meditation practice — body stillness and sensory awareness.md",
     "Meetings1/2026-06-16 Get started with Granola.md",
     "Meetings1/2026-06-16 Nadi Shuddhi breathing practice — alternate nostril technique.md",
     "Meetings1/2026-06-16 Perfect stillness practice — body awareness and sitting still.md",
     "Meetings1/2026-06-17 Meditation app architecture and integration with Resilientminds.md",
-    "Templates/Meeting Notes.md",
     "Meetings1",
-    "Templates/Person.md",
     "TODO.md",
-    "People/Roger Jackson.md",
-    "People/Miles Bloom.md",
     "People",
-    "meetings/2026-06-17_meditation-app-architecture-and-integration-with-resilientminds.md",
     "Templates"
   ]
 }
