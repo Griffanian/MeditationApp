@@ -14,7 +14,7 @@ import History from './pages/History';
 import AssistantSidebar from './components/AssistantSidebar';
 import { AuthProvider, buildAuth } from './AuthContext';
 import { checkAuth, logoutUser } from './api';
-import './styles.css';
+import './styles.scss';
 
 function AppHeader({ auth }) {
   const location = useLocation();
@@ -57,8 +57,27 @@ function AppHeader({ auth }) {
   );
 }
 
+// Apply theme to <html> based on localStorage preference
+function useThemeEffect() {
+  useEffect(() => {
+    function apply() {
+      let theme;
+      try { theme = JSON.parse(localStorage.getItem('theme')); } catch { theme = null; }
+      if (theme === 'light' || theme === 'dark') {
+        document.documentElement.setAttribute('data-theme', theme);
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+    }
+    apply();
+    window.addEventListener('storage', apply);
+    return () => window.removeEventListener('storage', apply);
+  }, []);
+}
+
 export default function App() {
   const [auth, setAuth] = useState(null); // null = loading, false = logged out, object = logged in
+  useThemeEffect();
 
   useEffect(() => {
     checkAuth()

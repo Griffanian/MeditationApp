@@ -6,7 +6,7 @@ import { useLocalState } from '../utils';
 import MarkdownField from '../components/MarkdownField';
 import StageEditor from '../components/StageEditor';
 import ExtractModal from '../components/ExtractModal';
-import '../styles.css';
+import '../styles.scss';
 
 export default function Editor() {
   const auth = useAuth();

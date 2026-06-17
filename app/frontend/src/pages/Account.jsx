@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../AuthContext';
 import { apiFetch, BASE, logoutUser } from '../api';
+import { useLocalState } from '../utils';
 
 export default function Account() {
   const auth = useAuth();
@@ -38,9 +39,34 @@ export default function Account() {
     }
   }
 
+  const [theme, setTheme] = useLocalState('theme', 'system');
+
+  function pickTheme(value) {
+    setTheme(value);
+    if (value === 'light' || value === 'dark') {
+      document.documentElement.setAttribute('data-theme', value);
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+  }
+
   return (
     <div className="user-mgmt-page">
       <h1>Account</h1>
+      <section className="user-mgmt-section">
+        <h2>Theme</h2>
+        <div className="theme-picker">
+          {['system', 'light', 'dark'].map(opt => (
+            <button
+              key={opt}
+              className={`theme-option${theme === opt ? ' active' : ''}`}
+              onClick={() => pickTheme(opt)}
+            >
+              {opt.charAt(0).toUpperCase() + opt.slice(1)}
+            </button>
+          ))}
+        </div>
+      </section>
       <section className="user-mgmt-section">
         <h2>Profile</h2>
         <form className="account-form" onSubmit={handleSaveProfile}>

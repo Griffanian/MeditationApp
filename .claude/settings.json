@@ -11,7 +11,8 @@
       "Bash(curl -s http://localhost:5555/api/history -H \"Authorization: Token $\\(python manage.py shell -c \"from meditations.authentication import make_token; from django.contrib.auth.models import User; print\\(make_token\\(User.objects.get\\(username='builder-1'\\)\\)\\)\" \\)\")",
       "Bash(python -m json.tool)",
       "Bash(curl -s \"http://localhost:5555/api/history\" -H \"Authorization: Token 4:1781729407:72f18523397634baaaee\")",
-      "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); s=data[0]; print\\(json.dumps\\(s['exercises'], indent=2\\)\\)\")"
+      "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); s=data[0]; print\\(json.dumps\\(s['exercises'], indent=2\\)\\)\")",
+      "WebFetch(domain:www.jefit.com)"
     ]
   }
 }

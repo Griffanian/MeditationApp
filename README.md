@@ -20,6 +20,7 @@ An AI-powered guided meditation builder and editor. Generate structured meditati
 
 ## Setup
 
+
 1. **Set up the Python environment:**
 
    ```bash
@@ -28,14 +29,12 @@ An AI-powered guided meditation builder and editor. Generate structured meditati
    source venv/bin/activate
    pip install -r requirements.txt
    ```
-
 2. **Install frontend dependencies:**
 
    ```bash
    cd frontend
    npm install
    ```
-
 3. **Configure environment variables:**
 
    Create a `.env` file in the project root:
@@ -49,7 +48,6 @@ An AI-powered guided meditation builder and editor. Generate structured meditati
    SUPABASE_STORAGE_ACCESS_KEY=your-s3-access-key
    SUPABASE_STORAGE_SECRET_KEY=your-s3-secret-key
    ```
-
 4. **Run database migrations:**
 
    ```bash
@@ -72,6 +70,7 @@ Open [http://localhost:5173](http://localhost:5173) to use the app.
 ## Deployment (Render)
 
 The app is deployed on [Render](https://render.com/) with auto-deploy from the `main` branch on GitHub (`Griffanian/MeditationApp`).
+
 
 | Service                | Type                          | URL                                          | Region    |
 | ---------------------- | ----------------------------- | -------------------------------------------- | --------- |
@@ -135,6 +134,7 @@ MeditationApp/
 
 The Django admin interface allows direct management of all database records (Groups, Categories, Meditations, Stages, Components, Assets, Practices, Assembled Outputs).
 
+
 | Environment    | URL                                                 |
 | -------------- | --------------------------------------------------- |
 | **Production** | https://meditation-backend-43a3.onrender.com/admin/ |
@@ -152,6 +152,7 @@ python manage.py createsuperuser
 
 ### Database Models (Supabase PostgreSQL)
 
+
 | Model               | Fields                                                                                                        | Description                                  |
 | ------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | **Meditation**      | `name`, `display_name`, `category`, `instructions` (JSON), `script` (JSON)                                    | A meditation exercise                        |
@@ -162,12 +163,13 @@ python manage.py createsuperuser
 
 ### Segment Types (in scripts)
 
-| Type     | Key Fields                                      | Description                                                        |
-| -------- | ----------------------------------------------- | ------------------------------------------------------------------ |
-| `speech` | `id`, `text`                                    | Spoken instruction. Text can contain `{variableName}` placeholders |
-| `pause`  | `id`, `duration_seconds`                        | Silent pause. Duration can be a number or `"{variableName}"`       |
-| `asset`  | `id`, `file`                                    | Play a pre-recorded audio clip from assets                         |
-| `loop`   | `id`, `repeat`, `segments`, `variable`, `label` | Repeat a sequence. If `label` is set, renders as a named section   |
+
+| Type     | Key Fields                                      | Description                                                       |
+| -------- | ----------------------------------------------- | ----------------------------------------------------------------- |
+| `speech` | `id`, `text`                                    | Spoken instruction. Text can contain`{variableName}` placeholders |
+| `pause`  | `id`, `duration_seconds`                        | Silent pause. Duration can be a number or`"{variableName}"`       |
+| `asset`  | `id`, `file`                                    | Play a pre-recorded audio clip from assets                        |
+| `loop`   | `id`, `repeat`, `segments`, `variable`, `label` | Repeat a sequence. If`label` is set, renders as a named section   |
 
 ### Component Status
 
@@ -183,6 +185,7 @@ Variables defined in stages control loop repeat counts and are substituted into 
 
 ### Meditations
 
+
 | Method          | Endpoint                                   | Description               |
 | --------------- | ------------------------------------------ | ------------------------- |
 | GET             | `/api/meditations`                         | List all meditations      |
@@ -193,6 +196,7 @@ Variables defined in stages control loop repeat counts and are substituted into 
 | POST            | `/api/meditations/{name}/assemble`         | Assemble full audio       |
 
 ### Stages
+
 
 | Method  | Endpoint                                                            | Description          |
 | ------- | ------------------------------------------------------------------- | -------------------- |

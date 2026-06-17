@@ -1,0 +1,183 @@
+// =============================================
+// Theme System — edit palettes here
+// =============================================
+
+$light: (
+  // Backgrounds
+  bg-body: #F8F6F2,
+  bg-surface: #FFFFFF,
+  bg-inset: #F9F7F3,
+
+  // Text
+  text: #2D2D2D,
+  text-2: #555,
+  text-medium: #777,
+  text-muted: #888,
+  text-subtle: #999,
+  text-faint: #BBB,
+  text-dim: #AAA,
+
+  // Borders
+  border: #E5E0D8,
+  border-light: #DDD,
+  border-medium: #CCC,
+  border-heavy: #EEE,
+
+  // Accent (purple)
+  accent: #A684D1,
+  accent-hover: #9574C0,
+  accent-soft: #B99ADE,
+  accent-dim: #8A6AB8,
+  accent-bg: #F0E8F7,
+  accent-bg-hover: #E0D4F0,
+  accent-tint-light: rgba(166, 132, 209, 0.06),
+  accent-tint: rgba(166, 132, 209, 0.1),
+  accent-tint-strong: rgba(166, 132, 209, 0.15),
+
+  // Brand (golden)
+  brand: #B5942D,
+  brand-bg: #EBCB8B,
+  brand-bg-light: #FDF6EA,
+  brand-tint: rgba(235, 203, 139, 0.15),
+
+  // Success (green)
+  success: #5BA87A,
+  success-hover: #6EC08A,
+  success-tint: rgba(91, 168, 122, 0.12),
+  success-tint-strong: rgba(91, 168, 122, 0.2),
+
+  // Error (red)
+  error: #E04040,
+  error-tint: rgba(224, 64, 64, 0.1),
+  error-tint-strong: rgba(224, 64, 64, 0.15),
+
+  // Warning (orange)
+  warning: #D48800,
+  warning-tint: rgba(212, 136, 0, 0.12),
+
+  // Buttons
+  btn-bg: #A684D1,
+  btn-bg-hover: #9574C0,
+  btn-text: #FFFFFF,
+
+  // Overlays (darken on light bg)
+  overlay-1: rgba(0, 0, 0, 0.02),
+  overlay-2: rgba(0, 0, 0, 0.03),
+  overlay-3: rgba(0, 0, 0, 0.04),
+  overlay-4: rgba(0, 0, 0, 0.05),
+  overlay-5: rgba(0, 0, 0, 0.08),
+  overlay-6: rgba(0, 0, 0, 0.1),
+
+  // Shadows
+  shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06),
+  shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12),
+  shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.15),
+);
+
+$dark: (
+  // Backgrounds
+  bg-body: #1a1a2e,
+  bg-surface: #16213e,
+  bg-inset: #0f1a30,
+
+  // Text
+  text: #e0e0e0,
+  text-2: #ccc,
+  text-medium: #aaa,
+  text-muted: #888,
+  text-subtle: #666,
+  text-faint: #555,
+  text-dim: #556,
+
+  // Borders
+  border: #2a2a4a,
+  border-light: #333,
+  border-medium: #444,
+  border-heavy: #222,
+
+  // Accent (blue)
+  accent: #a0c4ff,
+  accent-hover: #3a5a8a,
+  accent-soft: #4a6fa5,
+  accent-dim: #c0d8ff,
+  accent-bg: #2d4a7a,
+  accent-bg-hover: #345a8a,
+  accent-tint-light: rgba(160, 196, 255, 0.06),
+  accent-tint: rgba(160, 196, 255, 0.1),
+  accent-tint-strong: rgba(160, 196, 255, 0.15),
+
+  // Brand
+  brand: #cdb4db,
+  brand-bg: #cdb4db,
+  brand-bg-light: #1e3a2f,
+  brand-tint: rgba(205, 180, 219, 0.06),
+
+  // Success
+  success: #7ecba1,
+  success-hover: #3a8a65,
+  success-tint: rgba(126, 203, 161, 0.1),
+  success-tint-strong: rgba(126, 203, 161, 0.2),
+
+  // Error
+  error: #f44336,
+  error-tint: rgba(244, 67, 54, 0.12),
+  error-tint-strong: rgba(244, 67, 54, 0.15),
+
+  // Warning
+  warning: #ff9800,
+  warning-tint: rgba(255, 152, 0, 0.1),
+
+  // Buttons
+  btn-bg: #2d4a7a,
+  btn-bg-hover: #3a5a8a,
+  btn-text: #a0c4ff,
+
+  // Overlays (lighten on dark bg)
+  overlay-1: rgba(255, 255, 255, 0.03),
+  overlay-2: rgba(255, 255, 255, 0.05),
+  overlay-3: rgba(255, 255, 255, 0.08),
+  overlay-4: rgba(255, 255, 255, 0.1),
+  overlay-5: rgba(255, 255, 255, 0.15),
+  overlay-6: rgba(255, 255, 255, 0.2),
+
+  // Shadows
+  shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3),
+  shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4),
+  shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4),
+);
+
+// Generate CSS custom properties from maps
+:root {
+  color-scheme: light dark;
+  @each $key, $value in $light {
+    --#{$key}: #{$value};
+  }
+}
+
+// Dark via OS preference (only when no manual override)
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    @each $key, $value in $dark {
+      --#{$key}: #{$value};
+    }
+  }
+}
+
+// Dark via manual toggle
+:root[data-theme="dark"] {
+  @each $key, $value in $dark {
+    --#{$key}: #{$value};
+  }
+}
+
+// Mixin for dark-mode-only styles (use in styles.scss)
+@mixin dark-only {
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) & {
+      @content;
+    }
+  }
+  :root[data-theme="dark"] & {
+    @content;
+  }
+}
