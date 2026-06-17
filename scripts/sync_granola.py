@@ -83,42 +83,107 @@ def fetch_note_detail(api_key, note_id, include_transcript=False):
     return resp.json()
 
 
+OWNER_NAME = "Miles Bloom"
+
+
 def extract_participants(note):
-    """Pull participant names from the note owner and transcript speakers."""
+    """Pull participant names from attendees and note owner."""
     participants = set()
+    for att in note.get("attendees", []):
+        if att.get("name"):
+            participants.add(att["name"])
     owner = note.get("owner", {})
     if owner.get("name"):
         participants.add(owner["name"])
-    for entry in note.get("transcript", []):
-        speaker = entry.get("speaker")
-        if speaker and not speaker.startswith("Speaker "):
-            participants.add(speaker)
     return sorted(participants)
 
 
-def format_transcript(transcript):
-    """Format transcript entries as readable markdown."""
+def get_unmapped_sources(transcript):
+    """Find unique speaker sources in the transcript."""
+    sources = set()
+    for entry in transcript:
+        speaker_info = entry.get("speaker", {})
+        if isinstance(speaker_info, dict):
+            label = speaker_info.get("label", "")
+            source = speaker_info.get("source", "Unknown")
+            sources.add(label if label else source)
+        else:
+            sources.add(speaker_info)
+    return sorted(sources)
+
+
+def auto_speaker_map(note):
+    """Auto-map microphone → owner, speaker → other attendee for 1-on-1 calls."""
+    attendees = note.get("attendees", [])
+    owner = note.get("owner", {})
+    owner_name = owner.get("name", OWNER_NAME)
+    other_names = [a["name"] for a in attendees if a.get("name") and a["name"] != owner_name]
+    mapping = {"microphone": owner_name}
+    if len(other_names) == 1:
+        mapping["speaker"] = other_names[0]
+    return mapping
+
+
+TODO_PATH = PROJECT_ROOT / "management" / "TODO.md"
+
+
+def resolve_speakers(note):
+    """Auto-map what we can, flag unknowns as TODOs."""
+    mapping = auto_speaker_map(note)
+    transcript = note.get("transcript", [])
+    if not transcript:
+        return mapping
+
+    sources = get_unmapped_sources(transcript)
+    unmapped = [s for s in sources if s not in mapping]
+
+    if not unmapped:
+        return mapping
+
+    title = note.get("title", "Untitled")
+    filename = note_filename(note)
+    print(f"  Unknown speakers in '{title}': {', '.join(unmapped)}")
+    print(f"  Added to TODO.md")
+
+    # Append to TODO list
+    todo_line = f"- [ ] Identify speakers in [[meetings/{filename[:-3]}]]: {', '.join(f'`{s}`' for s in unmapped)}\n"
+    with open(TODO_PATH, "a") as f:
+        f.write(todo_line)
+
+    return mapping
+
+
+def format_transcript(transcript, speaker_map=None):
+    """Format transcript entries as compact markdown."""
     if not transcript:
         return ""
+    speaker_map = speaker_map or {}
     lines = []
     for entry in transcript:
-        speaker = entry.get("speaker", "Unknown")
+        speaker_info = entry.get("speaker", {})
+        if isinstance(speaker_info, dict):
+            label = speaker_info.get("label", "")
+            source = speaker_info.get("source", "Unknown")
+            raw = label if label else source
+        else:
+            raw = speaker_info
+        speaker = speaker_map.get(raw, raw)
         text = entry.get("text", "").strip()
         if text:
             lines.append(f"**{speaker}:** {text}")
-    return "\n\n".join(lines)
+    return "\n".join(lines)
 
 
-def note_to_obsidian(note, include_transcript=False):
+def note_to_obsidian(note, include_transcript=False, speaker_map=None):
     """Convert a Granola note to Obsidian-flavored markdown."""
     title = note.get("title") or "Untitled Meeting"
     created = note.get("created_at", "")
     updated = note.get("updated_at", "")
-    summary = note.get("summary", "")
+    summary_md = note.get("summary_markdown", "")
     participants = extract_participants(note)
     note_id = note.get("id", "")
+    web_url = note.get("web_url", "")
 
-    # Parse date for frontmatter
     date_str = ""
     if created:
         try:
@@ -127,37 +192,34 @@ def note_to_obsidian(note, include_transcript=False):
         except ValueError:
             date_str = created[:10]
 
-    # Build YAML frontmatter
-    frontmatter_lines = [
+    # YAML frontmatter
+    fm = [
         "---",
-        f"title: \"{title}\"",
+        "Type: Meeting Notes",
         f"date: {date_str}",
-    ]
-    if participants:
-        frontmatter_lines.append(f"participants: [{', '.join(participants)}]")
-    frontmatter_lines.extend([
-        "tags: [meeting]",
-        "source: granola",
+        f"url: {web_url}",
         f"granola_id: {note_id}",
-    ])
-    if updated:
-        frontmatter_lines.append(f"updated: {updated}")
-    frontmatter_lines.append("---")
+        "---",
+    ]
 
-    # Build body
-    body_parts = [f"# {title}"]
+    # Add mapped speaker names to participants
+    if speaker_map:
+        for name in speaker_map.values():
+            participants.append(name)
+        participants = sorted(set(participants))
 
-    if summary:
-        body_parts.append("## Summary")
-        body_parts.append(summary)
+    # Meta callout with dataview participants
+    participant_links = ",".join(f"[[{p}]]" for p in participants)
+    meta = f">[!Meta]\n>participants::{participant_links}"
 
+    # Body
+    parts = ["\n".join(fm), meta, f"# {title}"]
+    if summary_md:
+        parts.append(f"### Summary\n{summary_md}")
     if include_transcript and note.get("transcript"):
-        body_parts.append("## Transcript")
-        body_parts.append(format_transcript(note["transcript"]))
+        parts.append(f"### Transcript\n{format_transcript(note['transcript'], speaker_map=speaker_map)}")
 
-    frontmatter = "\n".join(frontmatter_lines)
-    body = "\n\n".join(body_parts)
-    return f"{frontmatter}\n\n{body}\n"
+    return "\n".join(parts) + "\n"
 
 
 def note_filename(note):
@@ -178,7 +240,7 @@ def note_filename(note):
     return f"{slug}.md"
 
 
-def sync(created_after=None, include_transcript=False):
+def sync(created_after=None, include_transcript=False, speaker_map=None):
     api_key = get_api_key()
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -205,16 +267,13 @@ def sync(created_after=None, include_transcript=False):
         filepath = NOTES_DIR / filename
 
         if note_id in existing_ids and filepath.exists():
-            # Check if the note was updated since we last synced
-            existing_content = filepath.read_text()
-            remote_updated = note_summary.get("updated_at", "")
-            if f"updated: {remote_updated}" in existing_content:
-                skipped += 1
-                continue
+            skipped += 1
+            continue
 
         # Fetch full note detail
         note = fetch_note_detail(api_key, note_id, include_transcript=include_transcript)
-        md_content = note_to_obsidian(note, include_transcript=include_transcript)
+        note_speakers = speaker_map if speaker_map else resolve_speakers(note)
+        md_content = note_to_obsidian(note, include_transcript=include_transcript, speaker_map=note_speakers)
 
         filepath.write_text(md_content)
         if note_id in existing_ids:
@@ -225,6 +284,16 @@ def sync(created_after=None, include_transcript=False):
             print(f"  Created: {filename}")
 
     print(f"\nDone: {created} created, {updated} updated, {skipped} unchanged")
+
+
+def parse_speakers(value):
+    """Parse 'source=Name,source=Name' into a dict."""
+    mapping = {}
+    for pair in value.split(","):
+        key, _, name = pair.partition("=")
+        if key and name:
+            mapping[key.strip()] = name.strip()
+    return mapping
 
 
 def main():
@@ -238,8 +307,13 @@ def main():
         action="store_true",
         help="Include full meeting transcript in each note",
     )
+    parser.add_argument(
+        "--speakers",
+        type=parse_speakers,
+        help="Map speaker sources to names, e.g. 'microphone=Miles Bloom,speaker=Roger'",
+    )
     args = parser.parse_args()
-    sync(created_after=args.after, include_transcript=args.include_transcript)
+    sync(created_after=args.after, include_transcript=args.include_transcript, speaker_map=args.speakers)
 
 
 if __name__ == "__main__":

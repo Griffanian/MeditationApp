@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "meetings/2026-06-17_meditation-app-architecture-and-integration-with-resilientminds.md",
+                "file": "TODO.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for 2026-06-17_meditation-app-architecture-and-integration-with-resilientminds"
+              "title": "Backlinks for TODO"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "meetings/2026-06-17_meditation-app-architecture-and-integration-with-resilientminds.md",
+                "file": "TODO.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from 2026-06-17_meditation-app-architecture-and-integration-with-resilientminds"
+              "title": "Outgoing links from TODO"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "meetings/2026-06-17_meditation-app-architecture-and-integration-with-resilientminds.md",
+                "file": "TODO.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of 2026-06-17_meditation-app-architecture-and-integration-with-resilientminds"
+              "title": "Outline of TODO"
             }
           }
         ]
@@ -174,6 +174,7 @@
   },
   "left-ribbon": {
     "hiddenItems": {
+      "granola-meetings-simple-sync:Sync Granola meetings": false,
       "switcher:Open quick switcher": false,
       "graph:Open graph view": false,
       "canvas:Create new canvas": false,
@@ -189,5 +190,20 @@
     }
   },
   "active": "19b35cfccf05e958",
-  "lastOpenFiles": []
+  "lastOpenFiles": [
+    "Meetings1/2026-06-16 Gaia Sthiram meditation practice — body stillness and sensory awareness.md",
+    "Meetings1/2026-06-16 Get started with Granola.md",
+    "Meetings1/2026-06-16 Nadi Shuddhi breathing practice — alternate nostril technique.md",
+    "Meetings1/2026-06-16 Perfect stillness practice — body awareness and sitting still.md",
+    "Meetings1/2026-06-17 Meditation app architecture and integration with Resilientminds.md",
+    "Templates/Meeting Notes.md",
+    "Meetings1",
+    "Templates/Person.md",
+    "TODO.md",
+    "People/Roger Jackson.md",
+    "People/Miles Bloom.md",
+    "People",
+    "meetings/2026-06-17_meditation-app-architecture-and-integration-with-resilientminds.md",
+    "Templates"
+  ]
 }

@@ -5,6 +5,26 @@
       "path": "meetings/2026-06-17_meditation-app-architecture-and-integration-with-resilientminds.md"
     },
     {
+      "basename": "Meeting Notes",
+      "path": "Templates/Meeting Notes.md"
+    },
+    {
+      "basename": "Person",
+      "path": "Templates/Person.md"
+    },
+    {
+      "basename": "TODO",
+      "path": "TODO.md"
+    },
+    {
+      "basename": "Roger Jackson",
+      "path": "People/Roger Jackson.md"
+    },
+    {
+      "basename": "Miles Bloom",
+      "path": "People/Miles Bloom.md"
+    },
+    {
       "basename": "Peter Smith meeting",
       "path": "Meeting Notes/Peter Smith meeting.md"
     },
@@ -163,42 +183,6 @@
     {
       "basename": "Matrix Multiplication",
       "path": "General Notes/Matrix Multiplication.md"
-    },
-    {
-      "basename": "Rings",
-      "path": "General Notes/Rings.md"
-    },
-    {
-      "basename": "The Finite Tuple Space of a Set",
-      "path": "General Notes/The Finite Tuple Space of a Set.md"
-    },
-    {
-      "basename": "Finite Tuples",
-      "path": "General Notes/Finite Tuples.md"
-    },
-    {
-      "basename": "Set-Theory",
-      "path": "General Notes/Set-Theory.md"
-    },
-    {
-      "basename": "Group-Theory",
-      "path": "General Notes/Group-Theory.md"
-    },
-    {
-      "basename": "TFL-",
-      "path": "General Notes/TFL-.md"
-    },
-    {
-      "basename": "FOL-",
-      "path": "General Notes/FOL-.md"
-    },
-    {
-      "basename": "MPL-",
-      "path": "General Notes/MPL-.md"
-    },
-    {
-      "basename": "Logic-",
-      "path": "General Notes/Logic-.md"
     }
   ],
   "omittedPaths": [],
