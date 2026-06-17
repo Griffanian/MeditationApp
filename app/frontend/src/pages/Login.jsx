@@ -6,6 +6,7 @@ export default function Login({ onLogin }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -35,14 +36,19 @@ export default function Login({ onLogin }) {
           autoFocus
           autoComplete="username"
         />
-        <input
-          className="login-input"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          autoComplete="current-password"
-        />
+        <div className="login-password-wrapper">
+          <input
+            className="login-input"
+            type={showPassword ? 'text' : 'password'}
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            autoComplete="current-password"
+          />
+          <button type="button" className="login-toggle-pw" onClick={() => setShowPassword(!showPassword)}>
+            {showPassword ? 'Hide' : 'Show'}
+          </button>
+        </div>
         <button className="login-btn" type="submit" disabled={loading}>
           {loading ? 'Signing in...' : 'Sign in'}
         </button>

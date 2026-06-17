@@ -73,10 +73,10 @@ Open [http://localhost:5173](http://localhost:5173) to use the app.
 
 The app is deployed on [Render](https://render.com/) with auto-deploy from the `main` branch on GitHub (`Griffanian/MeditationApp`).
 
-| Service | Type | URL | Region |
-|---------|------|-----|--------|
+| Service                | Type                          | URL                                          | Region    |
+| ---------------------- | ----------------------------- | -------------------------------------------- | --------- |
 | **Meditation Backend** | Web Service (Python/Gunicorn) | https://meditation-backend-43a3.onrender.com | Frankfurt |
-| **MeditationApp** | Static Site (React/Vite) | https://meditationapp-a6eg.onrender.com | — |
+| **MeditationApp**      | Static Site (React/Vite)      | https://meditationapp-a6eg.onrender.com      | —         |
 
 - **Backend** builds with `pip install -r requirements.txt && python manage.py collectstatic --noinput` and runs `gunicorn config.wsgi:application`
 - **Frontend** builds with `npm install && npm run build`, publishes from `dist/`
@@ -135,10 +135,10 @@ MeditationApp/
 
 The Django admin interface allows direct management of all database records (Groups, Categories, Meditations, Stages, Components, Assets, Practices, Assembled Outputs).
 
-| Environment | URL |
-|-------------|-----|
+| Environment    | URL                                                 |
+| -------------- | --------------------------------------------------- |
 | **Production** | https://meditation-backend-43a3.onrender.com/admin/ |
-| **Local** | http://localhost:5555/admin/ |
+| **Local**      | http://localhost:5555/admin/                        |
 
 To create a superuser for admin access:
 
@@ -152,22 +152,22 @@ python manage.py createsuperuser
 
 ### Database Models (Supabase PostgreSQL)
 
-| Model | Fields | Description |
-|-------|--------|-------------|
-| **Meditation** | `name`, `display_name`, `category`, `instructions` (JSON), `script` (JSON) | A meditation exercise |
-| **Stage** | `meditation` (FK), `stage_id`, `script` (JSON), `variables` (JSON) | A stage within a meditation |
-| **Component** | `meditation` (FK), `stage` (FK), `seg_id`, `text_hash`, `timestamps` (JSON), `trim_meta` (JSON), `audio_file` | Generated speech audio for a segment |
-| **Asset** | `filename`, `audio_file`, `trim_meta` (JSON) | Reusable audio file (bell, breath cue, etc.) |
-| **AssembledOutput** | `meditation` (FK), `stage` (FK), `script_hash`, `audio_file`, `duration` | Cached assembled audio |
+| Model               | Fields                                                                                                        | Description                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **Meditation**      | `name`, `display_name`, `category`, `instructions` (JSON), `script` (JSON)                                    | A meditation exercise                        |
+| **Stage**           | `meditation` (FK), `stage_id`, `script` (JSON), `variables` (JSON)                                            | A stage within a meditation                  |
+| **Component**       | `meditation` (FK), `stage` (FK), `seg_id`, `text_hash`, `timestamps` (JSON), `trim_meta` (JSON), `audio_file` | Generated speech audio for a segment         |
+| **Asset**           | `filename`, `audio_file`, `trim_meta` (JSON)                                                                  | Reusable audio file (bell, breath cue, etc.) |
+| **AssembledOutput** | `meditation` (FK), `stage` (FK), `script_hash`, `audio_file`, `duration`                                      | Cached assembled audio                       |
 
 ### Segment Types (in scripts)
 
-| Type | Key Fields | Description |
-|------|-----------|-------------|
-| `speech` | `id`, `text` | Spoken instruction. Text can contain `{variableName}` placeholders |
-| `pause` | `id`, `duration_seconds` | Silent pause. Duration can be a number or `"{variableName}"` |
-| `asset` | `id`, `file` | Play a pre-recorded audio clip from assets |
-| `loop` | `id`, `repeat`, `segments`, `variable`, `label` | Repeat a sequence. If `label` is set, renders as a named section |
+| Type     | Key Fields                                      | Description                                                        |
+| -------- | ----------------------------------------------- | ------------------------------------------------------------------ |
+| `speech` | `id`, `text`                                    | Spoken instruction. Text can contain `{variableName}` placeholders |
+| `pause`  | `id`, `duration_seconds`                        | Silent pause. Duration can be a number or `"{variableName}"`       |
+| `asset`  | `id`, `file`                                    | Play a pre-recorded audio clip from assets                         |
+| `loop`   | `id`, `repeat`, `segments`, `variable`, `label` | Repeat a sequence. If `label` is set, renders as a named section   |
 
 ### Component Status
 
@@ -183,25 +183,25 @@ Variables defined in stages control loop repeat counts and are substituted into 
 
 ### Meditations
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/meditations` | List all meditations |
-| GET/PUT | `/api/meditations/{name}/meta` | Meditation metadata |
-| GET/PUT | `/api/meditations/{name}/instructions` | Instructions (JSON) |
-| GET/POST/DELETE | `/api/meditations/{name}/instructions-pdf` | Instructions PDF |
-| PUT | `/api/meditations/{name}/loops` | Update loop repeat counts |
-| POST | `/api/meditations/{name}/assemble` | Assemble full audio |
+| Method          | Endpoint                                   | Description               |
+| --------------- | ------------------------------------------ | ------------------------- |
+| GET             | `/api/meditations`                         | List all meditations      |
+| GET/PUT         | `/api/meditations/{name}/meta`             | Meditation metadata       |
+| GET/PUT         | `/api/meditations/{name}/instructions`     | Instructions (JSON)       |
+| GET/POST/DELETE | `/api/meditations/{name}/instructions-pdf` | Instructions PDF          |
+| PUT             | `/api/meditations/{name}/loops`            | Update loop repeat counts |
+| POST            | `/api/meditations/{name}/assemble`         | Assemble full audio       |
 
 ### Stages
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET/PUT | `/api/meditations/{name}/stages/{stage_id}/script` | Stage script |
-| GET/PUT | `/api/meditations/{name}/stages/{stage_id}/variables` | Stage variables |
-| GET | `/api/meditations/{name}/stages/{stage_id}/components` | Component statuses |
-| GET | `/api/meditations/{name}/stages/{stage_id}/timestamps/{seg_id}` | Word timestamps |
-| POST | `/api/meditations/{name}/stages/{stage_id}/generate-audio/{seg_id}` | Generate TTS |
-| POST | `/api/meditations/{name}/stages/{stage_id}/assemble` | Assemble stage audio |
+| Method  | Endpoint                                                            | Description          |
+| ------- | ------------------------------------------------------------------- | -------------------- |
+| GET/PUT | `/api/meditations/{name}/stages/{stage_id}/script`                  | Stage script         |
+| GET/PUT | `/api/meditations/{name}/stages/{stage_id}/variables`               | Stage variables      |
+| GET     | `/api/meditations/{name}/stages/{stage_id}/components`              | Component statuses   |
+| GET     | `/api/meditations/{name}/stages/{stage_id}/timestamps/{seg_id}`     | Word timestamps      |
+| POST    | `/api/meditations/{name}/stages/{stage_id}/generate-audio/{seg_id}` | Generate TTS         |
+| POST    | `/api/meditations/{name}/stages/{stage_id}/assemble`                | Assemble stage audio |
 
 ### Audio Serving
 

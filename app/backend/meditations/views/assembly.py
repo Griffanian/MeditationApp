@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import AssembledOutput, Meditation, Practice, Stage
+from ..permissions import CanViewContent
 from ..services import storage
 from ..services.synthesize import (
     _collect_variables,
@@ -27,8 +28,10 @@ class AssemblyMixin:
         blob = json.dumps({"s": script, "v": variables or {}}, sort_keys=True)
         return hashlib.md5(blob.encode()).hexdigest()[:10]
 
-    def _assemble(self, name, stage_id=None):
+    def _assemble(self, request, name, stage_id=None):
         meditation = get_object_or_404(Meditation, name=name)
+        if not CanViewContent().has_object_permission(request, None, meditation):
+            return Response({"error": "Forbidden"}, status=403)
 
         if stage_id:
             stage = get_object_or_404(Stage, meditation=meditation, stage_id=stage_id)
@@ -169,12 +172,12 @@ class ComputeDurationsView(APIView):
 
 class RootAssembleView(AssemblyMixin, APIView):
     def post(self, request, name):
-        return self._assemble(name)
+        return self._assemble(request, name)
 
 
 class StageAssembleView(AssemblyMixin, APIView):
     def post(self, request, name, stage_id):
-        return self._assemble(name, stage_id)
+        return self._assemble(request, name, stage_id)
 
 
 class DayAssembleView(APIView):
@@ -182,6 +185,8 @@ class DayAssembleView(APIView):
 
     def post(self, request, name):
         practice = get_object_or_404(Practice, name=name)
+        if not CanViewContent().has_object_permission(request, None, practice):
+            return Response({"error": "Forbidden"}, status=403)
         week_idx = request.data.get("week", 0)
         day_idx = request.data.get("day", 0)
 

@@ -1,12 +1,93 @@
+import secrets
 import uuid
 
 from django.db import models
+
+
+ROLE_CHOICES = [
+    ("admin", "Admin"),
+    ("editor", "Editor"),
+    ("builder", "Builder"),
+    ("viewer", "Viewer"),
+]
+
+INVITE_ROLE_CHOICES = [
+    ("builder", "Builder"),
+    ("viewer", "Viewer"),
+]
+
+
+class UserProfile(models.Model):
+    user = models.OneToOneField(
+        "auth.User", on_delete=models.CASCADE, related_name="profile"
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="viewer")
+    display_name = models.CharField(max_length=200, blank=True)
+    show_public_to_viewers = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def name(self):
+        return self.display_name or self.user.username
+
+    def __str__(self):
+        return f"{self.name} ({self.role})"
+
+
+class InviteLink(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    name = models.CharField(max_length=200, blank=True)
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.CASCADE, related_name="created_invites"
+    )
+    role = models.CharField(max_length=20, choices=INVITE_ROLE_CHOICES)
+    used_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="used_invite",
+    )
+    used_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            self.token = secrets.token_urlsafe(48)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.role} invite by {self.created_by.username}"
+
+
+class ViewerAccess(models.Model):
+    viewer = models.ForeignKey(
+        "auth.User", on_delete=models.CASCADE, related_name="viewer_access_grants"
+    )
+    builder = models.ForeignKey(
+        "auth.User", on_delete=models.CASCADE, related_name="builder_viewers"
+    )
+    show_public = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("viewer", "builder")
+
+    def __str__(self):
+        return f"{self.viewer.username} -> {self.builder.username}"
 
 
 class Group(models.Model):
     name = models.SlugField(max_length=200, unique=True, primary_key=True)
     display_name = models.CharField(max_length=200)
     sort_order = models.IntegerField(default=0)
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="exercise_groups",
+    )
+    shared_with = models.ManyToManyField(
+        "auth.User", blank=True, related_name="shared_groups",
+    )
 
     class Meta:
         ordering = ["sort_order", "display_name"]
@@ -23,6 +104,9 @@ class Category(models.Model):
         Group, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="categories",
     )
+    shared_with = models.ManyToManyField(
+        "auth.User", blank=True, related_name="shared_categories",
+    )
 
     class Meta:
         ordering = ["sort_order", "display_name"]
@@ -37,6 +121,14 @@ class Meditation(models.Model):
     category = models.CharField(max_length=100, default="uncategorised")
     instructions = models.JSONField(default=dict, blank=True)
     script = models.JSONField(default=list, blank=True)
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="meditations",
+    )
+    is_public = models.BooleanField(default=False)
+    shared_with = models.ManyToManyField(
+        "auth.User", blank=True, related_name="shared_meditations",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -94,6 +186,14 @@ class Practice(models.Model):
     display_name = models.CharField(max_length=200, blank=True)
     items = models.JSONField(default=list, blank=True)
     # items: [{"id": "...", "meditation": "slug", "stage_id": "...", "variables": {...}}, ...]
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="practices",
+    )
+    is_public = models.BooleanField(default=False)
+    shared_with = models.ManyToManyField(
+        "auth.User", blank=True, related_name="shared_practices",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

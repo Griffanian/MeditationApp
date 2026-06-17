@@ -36,7 +36,7 @@ def verify_token(token):
             return None
         if time.time() - int(ts) > TOKEN_MAX_AGE:
             return None
-        return User.objects.get(pk=int(user_id))
+        return User.objects.select_related("profile").get(pk=int(user_id))
     except (ValueError, User.DoesNotExist):
         return None
 

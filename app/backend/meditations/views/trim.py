@@ -6,8 +6,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import Asset, Component, Meditation, Stage
-from ..permissions import IsAdmin
+from ..permissions import CanEditContent, IsAdminOrEditor
 from ..services import storage
+
+
+def _check_med_perm(request, name):
+    """Check edit permission on parent meditation."""
+    med = get_object_or_404(Meditation, name=name)
+    if not CanEditContent().has_object_permission(request, None, med):
+        return Response({"error": "Forbidden"}, status=403)
+    return None
 
 
 class TrimMixin:
@@ -53,39 +61,54 @@ class TrimMixin:
 # --- Stage-level trim meta ---
 
 class StageTrimMetaView(TrimMixin, APIView):
-    permission_classes = [IsAdmin]
-
     def get(self, request, name, stage_id, seg_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
         return self._get_trim_meta(name, stage_id, seg_id)
 
     def put(self, request, name, stage_id, seg_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
         return self._save_trim_meta(request, name, stage_id, seg_id)
 
     def delete(self, request, name, stage_id, seg_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
         return self._delete_trim_meta(name, stage_id, seg_id)
 
 
 # --- Root-level trim meta ---
 
 class RootTrimMetaView(TrimMixin, APIView):
-    permission_classes = [IsAdmin]
-
     def get(self, request, name, seg_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
         return self._get_trim_meta(name, None, seg_id)
 
     def put(self, request, name, seg_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
         return self._save_trim_meta(request, name, None, seg_id)
 
     def delete(self, request, name, seg_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
         return self._delete_trim_meta(name, None, seg_id)
 
 
 # --- Trim execution (in-place audio trimming) ---
 
 class RootTrimComponentView(APIView):
-    permission_classes = [IsAdmin]
-
     def post(self, request, name, seg_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
         data = request.data
         if not data or "start" not in data or "end" not in data:
             return Response({"error": "missing start/end"}, status=400)
@@ -111,10 +134,10 @@ class RootTrimComponentView(APIView):
         return Response({"status": "ok", "duration": len(trimmed) / 1000})
 
 
-# --- Asset trim meta ---
+# --- Asset trim meta (global assets — admin/editor only) ---
 
 class AssetTrimMetaView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrEditor]
 
     def get(self, request, filename):
         try:
@@ -143,7 +166,7 @@ class AssetTrimMetaView(APIView):
 
 
 class TrimAssetView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrEditor]
 
     def post(self, request, filename):
         data = request.data

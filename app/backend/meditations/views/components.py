@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import Component, Meditation, Stage
-from ..permissions import IsAdmin, IsAdminOrReadOnly
+from ..permissions import CanEditContent, CanViewContent
 from ..services import storage
 from ..services.synthesize import (
     _collect_speech_segments,
@@ -18,6 +18,16 @@ from ..services.synthesize import (
     _substitute_variables,
     generate_components,
 )
+
+
+def _check_med_perm(request, name, write=False):
+    """Check object-level permission on parent meditation."""
+    from django.shortcuts import get_object_or_404 as _get
+    med = _get(Meditation, name=name)
+    perm = CanEditContent() if write else CanViewContent()
+    if not perm.has_object_permission(request, None, med):
+        return Response({"error": "Forbidden"}, status=403)
+    return None
 
 
 class ComponentMixin:
@@ -173,9 +183,10 @@ class ComponentMixin:
 # --- Stage-level views ---
 
 class StageGenerateAllView(ComponentMixin, APIView):
-    permission_classes = [IsAdmin]
-
     def post(self, request, name, stage_id):
+        err = _check_med_perm(request, name, write=True)
+        if err:
+            return err
         script, extra_vars = self._get_script_and_vars(name, stage_id)
         if not script:
             return Response({"error": "No script to generate from"}, status=400)
@@ -189,32 +200,41 @@ class StageGenerateAllView(ComponentMixin, APIView):
 
 class StageComponentListView(ComponentMixin, APIView):
     def get(self, request, name, stage_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
         return self._list_components(name, stage_id)
 
 
 class StageTimestampsView(ComponentMixin, APIView):
     def get(self, request, name, stage_id, seg_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
         return self._get_timestamps(name, stage_id, seg_id)
 
 
 class StageGenerateAudioView(ComponentMixin, APIView):
-    permission_classes = [IsAdmin]
-
     def post(self, request, name, stage_id, seg_id):
+        err = _check_med_perm(request, name, write=True)
+        if err:
+            return err
         return self._generate_audio(request, name, stage_id, seg_id)
 
 
 class StageUploadComponentView(ComponentMixin, APIView):
-    permission_classes = [IsAdmin]
-
     def post(self, request, name, stage_id, seg_id):
+        err = _check_med_perm(request, name, write=True)
+        if err:
+            return err
         return self._upload_component(request, name, stage_id, seg_id)
 
 
 class StageDeleteComponentView(ComponentMixin, APIView):
-    permission_classes = [IsAdmin]
-
     def delete(self, request, name, stage_id, seg_id):
+        err = _check_med_perm(request, name, write=True)
+        if err:
+            return err
         return self._delete_component(name, stage_id, seg_id)
 
 
@@ -222,25 +242,33 @@ class StageDeleteComponentView(ComponentMixin, APIView):
 
 class RootComponentListView(ComponentMixin, APIView):
     def get(self, request, name):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
         return self._list_components(name)
 
 
 class RootTimestampsView(ComponentMixin, APIView):
     def get(self, request, name, seg_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
         return self._get_timestamps(name, None, seg_id)
 
 
 class RootGenerateAudioView(ComponentMixin, APIView):
-    permission_classes = [IsAdmin]
-
     def post(self, request, name, seg_id):
+        err = _check_med_perm(request, name, write=True)
+        if err:
+            return err
         return self._generate_audio(request, name, None, seg_id)
 
 
 class RootUploadComponentView(ComponentMixin, APIView):
-    permission_classes = [IsAdmin]
-
     def post(self, request, name, seg_id):
+        err = _check_med_perm(request, name, write=True)
+        if err:
+            return err
         return self._upload_component(request, name, None, seg_id)
 
 

@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import Thread
+from ..permissions import get_role
 from ..services.agent import run_agent_stream
 
 
@@ -27,7 +28,8 @@ class AgentChatView(APIView):
         else:
             thread = Thread.objects.create(user=request.user)
 
-        read_only = not (request.user and request.user.is_staff)
+        role = get_role(request.user)
+        read_only = role not in ("admin", "editor", "builder")
 
         def event_stream():
             try:

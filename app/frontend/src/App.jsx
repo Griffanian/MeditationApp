@@ -1,21 +1,23 @@
 import { useState, useEffect, useMemo } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, useParams } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Practices from './pages/Practices';
 import Editor from './pages/Editor';
 import PracticeBuilder from './pages/PracticeBuilder';
 import Player from './pages/Player';
 import Login from './pages/Login';
+import Signup from './pages/Signup';
+import UserManagement from './pages/UserManagement';
+import Account from './pages/Account';
 import AssistantSidebar from './components/AssistantSidebar';
-import { AuthProvider } from './AuthContext';
+import { AuthProvider, buildAuth } from './AuthContext';
 import { checkAuth, logoutUser } from './api';
 import './styles.css';
 
-function AppHeader({ isAdmin, onLogout }) {
+function AppHeader({ auth }) {
   const location = useLocation();
   const path = location.pathname;
 
-  // Determine which top-level section is active
   const isExercises = path === '/' || path === '/exercises' || path.startsWith('/edit/');
   const isProgrammes = path === '/practices' || path.startsWith('/practice/') || path.startsWith('/play/');
 
@@ -24,34 +26,52 @@ function AppHeader({ isAdmin, onLogout }) {
       <NavLink to="/" className="app-header-brand">Progress Meditation</NavLink>
       <nav className="app-header-nav">
         <NavLink to="/exercises" className={() => `app-header-link${isExercises ? ' active' : ''}`}>
-          Exercise Bank
+          Exercises
         </NavLink>
-        <NavLink to="/practices" className={() => `app-header-link${isProgrammes ? ' active' : ''}`}>
-          Programmes
-        </NavLink>
+        {(auth.canCreate || auth.hasProgrammes) && (
+          <NavLink to="/practices" className={() => `app-header-link${isProgrammes ? ' active' : ''}`}>
+            Programmes
+          </NavLink>
+        )}
+        {auth.isAdmin && (
+          <NavLink to="/users" className="app-header-link">
+            Users
+          </NavLink>
+        )}
       </nav>
-      <button className="logout-btn" onClick={onLogout}>Sign out</button>
+      <div className="app-header-right">
+        <span className="app-header-name">{auth.displayName || auth.username}</span>
+        <NavLink to="/account" className="app-header-user">Account Settings</NavLink>
+      </div>
     </header>
   );
 }
 
 export default function App() {
-  const [auth, setAuth] = useState(null); // null = loading, false = logged out, { isAdmin } = logged in
+  const [auth, setAuth] = useState(null); // null = loading, false = logged out, object = logged in
 
   useEffect(() => {
     checkAuth()
-      .then(data => setAuth(data.authenticated ? { isAdmin: !!data.is_admin } : false))
+      .then(data => setAuth(data.authenticated ? buildAuth(data) : false))
       .catch(() => setAuth(false));
   }, []);
 
-  const authValue = useMemo(() => auth || { isAdmin: false }, [auth]);
+  const authValue = useMemo(() => auth || buildAuth({}), [auth]);
 
   if (auth === null) {
-    return <div className="loading-page"><div className="loading-spinner" /><span>Loading…</span></div>;
+    return <div className="loading-page"><div className="loading-spinner" /><span>Loading...</span></div>;
   }
 
+  // Signup route is always available (even when logged out)
   if (!auth) {
-    return <Login onLogin={(data) => setAuth({ isAdmin: !!data.is_admin })} />;
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/signup/:token" element={<Signup onSignup={(data) => setAuth(buildAuth(data))} />} />
+          <Route path="*" element={<Login onLogin={(data) => setAuth(buildAuth(data))} />} />
+        </Routes>
+      </BrowserRouter>
+    );
   }
 
   function handleLogout() {
@@ -63,16 +83,19 @@ export default function App() {
     <AuthProvider value={authValue}>
       <BrowserRouter>
         <div className="app-layout">
-          <AppHeader isAdmin={authValue.isAdmin} onLogout={handleLogout} />
+          <AppHeader auth={authValue} />
           <div className="app-body">
             <div className="app-main">
               <Routes>
-                <Route path="/" element={authValue.isAdmin ? <Dashboard /> : <Navigate to="/practices" replace />} />
+                <Route path="/" element={<Navigate to="/exercises" replace />} />
                 <Route path="/exercises" element={<Dashboard />} />
                 <Route path="/practices" element={<Practices />} />
                 <Route path="/edit/:name" element={<Editor />} />
-                <Route path="/practice/:name" element={authValue.isAdmin ? <PracticeBuilder /> : <Navigate to="/practices" replace />} />
+                <Route path="/practice/:name" element={authValue.canCreate ? <PracticeBuilder /> : <Navigate to="/practices" replace />} />
                 <Route path="/play/:name" element={<Player />} />
+                <Route path="/users" element={authValue.isAdmin ? <UserManagement /> : <Navigate to="/" replace />} />
+                <Route path="/account" element={<Account />} />
+                <Route path="/signup/:token" element={<Navigate to="/" replace />} />
               </Routes>
             </div>
             <AssistantSidebar />

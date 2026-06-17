@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { fetchMeta, saveMeta, fetchInstructions, saveInstructions, checkInstructionsPdf, uploadInstructionsPdf, deleteInstructionsPdf, extractInstructions, generateStageScript, BASE } from '../api';
-import { useAuth } from '../AuthContext';
+import { useAuth, canEdit as canEditItem } from '../AuthContext';
 import { useLocalState } from '../utils';
 import MarkdownField from '../components/MarkdownField';
 import StageEditor from '../components/StageEditor';
@@ -9,8 +9,9 @@ import ExtractModal from '../components/ExtractModal';
 import '../styles.css';
 
 export default function Editor() {
-  const { isAdmin } = useAuth();
+  const auth = useAuth();
   const { name } = useParams();
+  const [meta, setMeta] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const targetStage = searchParams.get('stage');
   const [loading, setLoading] = useState(true);
@@ -27,10 +28,11 @@ export default function Editor() {
   const [collapsedInstrStages, setCollapsedInstrStages] = useLocalState(`collapse:${name}:instrStages`, {});
   const [generatingStage, setGeneratingStage] = useState(null);
   const scrolledRef = useRef(false);
+  const isAdmin = meta ? canEditItem(auth, meta) : false;
 
   useEffect(() => {
     Promise.all([
-      fetchMeta(name).then(meta => setDisplayName(meta.display_name || name)),
+      fetchMeta(name).then(m => { setMeta(m); setDisplayName(m.display_name || name); }),
       fetchInstructions(name).then(loaded => {
         setInstructions(loaded);
         if (targetStage && loaded.stages) {

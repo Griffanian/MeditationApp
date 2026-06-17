@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python manage.py shell -c ':*)",
+      "Bash(python manage.py makemigrations meditations --name viewer_show_public)",
+      "Bash(curl -sv http://localhost:5555/api/auth/status -H \"Authorization: Token 1:1781712871:3cb96132769e651f7e91\")",
+      "Bash(curl -s http://localhost:5555/api/auth/status -H \"Authorization: Token 5:1781713254:ba88adc5afc7c226f276\")",
+      "Bash(curl -s http://localhost:5555/api/practices -H \"Authorization: Token 5:1781713254:ba88adc5afc7c226f276\")"
+    ]
+  }
+}

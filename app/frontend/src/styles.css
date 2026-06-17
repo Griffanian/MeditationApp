@@ -24,6 +24,41 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
   border: 1px dashed #333; border-radius: 14px; margin-top: 12px;
 }
 .empty-state-text { color: #666; font-size: 14px; }
+.onboarding-create-btn {
+  display: flex; flex-direction: column; gap: 10px;
+  width: 100%; padding: 32px; margin-top: 8px;
+  background: #16213e; border: 1px dashed #2a2a4a; border-radius: 14px;
+  cursor: pointer; text-align: left; font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.onboarding-create-btn:hover { border-color: #3a5a8a; background: #1a2744; }
+.onboarding-create-btn strong {
+  color: #a0c4ff; font-size: 16px;
+}
+.onboarding-create-btn span {
+  color: #888; font-size: 13px; line-height: 1.6;
+}
+
+/* Empty group state */
+.group-empty-actions {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;
+}
+.group-empty-btn {
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+  padding: 24px; background: #16213e; border: 1px dashed #2a2a4a;
+  border-radius: 12px; cursor: pointer; text-align: left; font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.group-empty-btn:hover { border-color: #3a5a8a; background: #1a2744; }
+.group-empty-btn-icon {
+  font-size: 20px; color: #a0c4ff; line-height: 1;
+}
+.group-empty-btn strong {
+  color: #a0c4ff; font-size: 14px;
+}
+.group-empty-btn span {
+  color: #888; font-size: 12px; line-height: 1.5;
+}
 
 /* Loading spinner */
 .loading-page {
@@ -860,6 +895,30 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 }
 .group-tab-add:hover { color: #a0c4ff; }
 
+/* Group bubble tabs (Yogic, Jewish, Other, etc.) */
+.group-bubbles {
+  display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;
+}
+.group-bubble {
+  padding: 7px 18px; font-size: 13px; font-family: inherit; font-weight: 500;
+  background: #16213e; border: 1px solid #2a2a4a; border-radius: 20px;
+  color: #888; cursor: pointer; transition: all 0.15s;
+}
+.group-bubble:hover { color: #ccc; border-color: #444; }
+.group-bubble.active {
+  background: #2d4a7a; color: #a0c4ff; border-color: #3a5a8a;
+}
+.group-bubble-wrapper { position: relative; }
+.group-bubble-dots {
+  margin-left: 6px; opacity: 0.5; font-size: 14px; vertical-align: middle;
+}
+.group-bubble-dots:hover { opacity: 1; }
+.group-bubble-menu-anchor { position: absolute; right: 0; top: 100%; z-index: 50; }
+.group-bubble-add {
+  color: #555; font-size: 16px; padding: 7px 14px; border-style: dashed;
+}
+.group-bubble-add:hover { color: #a0c4ff; border-color: #a0c4ff; }
+
 /* Dashboard */
 .meta-category {
   margin-bottom: 32px; padding: 16px 0;
@@ -1066,6 +1125,15 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 .med-card-add:hover { border-color: #a0c4ff; color: #a0c4ff; }
 .med-card-add-icon { font-size: 28px; font-weight: 300; line-height: 1; }
 .med-card-add-label { font-size: 13px; font-weight: 500; }
+.med-card-add-full {
+  display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
+  padding: 16px 20px; border: 1px dashed #333; border-radius: 12px;
+  background: transparent; color: #666; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  transition: border-color 0.15s, color 0.15s;
+}
+.med-card-add-full:hover { border-color: #a0c4ff; color: #a0c4ff; }
+.med-card-add-full .med-card-add-icon { font-size: 20px; line-height: 1; display: flex; align-items: center; }
 
 .btn-new-section {
   display: block; width: 100%; padding: 14px; margin-top: 24px;
@@ -1618,6 +1686,14 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 }
 .login-input:focus { border-color: #a0c4ff; }
 .login-input::placeholder { color: #666; }
+.login-password-wrapper { position: relative; width: 100%; }
+.login-password-wrapper .login-input { width: 100%; padding-right: 56px; }
+.login-toggle-pw {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: #666; font-size: 12px;
+  cursor: pointer; padding: 4px 8px; font-family: inherit;
+}
+.login-toggle-pw:hover { color: #a0c4ff; }
 .login-btn {
   padding: 12px; font-size: 15px; font-family: inherit; font-weight: 600;
   background: #2d4a7a; border: 1px solid #4a6fa5; border-radius: 8px;
@@ -1903,3 +1979,122 @@ h1 { color: #a0c4ff; margin-bottom: 8px; font-size: 24px; }
 }
 .assistant-send:hover { background: #3a5a8a; }
 .assistant-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* --- Small inline buttons (clone, share) --- */
+.btn-small {
+  background: #2d4a7a; color: #a0c4ff; border: none;
+  border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  font-size: 11px; font-family: inherit; white-space: nowrap;
+}
+.btn-small:hover { background: #3a5a8a; }
+.btn-small.btn-danger { background: #7a2d2d; color: #ffa0a0; }
+.btn-small.btn-danger:hover { background: #8a3a3a; }
+
+/* --- User Management page --- */
+.user-mgmt-page { max-width: 800px; }
+.user-mgmt-page h1 { margin-bottom: 1.5rem; }
+.user-mgmt-section { margin-bottom: 2rem; }
+.user-mgmt-section h2 { margin-bottom: 0.75rem; font-size: 1.1rem; }
+.user-mgmt-create-row {
+  display: flex; gap: 8px; margin-bottom: 1rem; align-items: center;
+}
+.user-mgmt-create-row select {
+  background: #16213e; color: #e0e0ff; border: 1px solid #333;
+  border-radius: 6px; padding: 6px 10px; font-family: inherit; font-size: 13px;
+}
+.user-mgmt-input {
+  background: #16213e; color: #e0e0ff; border: 1px solid #333;
+  border-radius: 6px; padding: 6px 10px; font-family: inherit; font-size: 13px;
+  flex: 1; min-width: 0;
+}
+.user-mgmt-input::placeholder { color: #666; }
+.user-mgmt-create-row button {
+  background: #2d4a7a; color: #a0c4ff; border: none;
+  border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; font-size: 13px;
+}
+.user-mgmt-create-row button:hover { background: #3a5a8a; }
+.user-mgmt-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.user-mgmt-table th {
+  text-align: left; padding: 8px 10px; border-bottom: 1px solid #333;
+  color: #888; font-weight: 500;
+}
+.user-mgmt-table td {
+  padding: 8px 10px; border-bottom: 1px solid #222;
+}
+.user-mgmt-table select {
+  background: #16213e; color: #e0e0ff; border: 1px solid #333;
+  border-radius: 4px; padding: 4px 8px; font-family: inherit; font-size: 12px;
+}
+
+/* --- Account page --- */
+.account-form { display: flex; flex-direction: column; gap: 12px; }
+.account-label { display: flex; flex-direction: column; gap: 4px; }
+.account-label span { color: #888; font-size: 12px; font-weight: 500; }
+.account-input {
+  background: #16213e; color: #e0e0ff; border: 1px solid #333;
+  border-radius: 6px; padding: 8px 12px; font-family: inherit; font-size: 14px;
+  max-width: 360px;
+}
+.account-input::placeholder { color: #555; }
+.account-actions { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.account-save-btn {
+  background: #2d4a7a; color: #a0c4ff; border: none; border-radius: 6px;
+  padding: 8px 20px; font-size: 14px; cursor: pointer; font-family: inherit;
+}
+.account-save-btn:hover { background: #3a5a8a; }
+.account-save-btn:disabled { opacity: 0.5; }
+.account-message { font-size: 13px; color: #ff6b6b; }
+.account-message.success { color: #6bff6b; }
+.account-info { color: #666; font-size: 13px; margin-top: 12px; }
+.account-toggle {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  font-size: 13px; color: #888;
+}
+.account-toggle input[type="checkbox"] { accent-color: #a0c4ff; width: 14px; height: 14px; cursor: pointer; }
+.account-signout-btn {
+  background: none; border: 1px solid #333; border-radius: 8px;
+  color: #888; padding: 10px 24px; font-size: 14px; font-family: inherit;
+  cursor: pointer; transition: all 0.15s;
+}
+.account-signout-btn:hover { border-color: #ff6b6b; color: #ff6b6b; }
+.app-header-right {
+  display: flex; align-items: center; gap: 12px;
+}
+.app-header-name {
+  color: #888; font-size: 13px;
+}
+.app-header-user {
+  color: #a0c4ff; font-size: 13px; text-decoration: none;
+  padding: 6px 12px; border: 1px solid #2a2a4a; border-radius: 20px;
+  transition: all 0.15s; cursor: pointer;
+}
+.app-header-user:hover { background: #ffffff10; border-color: #3a5a8a; }
+
+/* --- Viewer Manager (inline sharing panel) --- */
+.viewer-manager {
+  position: absolute; right: 0; top: 100%; z-index: 100;
+  width: 240px; background: #1a1a2e; border: 1px solid #333;
+  border-radius: 10px; padding: 10px; margin-top: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.viewer-manager-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px;
+}
+.viewer-manager-title { color: #a0c4ff; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.viewer-manager-close { background: none; border: none; color: #666; font-size: 16px; cursor: pointer; padding: 0 2px; }
+.viewer-manager-close:hover { color: #ccc; }
+.viewer-manager-loading, .viewer-manager-empty { color: #666; font-size: 12px; padding: 6px 0; }
+.viewer-manager-list { display: flex; flex-direction: column; gap: 2px; }
+.viewer-manager-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 4px; font-size: 13px; color: #e0e0ff;
+  border-radius: 4px; cursor: pointer;
+}
+.viewer-manager-row:hover { background: #ffffff08; }
+.viewer-manager-row.toggling { opacity: 0.5; }
+.viewer-manager-row input[type="checkbox"] {
+  accent-color: #a0c4ff; width: 14px; height: 14px; cursor: pointer;
+}

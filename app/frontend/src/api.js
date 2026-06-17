@@ -4,13 +4,13 @@ function getToken() { return localStorage.getItem('auth_token'); }
 export function setToken(token) { localStorage.setItem('auth_token', token); }
 export function clearToken() { localStorage.removeItem('auth_token'); }
 
-// Wrapper around fetch that adds auth header and kicks to login on 403.
+// Wrapper around fetch that adds auth header and kicks to login on 401.
 export function apiFetch(url, opts = {}) {
   const token = getToken();
   const headers = { ...(opts.headers || {}) };
   if (token) headers['Authorization'] = `Token ${token}`;
   return fetch(url, { ...opts, headers }).then(res => {
-    if (res.status === 403) {
+    if (res.status === 401) {
       clearToken();
       window.location.href = '/';
     }
@@ -441,6 +441,200 @@ export async function streamChat(threadId, message, context, callbacks) {
       }
     }
   }
+}
+
+// --- Signup ---
+
+export async function validateInvite(token) {
+  const res = await fetch(`${BASE}/api/invites/validate/${token}`);
+  return res.json();
+}
+
+export async function signupUser(token, username, password) {
+  const res = await fetch(`${BASE}/api/auth/signup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, username, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Signup failed');
+  setToken(data.token);
+  return data;
+}
+
+// --- Invites ---
+
+export async function fetchInvites() {
+  const res = await apiFetch(`${BASE}/api/invites`);
+  return safeJson(res, []);
+}
+
+export async function createInvite(role, expiresDays = 7, name = '') {
+  const res = await apiFetch(`${BASE}/api/invites`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role, expires_days: expiresDays, name }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to create invite');
+  return data;
+}
+
+export async function deleteInvite(id) {
+  await apiFetch(`${BASE}/api/invites/${id}`, { method: 'DELETE' });
+}
+
+// --- Users (admin) ---
+
+export async function fetchUsers() {
+  const res = await apiFetch(`${BASE}/api/users`);
+  return safeJson(res, []);
+}
+
+export async function updateUserRole(userId, role) {
+  const res = await apiFetch(`${BASE}/api/users/${userId}/role`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to update role');
+  return data;
+}
+
+export async function deleteUser(userId) {
+  const res = await apiFetch(`${BASE}/api/users/${userId}`, { method: 'DELETE' });
+  return safeJson(res, {});
+}
+
+// --- Viewer management (builder) ---
+
+export async function fetchMyViewers() {
+  const res = await apiFetch(`${BASE}/api/my-viewers`);
+  return safeJson(res, []);
+}
+
+export async function addViewer(username) {
+  const res = await apiFetch(`${BASE}/api/my-viewers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to add viewer');
+  return data;
+}
+
+export async function removeViewer(userId) {
+  await apiFetch(`${BASE}/api/my-viewers/${userId}`, { method: 'DELETE' });
+}
+
+// --- Clone ---
+
+export async function cloneMeditation(name) {
+  const res = await apiFetch(`${BASE}/api/meditations/${name}/clone`, { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to clone');
+  return data;
+}
+
+export async function clonePractice(name) {
+  const res = await apiFetch(`${BASE}/api/practices/${name}/clone`, { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to clone');
+  return data;
+}
+
+// --- Sharing ---
+
+export async function fetchMeditationViewers(name) {
+  const res = await apiFetch(`${BASE}/api/meditations/${name}/share`);
+  return safeJson(res, []);
+}
+
+export async function shareMeditation(name, username) {
+  const res = await apiFetch(`${BASE}/api/meditations/${name}/share`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
+  });
+  if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed'); }
+}
+
+export async function unshareMeditation(name, userId) {
+  await apiFetch(`${BASE}/api/meditations/${name}/share`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+export async function fetchPracticeViewers(name) {
+  const res = await apiFetch(`${BASE}/api/practices/${name}/share`);
+  return safeJson(res, []);
+}
+
+export async function sharePractice(name, username) {
+  const res = await apiFetch(`${BASE}/api/practices/${name}/share`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
+  });
+  if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed'); }
+}
+
+export async function unsharePractice(name, userId) {
+  await apiFetch(`${BASE}/api/practices/${name}/share`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+// --- Group/Category sharing ---
+
+export async function fetchGroupViewers(name) {
+  const res = await apiFetch(`${BASE}/api/groups/${name}/share`);
+  return safeJson(res, []);
+}
+
+export async function shareGroup(name, username) {
+  const res = await apiFetch(`${BASE}/api/groups/${name}/share`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
+  });
+  if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed'); }
+}
+
+export async function unshareGroup(name, userId) {
+  await apiFetch(`${BASE}/api/groups/${name}/share`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+export async function fetchCategoryViewers(name) {
+  const res = await apiFetch(`${BASE}/api/categories/${name}/share`);
+  return safeJson(res, []);
+}
+
+export async function shareCategory(name, username) {
+  const res = await apiFetch(`${BASE}/api/categories/${name}/share`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
+  });
+  if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed'); }
+}
+
+export async function unshareCategory(name, userId) {
+  await apiFetch(`${BASE}/api/categories/${name}/share`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId }),
+  });
 }
 
 export { BASE };

@@ -8,17 +8,32 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import Category, Group, Meditation, Stage
-from ..permissions import IsAdmin, IsAdminOrReadOnly
+from ..permissions import (
+    CanEditContent, CanViewContent, IsAdmin, IsAdminOrEditor,
+    IsAdminOrReadOnly, IsContentCreator, get_role, visible_qs,
+)
 from ..services import storage
 from ..services.chat import chat
 from ..services.extract_instructions import extract_instructions
 
 
+def _check_meditation_perm(request, name, write=False):
+    """Fetch meditation and check object-level permission. Returns (med, error_response)."""
+    med = get_object_or_404(Meditation, name=name)
+    perm = CanEditContent() if write else CanViewContent()
+    if not perm.has_object_permission(request, None, med):
+        return None, Response({"error": "Forbidden"}, status=403)
+    return med, None
+
+
 class MeditationListView(APIView):
-    permission_classes = [IsAdminOrReadOnly]
     def get(self, request):
+        qs = visible_qs(
+            Meditation.objects.prefetch_related("stages").select_related("created_by__profile").order_by("name"),
+            request.user,
+        )
         meds = []
-        for m in Meditation.objects.prefetch_related("stages").order_by("name"):
+        for m in qs:
             stage_objs = {s.stage_id: s for s in m.stages.all()}
             instr_stages = (m.instructions or {}).get("stages", [])
             stages = []
@@ -38,10 +53,15 @@ class MeditationListView(APIView):
                 "display_name": m.display_name or m.name.capitalize(),
                 "category": m.category,
                 "stages": stages,
+                "created_by": m.created_by.username if m.created_by else None,
+                "created_by_display": m.created_by.profile.name if m.created_by and hasattr(m.created_by, 'profile') else (m.created_by.username if m.created_by else None),
+                "is_public": m.is_public,
             })
         return Response(meds)
 
     def post(self, request):
+        if not IsContentCreator().has_permission(request, self):
+            return Response({"error": "Forbidden"}, status=403)
         display_name = (request.data.get("display_name") or "").strip()
         category = (request.data.get("category") or "uncategorised").strip()
         if not display_name:
@@ -49,36 +69,48 @@ class MeditationListView(APIView):
         med_id = f"med-{uuid.uuid4().hex[:12]}"
         Meditation.objects.create(
             name=med_id, display_name=display_name, category=category,
+            created_by=request.user,
+            is_public=get_role(request.user) in ("admin", "editor"),
         )
         return Response({
             "name": med_id,
             "display_name": display_name,
             "category": category,
             "stages": [],
+            "created_by": request.user.username,
+            "is_public": get_role(request.user) in ("admin", "editor"),
         }, status=201)
 
 
 class MetaView(APIView):
-    permission_classes = [IsAdminOrReadOnly]
-
     def get(self, request, name):
-        m = get_object_or_404(Meditation, name=name)
+        m, err = _check_meditation_perm(request, name)
+        if err:
+            return err
         return Response({
             "display_name": m.display_name,
             "category": m.category,
+            "created_by": m.created_by.username if m.created_by else None,
+            "is_public": m.is_public,
         })
 
     def put(self, request, name):
-        m, _ = Meditation.objects.get_or_create(name=name)
+        m, err = _check_meditation_perm(request, name, write=True)
+        if err:
+            return err
         if "display_name" in request.data:
             m.display_name = request.data["display_name"]
         if "category" in request.data:
             m.category = request.data["category"]
+        if "is_public" in request.data:
+            m.is_public = request.data["is_public"]
         m.save()
         return Response({"status": "ok"})
 
     def delete(self, request, name):
-        m = get_object_or_404(Meditation, name=name)
+        m, err = _check_meditation_perm(request, name, write=True)
+        if err:
+            return err
         m.delete()
         return Response({"status": "ok"})
 
@@ -101,27 +133,35 @@ def _resolve_group(group_str):
 
 
 class GroupListView(APIView):
-    permission_classes = [IsAdminOrReadOnly]
-
     def get(self, request):
         return Response([
-            {"name": g.name, "display_name": g.display_name, "sort_order": g.sort_order}
-            for g in Group.objects.all()
+            {
+                "name": g.name, "display_name": g.display_name,
+                "sort_order": g.sort_order,
+                "created_by": g.created_by.username if g.created_by else None,
+            }
+            for g in Group.objects.select_related("created_by").all()
         ])
 
     def post(self, request):
+        if not IsContentCreator().has_permission(request, self):
+            return Response({"error": "Forbidden"}, status=403)
         display_name = (request.data.get("display_name") or "").strip()
         if not display_name:
             return Response({"error": "display_name required"}, status=400)
         slug = f"group-{uuid.uuid4().hex[:8]}"
-        group = Group.objects.create(name=slug, display_name=display_name, sort_order=50)
+        group = Group.objects.create(
+            name=slug, display_name=display_name,
+            sort_order=50, created_by=request.user,
+        )
         return Response({
-            "name": group.name, "display_name": group.display_name, "sort_order": group.sort_order,
+            "name": group.name, "display_name": group.display_name,
+            "sort_order": group.sort_order, "created_by": request.user.username,
         }, status=201)
 
 
 class GroupDetailView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrEditor]
 
     def put(self, request, name):
         group = get_object_or_404(Group, name=name)
@@ -140,8 +180,6 @@ class GroupDetailView(APIView):
 
 
 class CategoryListView(APIView):
-    permission_classes = [IsAdminOrReadOnly]
-
     def get(self, request):
         return Response([
             _serialize_category(c)
@@ -149,6 +187,8 @@ class CategoryListView(APIView):
         ])
 
     def post(self, request):
+        if not IsContentCreator().has_permission(request, self):
+            return Response({"error": "Forbidden"}, status=403)
         display_name = (request.data.get("display_name") or "").strip()
         if not display_name:
             return Response({"error": "display_name required"}, status=400)
@@ -161,10 +201,10 @@ class CategoryListView(APIView):
 
 
 class CategoryDetailView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrEditor]
 
-    def put(self, request, category):
-        cat = get_object_or_404(Category, name=category)
+    def put(self, request, name):
+        cat = get_object_or_404(Category, name=name)
         if "display_name" in request.data:
             cat.display_name = request.data["display_name"]
         if "sort_order" in request.data:
@@ -174,36 +214,42 @@ class CategoryDetailView(APIView):
         cat.save()
         return Response({"status": "ok"})
 
-    def delete(self, request, category):
-        cat = get_object_or_404(Category, name=category)
-        Meditation.objects.filter(category=category).update(category="uncategorised")
+    def delete(self, request, name):
+        cat = get_object_or_404(Category, name=name)
+        Meditation.objects.filter(category=name).update(category="uncategorised")
         cat.delete()
         return Response({"status": "ok"})
 
 
 class InstructionsView(APIView):
-    permission_classes = [IsAdminOrReadOnly]
-
     def get(self, request, name):
-        m = get_object_or_404(Meditation, name=name)
+        m, err = _check_meditation_perm(request, name)
+        if err:
+            return err
         instructions = m.instructions or {"description": "", "stages": []}
         return Response(instructions)
 
     def put(self, request, name):
-        m, _ = Meditation.objects.get_or_create(name=name)
+        m, err = _check_meditation_perm(request, name, write=True)
+        if err:
+            return err
         m.instructions = request.data
         m.save()
         return Response({"status": "ok"})
 
 
 class InstructionsPdfView(APIView):
-    permission_classes = [IsAdminOrReadOnly]
-
     def get(self, request, name):
+        _, err = _check_meditation_perm(request, name)
+        if err:
+            return err
         path = storage.pdf_path(name)
         return Response({"exists": storage.file_exists(path)})
 
     def post(self, request, name):
+        _, err = _check_meditation_perm(request, name, write=True)
+        if err:
+            return err
         if "file" not in request.FILES:
             return Response({"error": "no file"}, status=400)
         f = request.FILES["file"]
@@ -212,25 +258,29 @@ class InstructionsPdfView(APIView):
         return Response({"status": "ok"})
 
     def delete(self, request, name):
+        _, err = _check_meditation_perm(request, name, write=True)
+        if err:
+            return err
         path = storage.pdf_path(name)
         storage.delete_file(path)
         return Response({"status": "ok"})
 
 
 class LoopsView(APIView):
-    permission_classes = [IsAdmin]
-
     def put(self, request, name):
-        m = get_object_or_404(Meditation, name=name)
+        m, err = _check_meditation_perm(request, name, write=True)
+        if err:
+            return err
         _apply_loops(m.script, request.data)
         m.save()
         return Response({"status": "ok"})
 
 
 class ExtractInstructionsView(APIView):
-    permission_classes = [IsAdmin]
-
     def post(self, request, name):
+        _, err = _check_meditation_perm(request, name, write=True)
+        if err:
+            return err
         youtube_url = request.data.get("youtube_url")
         context = request.data.get("context")
         try:
@@ -430,7 +480,9 @@ class ChatView(APIView):
         message = request.data.get("message", "")
         history = request.data.get("history", [])
         context = request.data.get("context", {})
-        read_only = not (request.user and request.user.is_staff)
+        role = get_role(request.user)
+        # Admin/editor can always mutate; builders can mutate their own content (checked per-mutation below)
+        read_only = role not in ("admin", "editor", "builder")
         if not message:
             return Response({"error": "message required"}, status=400)
         try:
@@ -452,6 +504,9 @@ class ChatView(APIView):
                 m = Meditation.objects.filter(
                     name=context.get("meditation")
                 ).first()
+                # Builders can only mutate their own content
+                if m and role == "builder" and m.created_by != request.user:
+                    m = None
                 if m:
                     if "instructions" in mutations:
                         old_stages = (m.instructions or {}).get("stages", [])
@@ -485,6 +540,8 @@ class ChatView(APIView):
                 p = Practice.objects.filter(
                     name=context.get("practice")
                 ).first()
+                if p and role == "builder" and p.created_by != request.user:
+                    p = None
                 if p and "items" in mutations:
                     try:
                         old_items = p.items or []
@@ -505,6 +562,7 @@ class ChatView(APIView):
                         name=practice_id,
                         display_name=cp.get("display_name", "New Programme"),
                         items=cp.get("items", []),
+                        created_by=request.user,
                     )
                     result["created_programme"] = practice_id
                 except Exception as e:
