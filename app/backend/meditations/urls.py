@@ -2,7 +2,7 @@ from django.urls import path
 
 from .views import (
     assembly, assets, assistant, auth, clone, components,
-    invites, meditations, practices, scripts, sharing, stages, trim, users,
+    history, invites, meditations, practices, scripts, sharing, stages, trim, users,
 )
 
 urlpatterns = [
@@ -26,6 +26,11 @@ urlpatterns = [
     # Viewer management (builder)
     path("api/my-viewers", users.MyViewerListView.as_view()),
     path("api/my-viewers/<int:user_id>", users.MyViewerDetailView.as_view()),
+    path("api/my-viewers/<int:user_id>/content", users.MyViewerContentView.as_view()),
+    path("api/my-viewers/<int:user_id>/history", users.MyViewerHistoryView.as_view()),
+
+    # History
+    path("api/history", history.HistoryListView.as_view()),
 
     # Groups
     path("api/groups", meditations.GroupListView.as_view()),

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { fetchPractice, savePractice, fetchAvailableStages, saveStageVariables, assembleStage, BASE } from '../api';
+import { fetchPractice, savePractice, fetchAvailableStages, fetchGroups, fetchCategories, saveStageVariables, assembleStage, BASE } from '../api';
+import { useAuth } from '../AuthContext';
 import { useLocalState } from '../utils';
 
 function genId() {
@@ -14,15 +15,21 @@ function migrateToWeeks(items) {
 }
 
 export default function PracticeBuilder() {
+  const auth = useAuth();
   const { name } = useParams();
   const [practice, setPractice] = useState(null);
   const [exercises, setExercises] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [expandedWeeks, setExpandedWeeks] = useLocalState(`prog:${name}:weeks`, {});
   const [expandedDays, setExpandedDays] = useLocalState(`prog:${name}:days`, {});
   const [pickerTarget, setPickerTarget] = useState(null); // { wi, di }
   const [pickerSearch, setPickerSearch] = useState('');
+  const [pickerOwner, setPickerOwner] = useState('mine');
+  const [pickerGroup, setPickerGroup] = useState('all');
+  const [pickerCategory, setPickerCategory] = useState('all');
   const [dragInfo, setDragInfo] = useState(null); // { wi, di, idx }
   const [dragOver, setDragOver] = useState(null); // { wi, di, idx }
 
@@ -40,6 +47,8 @@ export default function PracticeBuilder() {
       setTitleDraft(p.display_name);
     });
     fetchAvailableStages().then(setExercises);
+    fetchGroups().then(setGroups);
+    fetchCategories().then(setCategories);
   }, [name]);
 
   // Re-fetch data when the AI assistant makes changes
@@ -248,10 +257,36 @@ export default function PracticeBuilder() {
   }
 
   // --- Picker ---
-  const filteredExercises = exercises.filter(ex =>
-    ex.display_name.toLowerCase().includes(pickerSearch.toLowerCase()) ||
-    ex.stages.some(s => s.name.toLowerCase().includes(pickerSearch.toLowerCase()))
+  const filteredExercises = exercises.filter(ex => {
+    // Ownership filter
+    if (pickerOwner === 'mine' && ex.created_by !== auth.username) return false;
+    if (pickerOwner === 'public' && !ex.is_public) return false;
+
+    // Group filter
+    if (pickerGroup !== 'all') {
+      const cat = categories.find(c => c.name === ex.category);
+      if (!cat || (cat.group || '') !== pickerGroup) return false;
+    }
+
+    // Category filter
+    if (pickerCategory !== 'all' && ex.category !== pickerCategory) return false;
+
+    // Text search
+    const q = pickerSearch.toLowerCase();
+    if (q && !ex.display_name.toLowerCase().includes(q) &&
+        !ex.stages.some(s => s.name.toLowerCase().includes(q))) return false;
+
+    return true;
+  });
+
+  // Groups/categories that exist in the current ownership filter
+  const pickerExercisesForOwner = exercises.filter(ex =>
+    pickerOwner === 'mine' ? ex.created_by === auth.username : pickerOwner === 'public' ? ex.is_public : true
   );
+  const pickerCatNames = new Set(pickerExercisesForOwner.map(ex => ex.category));
+  const pickerVisibleCats = categories.filter(c => pickerCatNames.has(c.name));
+  const pickerGroupNames = new Set(pickerVisibleCats.map(c => c.group || ''));
+  const pickerVisibleGroups = groups.filter(g => pickerGroupNames.has(g.name));
 
   function toggleWeek(wi) { setExpandedWeeks(prev => ({ ...prev, [wi]: !prev[wi] })); }
   function toggleDay(wi, di) { setExpandedDays(prev => ({ ...prev, [`${wi}:${di}`]: !prev[`${wi}:${di}`] })); }
@@ -402,6 +437,28 @@ export default function PracticeBuilder() {
             <div className="modal-header">
               <h2>Add Stage</h2>
               <button className="modal-close" onClick={() => { setPickerTarget(null); setPickerSearch(''); }}>×</button>
+            </div>
+            <div className="picker-filters">
+              <div className="picker-filter-row">
+                <button className={`picker-filter-btn${pickerOwner === 'mine' ? ' active' : ''}`} onClick={() => { setPickerOwner('mine'); setPickerGroup('all'); setPickerCategory('all'); }}>My Exercises</button>
+                <button className={`picker-filter-btn${pickerOwner === 'public' ? ' active' : ''}`} onClick={() => { setPickerOwner('public'); setPickerGroup('all'); setPickerCategory('all'); }}>Public</button>
+              </div>
+              {pickerVisibleGroups.length > 0 && (
+                <div className="picker-filter-row">
+                  <button className={`picker-filter-chip${pickerGroup === 'all' ? ' active' : ''}`} onClick={() => { setPickerGroup('all'); setPickerCategory('all'); }}>All groups</button>
+                  {pickerVisibleGroups.map(g => (
+                    <button key={g.name} className={`picker-filter-chip${pickerGroup === g.name ? ' active' : ''}`} onClick={() => { setPickerGroup(g.name); setPickerCategory('all'); }}>{g.display_name}</button>
+                  ))}
+                </div>
+              )}
+              {pickerVisibleCats.filter(c => pickerGroup === 'all' || (c.group || '') === pickerGroup).length > 1 && (
+                <div className="picker-filter-row">
+                  <button className={`picker-filter-chip${pickerCategory === 'all' ? ' active' : ''}`} onClick={() => setPickerCategory('all')}>All categories</button>
+                  {pickerVisibleCats.filter(c => pickerGroup === 'all' || (c.group || '') === pickerGroup).map(c => (
+                    <button key={c.name} className={`picker-filter-chip${pickerCategory === c.name ? ' active' : ''}`} onClick={() => setPickerCategory(c.name)}>{c.display_name}</button>
+                  ))}
+                </div>
+              )}
             </div>
             <input className="practice-picker-search" placeholder="Search exercises..."
               value={pickerSearch} onChange={e => setPickerSearch(e.target.value)} autoFocus />

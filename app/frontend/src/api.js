@@ -529,6 +529,16 @@ export async function removeViewer(userId) {
   await apiFetch(`${BASE}/api/my-viewers/${userId}`, { method: 'DELETE' });
 }
 
+export async function fetchViewerHistory(userId) {
+  const res = await apiFetch(`${BASE}/api/my-viewers/${userId}/history`);
+  return safeJson(res, []);
+}
+
+export async function fetchViewerContent(userId) {
+  const res = await apiFetch(`${BASE}/api/my-viewers/${userId}/content`);
+  return safeJson(res, { groups: [], categories: [], exercises: [], programmes: [] });
+}
+
 // --- Clone ---
 
 export async function cloneMeditation(name) {
@@ -635,6 +645,22 @@ export async function unshareCategory(name, userId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: userId }),
   });
+}
+
+// --- History ---
+
+export async function fetchHistory() {
+  const res = await apiFetch(`${BASE}/api/history`);
+  return safeJson(res, []);
+}
+
+export async function logSession(data) {
+  const res = await apiFetch(`${BASE}/api/history`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return safeJson(res, {});
 }
 
 export { BASE };

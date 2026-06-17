@@ -2,3 +2,4 @@
 .env
 .agents/
 venv/
+scripts/sync_granola.log

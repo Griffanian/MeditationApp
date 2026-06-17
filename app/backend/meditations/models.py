@@ -118,14 +118,14 @@ class Category(models.Model):
 class Meditation(models.Model):
     name = models.SlugField(max_length=200, unique=True, primary_key=True)
     display_name = models.CharField(max_length=200, blank=True)
-    category = models.CharField(max_length=100, default="uncategorised")
+    category = models.CharField(max_length=100, default="uncategorised", db_index=True)
     instructions = models.JSONField(default=dict, blank=True)
     script = models.JSONField(default=list, blank=True)
     created_by = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL,
         null=True, blank=True, related_name="meditations",
     )
-    is_public = models.BooleanField(default=False)
+    is_public = models.BooleanField(default=False, db_index=True)
     shared_with = models.ManyToManyField(
         "auth.User", blank=True, related_name="shared_meditations",
     )
@@ -190,7 +190,7 @@ class Practice(models.Model):
         "auth.User", on_delete=models.SET_NULL,
         null=True, blank=True, related_name="practices",
     )
-    is_public = models.BooleanField(default=False)
+    is_public = models.BooleanField(default=False, db_index=True)
     shared_with = models.ManyToManyField(
         "auth.User", blank=True, related_name="shared_practices",
     )
@@ -250,3 +250,28 @@ class Message(models.Model):
 
     def __str__(self):
         return f"{self.thread_id}/{self.role}"
+
+
+class PracticeSession(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    user = models.ForeignKey(
+        "auth.User", on_delete=models.CASCADE, related_name="practice_sessions"
+    )
+    practice = models.ForeignKey(
+        Practice, on_delete=models.CASCADE, related_name="sessions"
+    )
+    practice_display = models.CharField(max_length=200, blank=True)
+    week = models.IntegerField()
+    day = models.IntegerField()
+    day_label = models.CharField(max_length=200, blank=True)
+    duration = models.FloatField(default=0)  # seconds
+    completed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-completed_at"]
+        indexes = [
+            models.Index(fields=["user", "-completed_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username}: {self.practice_display} W{self.week+1}D{self.day+1}"

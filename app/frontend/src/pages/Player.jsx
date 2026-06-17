@@ -118,6 +118,17 @@ export default function Player() {
 
   function markDayCompleted() {
     setCompletedDays(prev => ({ ...prev, [dayKey]: true }));
+    // Log to backend
+    import('../api').then(({ logSession }) => {
+      logSession({
+        practice: name,
+        practice_display: practice?.display_name || name,
+        week: currentWeek,
+        day: currentDay,
+        day_label: day?.label || `Day ${currentDay + 1}`,
+        duration: audioRef.current?.duration || 0,
+      });
+    });
   }
 
   function startTimer() {

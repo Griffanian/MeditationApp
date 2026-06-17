@@ -111,8 +111,10 @@ function UserSection() {
 
   async function handleReactivate(u) {
     try {
-      await apiFetch(`${BASE}/api/users/${u.id}`, { method: 'PATCH' });
-      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_active: true } : x));
+      const res = await apiFetch(`${BASE}/api/users/${u.id}`, { method: 'PATCH' });
+      const data = await res.json().catch(() => ({}));
+      const ids = data.reactivated || [u.id];
+      setUsers(prev => prev.map(x => ids.includes(x.id) ? { ...x, is_active: true } : x));
     } catch (err) {
       alert(err.message);
     }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
-import { fetchGroups, createGroup, updateGroup, deleteGroup, fetchCategories, createCategory, updateCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveMeta, saveStageVariables, assembleStage, cloneMeditation, fetchGroupViewers, shareGroup, unshareGroup, fetchCategoryViewers, shareCategory, unshareCategory, fetchMeditationViewers, shareMeditation, unshareMeditation, BASE } from '../api';
+import { fetchGroups, createGroup, updateGroup, deleteGroup, fetchCategories, createCategory, updateCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveMeta, saveStageVariables, assembleStage, cloneMeditation, fetchGroupViewers, shareGroup, unshareGroup, fetchCategoryViewers, shareCategory, unshareCategory, fetchMeditationViewers, shareMeditation, unshareMeditation, fetchPractices, fetchPractice, savePractice, BASE } from '../api';
 import { useAuth, canEdit } from '../AuthContext';
 import { useLocalState } from '../utils';
 import DashCard from '../components/DashCard';
@@ -25,6 +25,7 @@ export default function Dashboard() {
   const [expandedCats, setExpandedCats] = useLocalState('dashboard:expandedCats', {});
   const [selectedGroup, setSelectedGroup] = useLocalState('dashboard:selectedGroup', null);
   const [ownerFilter, setOwnerFilter] = useLocalState('dashboard:ownerFilter', auth.canCreate ? 'mine' : null);
+  const [addToProg, setAddToProg] = useState(null); // { med } — exercise to add to a programme
   const audioRef = useRef(null);
   const navigate = useNavigate();
 
@@ -351,6 +352,9 @@ export default function Dashboard() {
                   {canEdit(auth, med) && med.category !== 'uncategorised' && (
                     <button onClick={() => { setOpenMenu(null); handleMoveToCategory(med, 'uncategorised'); }}>Ungroup</button>
                   )}
+                  {auth.canCreate && med.stages && med.stages.length > 0 && (
+                    <button onClick={() => { setOpenMenu(null); setAddToProg({ med }); }}>Add to programme</button>
+                  )}
                   {canEdit(auth, med) && (
                     <button onClick={() => { setOpenMenu(null); setViewerPanel(`med:${med.name}`); }}>Viewers</button>
                   )}
@@ -571,6 +575,13 @@ export default function Dashboard() {
         </div>
       )}
 
+      <p className="owner-filter-desc">
+        {effectiveOwnerFilter === 'mine' && <>Your exercises. Use the <span style={{ fontSize: 15 }}>&#x22EE;</span> menu to share with clients, add to programmes, duplicate, or organise into groups and categories.</>}
+        {effectiveOwnerFilter === 'public' && <>Publicly available exercises. Use the <span style={{ fontSize: 15 }}>&#x22EE;</span> menu to make your own copy, customise it, and add it to your programmes.</>}
+        {effectiveOwnerFilter === 'all' && 'All exercises across all users.'}
+        {effectiveOwnerFilter !== 'mine' && effectiveOwnerFilter !== 'public' && effectiveOwnerFilter !== 'all' && `Exercises shared with you by ${builderTabs.find(b => b.username === effectiveOwnerFilter)?.display || effectiveOwnerFilter}.`}
+      </p>
+
       {visibleGroups.length === 0 && !hasUngrouped && auth.canCreate && ownerFilter === 'mine' ? (
         <button className="onboarding-create-btn" onClick={async () => {
           const displayName = prompt('Group name:');
@@ -676,6 +687,123 @@ export default function Dashboard() {
         </>
       )}
 
+      {addToProg && <AddToProgModal med={addToProg.med} auth={auth} onClose={() => setAddToProg(null)} />}
+    </div>
+  );
+}
+
+function AddToProgModal({ med, auth, onClose }) {
+  const [practices, setPractices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedPrac, setSelectedPrac] = useState(null);
+  const [selectedWeek, setSelectedWeek] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [selectedStage, setSelectedStage] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchPractices().then(pracs => {
+      setPractices(pracs.filter(p => p.created_by === auth.username));
+      setLoading(false);
+    });
+  }, []);
+
+  async function handleAdd() {
+    if (!selectedPrac || selectedWeek === null || selectedDay === null || !selectedStage) return;
+    setSaving(true);
+    try {
+      const prac = await fetchPractice(selectedPrac.name);
+      const weeks = prac.items || [];
+      const day = weeks[selectedWeek]?.days?.[selectedDay];
+      if (!day) { alert('Invalid day'); setSaving(false); return; }
+      const newItem = {
+        id: 'item-' + Math.random().toString(36).slice(2, 10),
+        meditation: med.name,
+        meditation_display: med.display_name,
+        stage_id: selectedStage.id,
+        stage_name: selectedStage.name,
+        variables: selectedStage.variables || {},
+      };
+      day.items = [...(day.items || []), newItem];
+      await savePractice(selectedPrac.name, { items: weeks });
+      onClose();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const prac = selectedPrac;
+  const weeks = prac?.items || [];
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Add to Programme</h2>
+          <button className="modal-close" onClick={onClose}>&times;</button>
+        </div>
+        {loading ? (
+          <div style={{ color: '#666', padding: 20, textAlign: 'center' }}>Loading...</div>
+        ) : practices.length === 0 ? (
+          <div style={{ color: '#666', padding: 20, textAlign: 'center' }}>No programmes yet. Create one first.</div>
+        ) : (
+          <div className="add-to-prog-steps">
+            <div className="add-to-prog-step add-to-prog-stage">
+              <span className="add-to-prog-label">{med.display_name} — Stage</span>
+              <div className="add-to-prog-options">
+                {med.stages.map(s => (
+                  <button key={s.id} className={`add-to-prog-stage-chip${selectedStage?.id === s.id ? ' active' : ''}`}
+                    onClick={() => setSelectedStage(s)}>{s.name}</button>
+                ))}
+              </div>
+            </div>
+
+            {selectedStage && <>
+              <div className="add-to-prog-step" style={{ borderTop: '1px solid #2a2a4a', paddingTop: 12 }}>
+                <span className="add-to-prog-label">Add to Programme</span>
+                <div className="add-to-prog-options">
+                  {practices.map(p => (
+                    <button key={p.name} className={`picker-filter-chip${selectedPrac?.name === p.name ? ' active' : ''}`}
+                      onClick={() => { setSelectedPrac(p); setSelectedWeek(null); setSelectedDay(null); }}>{p.display_name}</button>
+                  ))}
+                </div>
+              </div>
+
+              {prac && weeks.length > 0 && (
+                <div className="add-to-prog-step">
+                  <span className="add-to-prog-label">Week</span>
+                  <div className="add-to-prog-options">
+                    {weeks.map((w, wi) => (
+                      <button key={wi} className={`picker-filter-chip${selectedWeek === wi ? ' active' : ''}`}
+                        onClick={() => { setSelectedWeek(wi); setSelectedDay(null); }}>{w.label || `Week ${wi + 1}`}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedWeek !== null && weeks[selectedWeek]?.days?.length > 0 && (
+                <div className="add-to-prog-step">
+                  <span className="add-to-prog-label">Day</span>
+                  <div className="add-to-prog-options">
+                    {weeks[selectedWeek].days.map((d, di) => (
+                      <button key={di} className={`picker-filter-chip${selectedDay === di ? ' active' : ''}`}
+                        onClick={() => setSelectedDay(di)}>{d.label || `Day ${di + 1}`}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedDay !== null && (
+                <button className="add-to-prog-confirm" onClick={handleAdd} disabled={saving}>
+                  {saving ? 'Adding...' : `Add to ${weeks[selectedWeek]?.days?.[selectedDay]?.label || `Day ${selectedDay + 1}`}`}
+                </button>
+              )}
+            </>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

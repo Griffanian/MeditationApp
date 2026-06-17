@@ -5,7 +5,13 @@
       "Bash(python manage.py makemigrations meditations --name viewer_show_public)",
       "Bash(curl -sv http://localhost:5555/api/auth/status -H \"Authorization: Token 1:1781712871:3cb96132769e651f7e91\")",
       "Bash(curl -s http://localhost:5555/api/auth/status -H \"Authorization: Token 5:1781713254:ba88adc5afc7c226f276\")",
-      "Bash(curl -s http://localhost:5555/api/practices -H \"Authorization: Token 5:1781713254:ba88adc5afc7c226f276\")"
+      "Bash(curl -s http://localhost:5555/api/practices -H \"Authorization: Token 5:1781713254:ba88adc5afc7c226f276\")",
+      "Bash(python manage.py makemigrations meditations --name practice_session)",
+      "Bash(python manage.py shell -c \"from meditations.authentication import make_token; from django.contrib.auth.models import User; print\\(make_token\\(User.objects.get\\(username='builder-1'\\)\\)\\)\")",
+      "Bash(curl -s http://localhost:5555/api/history -H \"Authorization: Token $\\(python manage.py shell -c \"from meditations.authentication import make_token; from django.contrib.auth.models import User; print\\(make_token\\(User.objects.get\\(username='builder-1'\\)\\)\\)\" \\)\")",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s \"http://localhost:5555/api/history\" -H \"Authorization: Token 4:1781729407:72f18523397634baaaee\")",
+      "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); s=data[0]; print\\(json.dumps\\(s['exercises'], indent=2\\)\\)\")"
     ]
   }
 }

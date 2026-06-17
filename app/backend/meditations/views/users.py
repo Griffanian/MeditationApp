@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import UserProfile, ViewerAccess
+from ..models import Category, Group, Meditation, Practice, PracticeSession, UserProfile, ViewerAccess
 from ..permissions import IsAdmin, IsContentCreator, get_role
 
 
@@ -98,15 +98,24 @@ class UserDeleteView(APIView):
         return Response({"ok": True, "deactivated": deactivated})
 
     def patch(self, request, user_id):
-        """Reactivate a user."""
+        """Reactivate a user. If builder, also reactivate their viewers."""
         try:
-            user = User.objects.get(pk=user_id)
+            user = User.objects.select_related("profile").get(pk=user_id)
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=404)
 
         user.is_active = True
         user.save(update_fields=["is_active"])
-        return Response({"ok": True})
+
+        reactivated = [user.pk]
+        if get_role(user) == "builder":
+            viewer_ids = ViewerAccess.objects.filter(
+                builder=user
+            ).values_list("viewer_id", flat=True)
+            User.objects.filter(pk__in=viewer_ids).update(is_active=True)
+            reactivated.extend(viewer_ids)
+
+        return Response({"ok": True, "reactivated": reactivated})
 
 
 class MyViewerListView(APIView):
@@ -173,3 +182,63 @@ class MyViewerDetailView(APIView):
         if not deleted:
             return Response({"error": "Not found"}, status=404)
         return Response({"ok": True})
+
+
+class MyViewerContentView(APIView):
+    permission_classes = [IsContentCreator]
+
+    def get(self, request, user_id):
+        """Return what content a specific viewer has access to from this builder."""
+        try:
+            viewer = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "Not found"}, status=404)
+
+        # Check this viewer is linked to the requesting builder
+        if not ViewerAccess.objects.filter(viewer=viewer, builder=request.user).exists():
+            return Response({"error": "Not your viewer"}, status=403)
+
+        # Groups shared with this viewer (owned by this builder)
+        shared_groups = Group.objects.filter(
+            created_by=request.user, shared_with=viewer
+        )
+        # Categories shared with this viewer
+        shared_categories = Category.objects.filter(
+            shared_with=viewer
+        ).select_related("group")
+        # Exercises shared with this viewer (owned by this builder)
+        shared_meditations = Meditation.objects.filter(
+            created_by=request.user, shared_with=viewer
+        )
+        # Programmes shared with this viewer (owned by this builder)
+        shared_practices = Practice.objects.filter(
+            created_by=request.user, shared_with=viewer
+        )
+
+        return Response({
+            "groups": [{"name": g.name, "display_name": g.display_name} for g in shared_groups],
+            "categories": [{"name": c.name, "display_name": c.display_name, "group": c.group.display_name if c.group else ""} for c in shared_categories],
+            "exercises": [{"name": m.name, "display_name": m.display_name or m.name} for m in shared_meditations],
+            "programmes": [{"name": p.name, "display_name": p.display_name or p.name} for p in shared_practices],
+        })
+
+
+class MyViewerHistoryView(APIView):
+    permission_classes = [IsContentCreator]
+
+    def get(self, request, user_id):
+        """Return a viewer's practice history."""
+        from .history import _serialize_sessions
+
+        try:
+            viewer = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "Not found"}, status=404)
+
+        if not ViewerAccess.objects.filter(viewer=viewer, builder=request.user).exists():
+            return Response({"error": "Not your viewer"}, status=403)
+
+        sessions = list(PracticeSession.objects.filter(
+            user=viewer
+        ).select_related("practice")[:200])
+        return Response(_serialize_sessions(sessions))

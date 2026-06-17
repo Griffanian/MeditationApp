@@ -111,7 +111,7 @@ export default function Practices() {
   return (
     <div>
       <h1>Programmes</h1>
-      <p className="section-description">Guided meditation courses structured by week and day. Pick a programme and follow along at your own pace, or build your own using exercises from the <Link to="/exercises" className="section-description-link">Exercises</Link> page.</p>
+      <p className="section-description">Structured courses built from exercises, organised by week and day.</p>
 
       {/* Ownership tabs */}
       {auth.canCreate ? (
@@ -132,6 +132,13 @@ export default function Practices() {
           )}
         </div>
       )}
+
+      <p className="owner-filter-desc">
+        {effectiveFilter === 'mine' && <>Your programmes. Use the <span style={{ fontSize: 15 }}>&#x22EE;</span> menu to share with clients, duplicate, or delete.</>}
+        {effectiveFilter === 'public' && <>Publicly available programmes. Use the <span style={{ fontSize: 15 }}>&#x22EE;</span> menu to make your own copy and customise it.</>}
+        {effectiveFilter === 'all' && 'All programmes across all users.'}
+        {effectiveFilter !== 'mine' && effectiveFilter !== 'public' && effectiveFilter !== 'all' && `Programmes shared with you by ${builderTabs.find(b => b.username === effectiveFilter)?.display || effectiveFilter}.`}
+      </p>
 
       {filtered.length === 0 && !auth.canCreate ? (
         <div className="empty-state">

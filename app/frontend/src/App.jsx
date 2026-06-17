@@ -9,6 +9,8 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import UserManagement from './pages/UserManagement';
 import Account from './pages/Account';
+import Clients from './pages/Clients';
+import History from './pages/History';
 import AssistantSidebar from './components/AssistantSidebar';
 import { AuthProvider, buildAuth } from './AuthContext';
 import { checkAuth, logoutUser } from './api';
@@ -31,6 +33,14 @@ function AppHeader({ auth }) {
         {(auth.canCreate || auth.hasProgrammes) && (
           <NavLink to="/practices" className={() => `app-header-link${isProgrammes ? ' active' : ''}`}>
             Programmes
+          </NavLink>
+        )}
+        <NavLink to="/history" className="app-header-link">
+          History
+        </NavLink>
+        {auth.canCreate && (
+          <NavLink to="/clients" className="app-header-link">
+            Clients
           </NavLink>
         )}
         {auth.isAdmin && (
@@ -93,6 +103,8 @@ export default function App() {
                 <Route path="/edit/:name" element={<Editor />} />
                 <Route path="/practice/:name" element={authValue.canCreate ? <PracticeBuilder /> : <Navigate to="/practices" replace />} />
                 <Route path="/play/:name" element={<Player />} />
+                <Route path="/history" element={<History />} />
+                <Route path="/clients" element={authValue.canCreate ? <Clients /> : <Navigate to="/" replace />} />
                 <Route path="/users" element={authValue.isAdmin ? <UserManagement /> : <Navigate to="/" replace />} />
                 <Route path="/account" element={<Account />} />
                 <Route path="/signup/:token" element={<Navigate to="/" replace />} />

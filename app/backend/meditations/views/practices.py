@@ -85,7 +85,7 @@ class PracticeStagesView(APIView):
     """Return all available exercises and their stages for the stage picker."""
     def get(self, request):
         qs = visible_qs(
-            Meditation.objects.prefetch_related("stages").order_by("display_name"),
+            Meditation.objects.prefetch_related("stages").select_related("created_by__profile").order_by("display_name"),
             request.user,
         )
         result = []
@@ -108,6 +108,10 @@ class PracticeStagesView(APIView):
                 result.append({
                     "name": m.name,
                     "display_name": m.display_name or m.name,
+                    "category": m.category,
+                    "created_by": m.created_by.username if m.created_by else None,
+                    "created_by_display": m.created_by.profile.name if m.created_by and hasattr(m.created_by, 'profile') else None,
+                    "is_public": m.is_public,
                     "stages": stages,
                 })
         return Response(result)
