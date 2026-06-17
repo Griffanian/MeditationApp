@@ -6,9 +6,33 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+import time
+from collections import defaultdict
+
 from ..authentication import make_token
 from ..models import InviteLink, UserProfile, ViewerAccess
 from ..permissions import get_role
+
+# Simple in-memory rate limiter for login/signup
+_attempts = defaultdict(list)  # ip -> [timestamps]
+RATE_LIMIT_WINDOW = 300  # 5 minutes
+RATE_LIMIT_MAX = 10  # max attempts per window
+
+
+def _get_ip(request):
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    return xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR", "")
+
+
+def _check_rate_limit(request):
+    ip = _get_ip(request)
+    now = time.time()
+    # Clean old entries
+    _attempts[ip] = [t for t in _attempts[ip] if now - t < RATE_LIMIT_WINDOW]
+    if len(_attempts[ip]) >= RATE_LIMIT_MAX:
+        return False
+    _attempts[ip].append(now)
+    return True
 
 
 class ProfileView(APIView):
@@ -67,6 +91,8 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        if not _check_rate_limit(request):
+            return Response({"error": "Too many attempts. Try again in a few minutes."}, status=429)
         username = request.data.get("username", "")
         password = request.data.get("password", "")
         user = authenticate(request, username=username, password=password)
@@ -143,6 +169,8 @@ class SignupView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        if not _check_rate_limit(request):
+            return Response({"error": "Too many attempts. Try again in a few minutes."}, status=429)
         token_str = request.data.get("token", "")
         username = request.data.get("username", "").strip()
         password = request.data.get("password", "")
