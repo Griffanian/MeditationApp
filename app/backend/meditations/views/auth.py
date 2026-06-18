@@ -115,6 +115,13 @@ class ProfileView(APIView):
 
         return Response({"ok": True, "username": user.username, "profile_photo": _profile_photo_url(profile)})
 
+    def delete(self, request):
+        user = request.user
+        if user.is_staff:
+            return Response({"error": "Admin accounts cannot be deleted this way"}, status=400)
+        user.delete()
+        return Response({"ok": True})
+
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
@@ -141,6 +148,11 @@ class LoginView(APIView):
                     has_programmes = visible_qs(Practice.objects.all(), user).exists()
             except Exception:
                 pass
+            profile_photo = ""
+            try:
+                profile_photo = _profile_photo_url(user.profile)
+            except Exception:
+                pass
             return Response({
                 "ok": True,
                 "token": token,
@@ -150,6 +162,7 @@ class LoginView(APIView):
                 "display_name": display_name or user.username,
                 "show_public": show_public,
                 "has_programmes": has_programmes,
+                "profile_photo": profile_photo,
             })
         return Response({"error": "Invalid credentials"}, status=401)
 

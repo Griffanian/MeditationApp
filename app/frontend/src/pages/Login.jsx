@@ -25,7 +25,7 @@ export default function Login({ onLogin }) {
   return (
     <div className="login-page">
       <form className="login-form" onSubmit={handleSubmit}>
-        <h1 className="login-title">Progress Meditation</h1>
+        <h1 className="login-title">Meditation Pro</h1>
         {error && <div className="login-error">{error}</div>}
         <input
           className="login-input"

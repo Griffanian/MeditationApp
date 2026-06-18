@@ -27,7 +27,7 @@ function AppHeader({ auth }) {
 
   return (
     <header className="app-header">
-      <NavLink to="/" className="app-header-brand">Progress Meditation</NavLink>
+      <NavLink to="/" className="app-header-brand">Meditation Pro</NavLink>
       <nav className="app-header-nav">
         <NavLink to="/exercises" className={() => `app-header-link${isExercises ? ' active' : ''}`} onClick={() => {
           if (auth.canCreate) window.dispatchEvent(new CustomEvent('nav-exercises'));
@@ -53,9 +53,18 @@ function AppHeader({ auth }) {
           </NavLink>
         )}
       </nav>
-      <div className="app-header-right">
-        <span className="app-header-name">{auth.displayName || auth.username}</span>
-        <NavLink to="/account" className="app-header-user">Account Settings</NavLink>
+      <div className="app-header-user-chip">
+        <div className="app-header-avatar">
+          {auth.profilePhoto ? (
+            <img src={auth.profilePhoto} alt="" className="app-header-avatar-img" />
+          ) : (
+            <span>{(auth.displayName || auth.username || '?')[0].toUpperCase()}</span>
+          )}
+        </div>
+        <div className="app-header-user-info">
+          <NavLink to="/account" className="app-header-name">{auth.displayName || auth.username}</NavLink>
+          <button className="app-header-signout" onClick={() => { logoutUser(); window.location.href = '/'; }}>Sign out</button>
+        </div>
       </div>
     </header>
   );
@@ -90,7 +99,8 @@ export default function App() {
       .catch(() => setAuth(false));
   }, []);
 
-  const authValue = useMemo(() => auth || buildAuth({}), [auth]);
+  const updateAuth = (updates) => setAuth(prev => prev ? { ...prev, ...updates } : prev);
+  const authValue = useMemo(() => auth ? { ...auth, updateAuth } : { ...buildAuth({}), updateAuth }, [auth]);
 
   if (auth === null) {
     return <div className="loading-page"><div className="loading-spinner" /><span>Loading...</span></div>;

@@ -53,7 +53,7 @@ function ClientRow({ v, onTogglePublic, onRemove, onShowHistory, allExercises, a
         <div className="client-card-actions">
           <label className="client-card-toggle">
             <input type="checkbox" checked={v.show_public !== false} onChange={e => onTogglePublic(v, e.target.checked)} style={{ accentColor: '#a0c4ff' }} />
-            <span>Public</span>
+            <span>Sees public</span>
           </label>
           <button className="btn-small btn-danger" onClick={() => onRemove(v.id)}>Remove</button>
         </div>
@@ -135,7 +135,7 @@ function ClientHistoryModal({ viewer, sessions, onClose }) {
         </div>
         <div className="group-tabs" style={{ marginBottom: 12 }}>
           <button className={`group-tab${view === 'list' ? ' active' : ''}`} onClick={() => setView('list')}>List</button>
-          <button className={`group-tab${view === 'calendar' ? ' active' : ''}`} onClick={() => setView('calendar')}>Calendar</button>
+          <button className={`group-tab history-calendar-toggle${view === 'calendar' ? ' active' : ''}`} onClick={() => setView('calendar')}>Calendar</button>
         </div>
         <div className="client-history-modal-body">
           {!sessions ? (

@@ -20,7 +20,7 @@ export default function History() {
 
       <div className="group-tabs">
         <button className={`group-tab${view === 'list' ? ' active' : ''}`} onClick={() => setView('list')}>List</button>
-        <button className={`group-tab${view === 'calendar' ? ' active' : ''}`} onClick={() => setView('calendar')}>Calendar</button>
+        <button className={`group-tab history-calendar-toggle${view === 'calendar' ? ' active' : ''}`} onClick={() => setView('calendar')}>Calendar</button>
       </div>
 
       {sessions.length === 0 ? (

@@ -49,7 +49,7 @@ export default function Signup({ onSignup }) {
     return (
       <div className="login-page">
         <div className="login-form">
-          <h1 className="login-title">Progress Meditation</h1>
+          <h1 className="login-title">Meditation Pro</h1>
           <div className="login-error">This invite link is invalid or has expired.</div>
         </div>
       </div>
@@ -59,7 +59,7 @@ export default function Signup({ onSignup }) {
   return (
     <div className="login-page">
       <form className="login-form" onSubmit={handleSubmit}>
-        <h1 className="login-title">Progress Meditation</h1>
+        <h1 className="login-title">Meditation Pro</h1>
         {invite.name && (
           <p style={{ textAlign: 'center', color: 'var(--text-primary, #e0e0ff)', fontSize: '1.1rem', marginBottom: '0.25rem' }}>
             Welcome, {invite.name}

@@ -56,7 +56,7 @@ function getProgress(pracName, weeks) {
 }
 
 function getMotivationalMessage(streak, totalSessions) {
-  if (totalSessions === 0) return 'Welcome to Progress Meditation. Start your first session today.';
+  if (totalSessions === 0) return 'Welcome to Meditation Pro. Start your first session today.';
   if (streak > 1) return `${streak} day streak — keep it going!`;
   if (streak === 1) return 'You practised today. Nice work.';
   return 'Ready to get back on track?';
