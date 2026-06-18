@@ -46,6 +46,7 @@ export default function Player() {
   const nextAudioRef = useRef(null); // preloaded next stage
   const timerRef = useRef(null);
   const stopRef = useRef(false);
+  const gapTimerRef = useRef(null);
   const playIdxRef = useRef(-1);
   const preparedUrls = useRef({}); // idx -> audio URL
 
@@ -76,6 +77,7 @@ export default function Player() {
     return () => {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       if (timerRef.current) clearInterval(timerRef.current);
+      if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
     };
   }, []);
 
@@ -85,6 +87,7 @@ export default function Player() {
     if (bgAudioRef.current) { bgAudioRef.current.pause(); bgAudioRef.current = null; }
     if (nextAudioRef.current) { nextAudioRef.current = null; }
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
     stopRef.current = true;
     setStatus('idle');
     setPlayIdx(-1);
@@ -97,12 +100,19 @@ export default function Player() {
     setPrepareStatus('idle');
   }, [currentWeek, currentDay]);
 
-  // Keep bg volume/mute in sync
+  // Keep bg volume/mute in sync — stop audio entirely when volume is 0
   useEffect(() => {
-    if (bgAudioRef.current) {
-      bgAudioRef.current.volume = bgMuted ? 0 : bgVolume;
+    if (bgVolume === 0 || bgMuted) {
+      if (bgAudioRef.current) {
+        bgAudioRef.current.pause();
+        bgAudioRef.current = null;
+      }
+    } else if (bgAudioRef.current) {
+      bgAudioRef.current.volume = bgVolume;
+    } else if (status === 'playing') {
+      startBgAudio();
     }
-  }, [bgVolume, bgMuted]);
+  }, [bgVolume, bgMuted, status]);
 
   if (!practice) return <div className="loading-page"><div className="loading-spinner" />Loading player...</div>;
 
@@ -147,6 +157,7 @@ export default function Player() {
 
   function startBgAudio() {
     if (bgAudioRef.current) return;
+    if (bgVolume === 0) return;
     const bg = new Audio(`${BASE}/audio/asset/ambient_default.mp3`);
     bg.loop = true;
     bg.volume = bgMuted ? 0 : bgVolume;
@@ -241,7 +252,15 @@ export default function Player() {
           stopTimer();
           stopBgAudio();
         } else {
-          playFromUrl(idx + 1);
+          // Brief pause between stages so transitions aren't jarring
+          setStatus('between');
+          stopTimer();
+          gapTimerRef.current = setTimeout(() => {
+            gapTimerRef.current = null;
+            if (!stopRef.current) {
+              playFromUrl(idx + 1);
+            }
+          }, 2000);
         }
       }
     };
@@ -321,6 +340,7 @@ export default function Player() {
     stopRef.current = true;
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     if (nextAudioRef.current) { nextAudioRef.current = null; }
+    if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
     stopBgAudio();
     stopTimer();
     setStatus('idle');
@@ -334,6 +354,7 @@ export default function Player() {
 
   function handleSkip() {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
     stopTimer();
     if (playIdx >= 0 && playIdx < items.length - 1) {
       playFromUrl(playIdx + 1);
@@ -422,6 +443,9 @@ export default function Player() {
             )}
             {status === 'assembling' && (
               <button className="player-bar-main player-bar-assembling" disabled>Preparing...</button>
+            )}
+            {status === 'between' && (
+              <button className="player-bar-main player-bar-assembling" disabled>Next stage...</button>
             )}
 
             {isActive && (

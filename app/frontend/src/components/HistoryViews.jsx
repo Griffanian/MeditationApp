@@ -7,6 +7,44 @@ export function formatDuration(secs) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
+function sessionTotalSecs(s) {
+  if (s.exercises && s.exercises.length > 0) {
+    const total = s.exercises.reduce((sum, ex) => sum + (ex.duration || 0), 0);
+    if (total > 0) return total;
+  }
+  return s.duration || 0;
+}
+
+function formatTotalMins(secs) {
+  if (!secs) return '';
+  const mins = Math.round(secs / 60);
+  return mins === 1 ? '1 min' : `${mins} mins`;
+}
+
+function weekDayLabel(s) {
+  const week = s.week != null ? `Week ${s.week + 1}` : null;
+  const day = s.day_label || (s.day != null ? `Day ${s.day + 1}` : null);
+  if (week && day) return `${week}, ${day}`;
+  return week || day || '';
+}
+
+// Group sessions within 30 minutes of each other into time blocks
+function groupByTimeBlock(sessions) {
+  const sorted = [...sessions].sort((a, b) => new Date(a.completed_at) - new Date(b.completed_at));
+  const blocks = [];
+  for (const s of sorted) {
+    const t = new Date(s.completed_at).getTime();
+    const last = blocks[blocks.length - 1];
+    if (last && t - last.time <= 30 * 60 * 1000) {
+      last.sessions.push(s);
+    } else {
+      blocks.push({ time: t, completed_at: s.completed_at, sessions: [s] });
+    }
+  }
+  blocks.reverse();
+  return blocks;
+}
+
 export function formatDate(iso) {
   return new Date(iso).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 }
@@ -48,24 +86,35 @@ export function ListView({ sessions }) {
 
   return (
     <div className="history-list">
-      {Object.entries(grouped).map(([date, items]) => (
+      {Object.entries(grouped).map(([date, items]) => {
+        const dayTotal = items.reduce((sum, s) => sum + sessionTotalSecs(s), 0);
+        return (
         <div key={date} className="history-date-group">
-          <h3 className="history-date-heading">{formatDate(items[0].completed_at)}</h3>
-          {items.map(s => (
-            <div key={s.id} className="history-item">
-              <div className="history-item-top">
-                <span className="history-item-name">{s.practice_display}</span>
-                <div className="history-item-meta">
-                  {s.duration > 0 && <span className="history-item-duration">{formatDuration(s.duration)}</span>}
-                  <span className="history-item-time">{formatTime(s.completed_at)}</span>
+          <h3 className="history-date-heading">
+            {formatDate(items[0].completed_at)}
+            {dayTotal > 0 && <span className="history-date-total">{formatTotalMins(dayTotal)}</span>}
+          </h3>
+          {groupByTimeBlock(items).map((block, bi) => (
+            <div key={bi} className="history-session">
+              <div className="history-session-time">{formatTime(block.completed_at)}</div>
+              {block.sessions.map(s => {
+                const total = sessionTotalSecs(s);
+                return (
+                <div key={s.id} className="history-item">
+                  <div className="history-item-top">
+                    <span className="history-item-name">{s.practice_display}</span>
+                    {total > 0 && <span className="history-item-duration">{formatTotalMins(total)}</span>}
+                  </div>
+                  <div className="history-item-detail">{weekDayLabel(s)}</div>
+                  <ExerciseBars exercises={s.exercises} />
                 </div>
-              </div>
-              <div className="history-item-detail">{s.day_label || `Week ${s.week + 1}, Day ${s.day + 1}`}</div>
-              <ExerciseBars exercises={s.exercises} />
+                );
+              })}
             </div>
           ))}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -115,8 +164,8 @@ export function CalendarView({ sessions }) {
         <div className="cal-sessions">
           {daySessions.map((s, i) => (
             <div key={i} className="cal-session-bar" style={{ background: practiceColor(s.practice_display, colorMap) }}>
-              <span className="cal-session-label">{s.day_label}</span>
-              <span className="cal-session-time">{formatDuration(s.duration)}</span>
+              <span className="cal-session-label">{weekDayLabel(s)}</span>
+              <span className="cal-session-time">{formatTotalMins(sessionTotalSecs(s))}</span>
             </div>
           ))}
         </div>
@@ -158,14 +207,19 @@ export function CalendarView({ sessions }) {
               <button className="modal-close" onClick={() => setSelectedDay(null)}>&times;</button>
             </div>
             <div className="cal-modal-list">
-              {dayMap[selectedDay].map((s, i) => (
-                <div key={i} className="cal-detail-item">
-                  <span className="cal-detail-swatch" style={{ background: practiceColor(s.practice_display, colorMap) }} />
-                  <div className="cal-detail-info">
-                    <span className="cal-detail-name">{s.practice_display}</span>
-                    <span className="cal-detail-sub">{s.day_label} {s.duration > 0 ? `· ${formatDuration(s.duration)}` : ''} · {formatTime(s.completed_at)}</span>
-                    <ExerciseBars exercises={s.exercises} />
-                  </div>
+              {groupByTimeBlock(dayMap[selectedDay]).map((block, bi) => (
+                <div key={bi} className="cal-detail-item">
+                  <span className="cal-detail-time">{formatTime(block.completed_at)}</span>
+                  {block.sessions.map((s, i) => (
+                    <div key={i} className="cal-detail-row">
+                      <span className="cal-detail-swatch" style={{ background: practiceColor(s.practice_display, colorMap) }} />
+                      <div className="cal-detail-info">
+                        <span className="cal-detail-name">{s.practice_display}</span>
+                        <span className="cal-detail-sub">{weekDayLabel(s)}{sessionTotalSecs(s) > 0 ? ` · ${formatTotalMins(sessionTotalSecs(s))}` : ''}</span>
+                        <ExerciseBars exercises={s.exercises} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>

@@ -24,6 +24,7 @@ class UserProfile(models.Model):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="viewer")
     display_name = models.CharField(max_length=200, blank=True)
     show_public_to_viewers = models.BooleanField(default=True)
+    profile_photo = models.CharField(max_length=500, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     @property

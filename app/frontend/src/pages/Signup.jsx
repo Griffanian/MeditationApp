@@ -5,8 +5,8 @@ import { validateInvite, signupUser } from '../api';
 export default function Signup({ onSignup }) {
   const { token } = useParams();
   const [invite, setInvite] = useState(null); // null=loading, false=invalid, {valid,role,name}
-  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -16,10 +16,6 @@ export default function Signup({ onSignup }) {
       .then(data => {
         if (data.valid) {
           setInvite(data);
-          // Pre-fill username from invite name (lowercase, spaces to hyphens)
-          if (data.name) {
-            setUsername(data.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''));
-          }
         } else {
           setInvite(false);
         }
@@ -30,9 +26,13 @@ export default function Signup({ onSignup }) {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
     setLoading(true);
     try {
-      const data = await signupUser(token, username, password);
+      const data = await signupUser(token, password);
       onSignup(data);
     } catch (err) {
       setError(err.message);
@@ -69,15 +69,6 @@ export default function Signup({ onSignup }) {
           Set up your {invite.role} account
         </p>
         {error && <div className="login-error">{error}</div>}
-        <input
-          className="login-input"
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={e => setUsername(e.target.value)}
-          autoFocus
-          autoComplete="username"
-        />
         <div className="login-password-wrapper">
           <input
             className="login-input"
@@ -85,12 +76,21 @@ export default function Signup({ onSignup }) {
             placeholder="Password (8+ characters)"
             value={password}
             onChange={e => setPassword(e.target.value)}
+            autoFocus
             autoComplete="new-password"
           />
           <button type="button" className="login-toggle-pw" onClick={() => setShowPassword(!showPassword)}>
             {showPassword ? 'Hide' : 'Show'}
           </button>
         </div>
+        <input
+          className="login-input"
+          type={showPassword ? 'text' : 'password'}
+          placeholder="Confirm password"
+          value={confirmPassword}
+          onChange={e => setConfirmPassword(e.target.value)}
+          autoComplete="new-password"
+        />
         <button className="login-btn" type="submit" disabled={loading}>
           {loading ? 'Creating account...' : 'Create account'}
         </button>

@@ -450,16 +450,26 @@ export async function validateInvite(token) {
   return res.json();
 }
 
-export async function signupUser(token, username, password) {
+export async function signupUser(token, password) {
   const res = await fetch(`${BASE}/api/auth/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, username, password }),
+    body: JSON.stringify({ token, password }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Signup failed');
   setToken(data.token);
   return data;
+}
+
+export async function uploadProfilePhoto(file) {
+  const form = new FormData();
+  form.append('photo', file);
+  const res = await apiFetch(`${BASE}/api/auth/profile`, {
+    method: 'PUT',
+    body: form,
+  });
+  return safeJson(res, {});
 }
 
 // --- Invites ---

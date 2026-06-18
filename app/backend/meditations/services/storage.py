@@ -26,6 +26,10 @@ def pdf_path(meditation_name: str) -> str:
     return f"meditations/{meditation_name}/instructions.pdf"
 
 
+def profile_photo_path(user_id: int, ext: str = "jpg") -> str:
+    return f"users/{user_id}/profile.{ext}"
+
+
 def upload_file(path: str, content: bytes, content_type: str = None) -> str:
     """Upload bytes to Supabase Storage. Returns the storage path."""
     default_storage.save(path, ContentFile(content))

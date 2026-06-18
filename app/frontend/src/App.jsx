@@ -11,23 +11,27 @@ import UserManagement from './pages/UserManagement';
 import Account from './pages/Account';
 import Clients from './pages/Clients';
 import History from './pages/History';
+import Home from './pages/Home';
 import AssistantSidebar from './components/AssistantSidebar';
 import { AuthProvider, buildAuth } from './AuthContext';
 import { checkAuth, logoutUser } from './api';
+import { useLocalState } from './utils';
 import './styles.scss';
 
 function AppHeader({ auth }) {
   const location = useLocation();
   const path = location.pathname;
 
-  const isExercises = path === '/' || path === '/exercises' || path.startsWith('/edit/');
+  const isExercises = path === '/exercises' || path.startsWith('/edit/');
   const isProgrammes = path === '/practices' || path.startsWith('/practice/') || path.startsWith('/play/');
 
   return (
     <header className="app-header">
       <NavLink to="/" className="app-header-brand">Progress Meditation</NavLink>
       <nav className="app-header-nav">
-        <NavLink to="/exercises" className={() => `app-header-link${isExercises ? ' active' : ''}`}>
+        <NavLink to="/exercises" className={() => `app-header-link${isExercises ? ' active' : ''}`} onClick={() => {
+          if (auth.canCreate) window.dispatchEvent(new CustomEvent('nav-exercises'));
+        }}>
           Exercises
         </NavLink>
         {(auth.canCreate || auth.hasProgrammes) && (
@@ -77,6 +81,7 @@ function useThemeEffect() {
 
 export default function App() {
   const [auth, setAuth] = useState(null); // null = loading, false = logged out, object = logged in
+  const [sidebarOpen, setSidebarOpen] = useLocalState('sidebarOpen', false);
   useThemeEffect();
 
   useEffect(() => {
@@ -111,12 +116,15 @@ export default function App() {
   return (
     <AuthProvider value={authValue}>
       <BrowserRouter>
-        <div className="app-layout">
+        <div className={`app-layout${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
           <AppHeader auth={authValue} />
+          <button className={`sidebar-toggle${sidebarOpen ? '' : ' sidebar-toggle-closed'}`} onClick={() => setSidebarOpen(o => !o)} title={sidebarOpen ? 'Hide AI assistant' : 'Show AI assistant'}>
+            {sidebarOpen ? '›' : '💬'}
+          </button>
           <div className="app-body">
             <div className="app-main">
               <Routes>
-                <Route path="/" element={<Navigate to="/exercises" replace />} />
+                <Route path="/" element={<Home />} />
                 <Route path="/exercises" element={<Dashboard />} />
                 <Route path="/practices" element={<Practices />} />
                 <Route path="/edit/:name" element={<Editor />} />

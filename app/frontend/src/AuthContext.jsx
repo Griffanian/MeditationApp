@@ -4,6 +4,7 @@ const defaultAuth = {
   role: 'viewer',
   username: '',
   displayName: '',
+  profilePhoto: '',
   isAdmin: false,
   canCreate: false,       // admin, editor, builder
   canManageContent: false, // admin, editor (edit anyone's content)
@@ -19,6 +20,7 @@ export function buildAuth(data) {
     role,
     username: data.username || '',
     displayName: data.display_name || data.username || '',
+    profilePhoto: data.profile_photo || '',
     isAdmin: role === 'admin',
     canCreate: ['admin', 'editor', 'builder'].includes(role),
     canManageContent: ['admin', 'editor'].includes(role),

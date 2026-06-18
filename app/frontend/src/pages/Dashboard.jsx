@@ -48,6 +48,13 @@ export default function Dashboard() {
     return () => window.removeEventListener('assistant-data-changed', handler);
   }, []);
 
+  // Reset to "My Exercises" when clicking the nav Exercises link
+  useEffect(() => {
+    const handler = () => setOwnerFilter('mine');
+    window.addEventListener('nav-exercises', handler);
+    return () => window.removeEventListener('nav-exercises', handler);
+  }, []);
+
   // Close menu when clicking outside
   useEffect(() => {
     if (!openMenu) return;
