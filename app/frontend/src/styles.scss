@@ -5107,6 +5107,11 @@ h1 {
     align-items: center;
     padding: 10px 12px 14px;
     gap: 8px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
   }
 
   .app-header-brand {
