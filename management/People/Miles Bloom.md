@@ -3,6 +3,6 @@ Type: Person
 ---
 >[!Meta]
 >role:: Founder
->organisation:: [[Meditation App]]
+>organisation:: [[Meditation Pro]]
 >email:: miles@resilientmindsmatter.com,milesbloom526@gmail.com
 # Miles Bloom

@@ -1,6 +1,18 @@
 {
   "recentFiles": [
     {
+      "basename": "Meditation Pro",
+      "path": "Organisations/Meditation Pro.md"
+    },
+    {
+      "basename": "Resilient Minds",
+      "path": "Organisations/Resilient Minds.md"
+    },
+    {
+      "basename": "Potential white labelling",
+      "path": "Potential white labelling.md"
+    },
+    {
       "basename": "Roger Jackson",
       "path": "People/Roger Jackson.md"
     },
@@ -27,14 +39,6 @@
     {
       "basename": "Infrastructure",
       "path": "Infrastructure.md"
-    },
-    {
-      "basename": "Meditation App",
-      "path": "Organisations/Meditation App.md"
-    },
-    {
-      "basename": "Resilientminds",
-      "path": "Organisations/Resilientminds.md"
     },
     {
       "basename": "2026-06-17_meditation-app-architecture-and-integration-with-resilientminds",
