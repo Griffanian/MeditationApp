@@ -1,0 +1,4 @@
+- Would you use this in your practice?
+- Would you pay for it?
+- If you would use it would you make your own script?
+- How much would you pay for it?
