@@ -276,7 +276,7 @@ export default function Dashboard() {
   const filteredMeditations = auth.canCreate ? meditations.filter(med => {
     if (effectiveOwnerFilter === 'all') return true;
     if (effectiveOwnerFilter === 'mine') return med.created_by === auth.username;
-    if (effectiveOwnerFilter === 'public') return med.is_public && med.created_by !== auth.username;
+    if (effectiveOwnerFilter === 'public') return med.is_public;
     return true;
   }) : meditations.filter(med => {
     if (effectiveOwnerFilter === 'public') return med.is_public;
@@ -285,7 +285,7 @@ export default function Dashboard() {
   });
 
   const hasOwn = meditations.some(m => m.created_by === auth.username);
-  const hasPublic = meditations.some(m => m.is_public && m.created_by !== auth.username);
+  const hasPublic = meditations.some(m => m.is_public);
 
   // --- Group meditations by category ---
   const grouped = {};
@@ -344,18 +344,21 @@ export default function Dashboard() {
                       } catch (err) { alert(err.message); }
                     }}>{canEdit(auth, med) ? 'Duplicate' : 'Make your own copy'}</button>
                   )}
-                  {canEdit(auth, med) && (
-                    <div className="med-kebab-submenu-wrapper">
-                      <button className="med-kebab-submenu-trigger">Move to &rsaquo;</button>
-                      <div className="med-kebab-submenu">
-                        {allCats.filter(c => c.name !== med.category).map(c => (
-                          <button key={c.name} onClick={() => { setOpenMenu(null); handleMoveToCategory(med, c.name); }}>
-                            {c.display_name}
-                          </button>
-                        ))}
+                  {canEdit(auth, med) && (() => {
+                    const myCats = allCats.filter(c => c.name !== med.category && visibleCats.some(vc => vc.name === c.name));
+                    return myCats.length > 0 && (
+                      <div className="med-kebab-submenu-wrapper">
+                        <button className="med-kebab-submenu-trigger">Move to &rsaquo;</button>
+                        <div className="med-kebab-submenu">
+                          {myCats.map(c => (
+                            <button key={c.name} onClick={() => { setOpenMenu(null); handleMoveToCategory(med, c.name); }}>
+                              {c.display_name}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                   {canEdit(auth, med) && med.category !== 'uncategorised' && (
                     <button onClick={() => { setOpenMenu(null); handleMoveToCategory(med, 'uncategorised'); }}>Ungroup</button>
                   )}
@@ -364,6 +367,16 @@ export default function Dashboard() {
                   )}
                   {canEdit(auth, med) && (
                     <button onClick={() => { setOpenMenu(null); setViewerPanel(`med:${med.name}`); }}>Viewers</button>
+                  )}
+                  {canEdit(auth, med) && (
+                    <button onClick={async () => {
+                      const newVal = !med.is_public;
+                      await saveMeta(med.name, { is_public: newVal });
+                      setMeditations(prev => prev.map(m => m.name === med.name ? { ...m, is_public: newVal } : m));
+                      setOpenMenu(null);
+                    }}>
+                      {med.is_public ? 'Make private' : 'Make public'}
+                    </button>
                   )}
                   {canEdit(auth, med) && (
                     <button className="med-kebab-delete" onClick={() => { setOpenMenu(null); handleDelete(med); }}>Delete</button>
@@ -475,6 +488,32 @@ export default function Dashboard() {
                   <div className="med-kebab-menu" onClick={e => e.stopPropagation()}>
                     <button onClick={() => { setOpenMenu(null); startEditCategory(cat); }}>Rename</button>
                     <button onClick={() => { setOpenMenu(null); setViewerPanel(`cat:${cat.name}`); }}>Viewers</button>
+                    {(() => {
+                      const myGroups = groups.filter(g => g.created_by === auth.username && g.name !== (cat.group || ''));
+                      return myGroups.length > 0 && (
+                        <div className="med-kebab-submenu-wrapper">
+                          <button className="med-kebab-submenu-trigger">Move to &rsaquo;</button>
+                          <div className="med-kebab-submenu">
+                            {myGroups.map(g => (
+                              <button key={g.name} onClick={() => { setOpenMenu(null); handleSetGroup(cat, g.name); }}>
+                                {g.display_name}
+                              </button>
+                            ))}
+                            {(cat.group || '') !== '' && (
+                              <button onClick={() => { setOpenMenu(null); handleSetGroup(cat, ''); }}>Other (ungrouped)</button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    <button onClick={async () => {
+                      const newVal = !cat.is_public;
+                      await updateCategory(cat.name, { is_public: newVal });
+                      setCategories(prev => prev.map(c => c.name === cat.name ? { ...c, is_public: newVal } : c));
+                      setOpenMenu(null);
+                    }}>
+                      {cat.is_public ? 'Make private' : 'Make public'}
+                    </button>
                     <button className="med-kebab-delete" onClick={() => { setOpenMenu(null); handleDeleteCategory(cat); }}>Delete</button>
                   </div>
                 )}
@@ -636,6 +675,14 @@ export default function Dashboard() {
                             }
                           }}>Rename</button>
                           <button onClick={() => { setOpenMenu(null); setViewerPanel(`group:${g.name}`); }}>Viewers</button>
+                          <button onClick={async () => {
+                            const newVal = !g.is_public;
+                            await updateGroup(g.name, { is_public: newVal });
+                            setGroups(prev => prev.map(x => x.name === g.name ? { ...x, is_public: newVal } : x));
+                            setOpenMenu(null);
+                          }}>
+                            {g.is_public ? 'Make private' : 'Make public'}
+                          </button>
                           <button className="med-kebab-delete" onClick={async () => {
                             setOpenMenu(null);
                             if (!confirm(`Delete group "${g.display_name}"?`)) return;

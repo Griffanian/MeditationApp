@@ -86,6 +86,7 @@ class Group(models.Model):
         "auth.User", on_delete=models.SET_NULL,
         null=True, blank=True, related_name="exercise_groups",
     )
+    is_public = models.BooleanField(default=False, db_index=True)
     shared_with = models.ManyToManyField(
         "auth.User", blank=True, related_name="shared_groups",
     )
@@ -105,6 +106,11 @@ class Category(models.Model):
         Group, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="categories",
     )
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="exercise_categories",
+    )
+    is_public = models.BooleanField(default=False, db_index=True)
     shared_with = models.ManyToManyField(
         "auth.User", blank=True, related_name="shared_categories",
     )

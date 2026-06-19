@@ -122,6 +122,7 @@ def _serialize_category(cat):
         "sort_order": cat.sort_order,
         "group": cat.group_id or "",
         "group_display": cat.group.display_name if cat.group else "",
+        "is_public": cat.is_public,
     }
 
 
@@ -139,6 +140,7 @@ class GroupListView(APIView):
                 "name": g.name, "display_name": g.display_name,
                 "sort_order": g.sort_order,
                 "created_by": g.created_by.username if g.created_by else None,
+                "is_public": g.is_public,
             }
             for g in Group.objects.select_related("created_by").all()
         ])
@@ -157,6 +159,7 @@ class GroupListView(APIView):
         return Response({
             "name": group.name, "display_name": group.display_name,
             "sort_order": group.sort_order, "created_by": request.user.username,
+            "is_public": group.is_public,
         }, status=201)
 
 
@@ -169,6 +172,8 @@ class GroupDetailView(APIView):
             group.display_name = request.data["display_name"]
         if "sort_order" in request.data:
             group.sort_order = request.data["sort_order"]
+        if "is_public" in request.data:
+            group.is_public = request.data["is_public"]
         group.save()
         return Response({"name": group.name, "display_name": group.display_name})
 
@@ -211,6 +216,8 @@ class CategoryDetailView(APIView):
             cat.sort_order = request.data["sort_order"]
         if "group" in request.data:
             cat.group = _resolve_group(request.data["group"])
+        if "is_public" in request.data:
+            cat.is_public = request.data["is_public"]
         cat.save()
         return Response({"status": "ok"})
 

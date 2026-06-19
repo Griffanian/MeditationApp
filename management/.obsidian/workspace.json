@@ -27,12 +27,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "contract-white-label-licence.md",
+                "file": "Potential white labelling.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "contract-white-label-licence"
+              "title": "Potential white labelling"
             }
           }
         ],
@@ -205,9 +205,9 @@
   },
   "active": "922b3edf7fca0a08",
   "lastOpenFiles": [
+    "contract-white-label-licence.md",
     "contract-content-creator.md",
     "white-label-technical-spec.md",
-    "contract-white-label-licence.md",
     "Users & Permissions.md",
     "Organisations/Meditation Pro.md",
     "Organisations/Resilient Minds.md",

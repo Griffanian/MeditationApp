@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { fetchPractices, createPractice, deletePractice, clonePractice, fetchPracticeViewers, sharePractice, unsharePractice } from '../api';
+import { fetchPractices, createPractice, deletePractice, clonePractice, savePractice, fetchPracticeViewers, sharePractice, unsharePractice } from '../api';
 import { useAuth, canEdit } from '../AuthContext';
 import { useLocalState } from '../utils';
 import ViewerManager from '../components/ViewerManager';
@@ -181,6 +181,16 @@ export default function Practices() {
                         )}
                         {editable && (
                           <button onClick={() => { setOpenMenu(null); setViewerPanel(prac.name); }}>Viewers</button>
+                        )}
+                        {editable && (
+                          <button onClick={async () => {
+                            const newVal = !prac.is_public;
+                            await savePractice(prac.name, { is_public: newVal });
+                            setPractices(prev => prev.map(p => p.name === prac.name ? { ...p, is_public: newVal } : p));
+                            setOpenMenu(null);
+                          }}>
+                            {prac.is_public ? 'Make private' : 'Make public'}
+                          </button>
                         )}
                         {editable && (
                           <button className="med-kebab-delete" onClick={() => { setOpenMenu(null); handleDeletePractice(prac); }}>Delete</button>
