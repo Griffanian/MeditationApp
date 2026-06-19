@@ -4,10 +4,13 @@ date: 2026-06-18
 url: https://notes.granola.ai/d/53569ff1-3b21-4752-8995-d56674eb4d2e
 granola_id: not_edlSZRqpzm1aOB
 ---
->[!Meta]
->participants::[[Miles Bloom]]
+> [!Meta]
+> participants::[[Miles Bloom]]
+
 # Meditation app design and spiritual practice philosophy with Hitesh
-### Summary
+
+## Summary
+
 ### Meditation App: Concept and Demo
 
 - Core idea: structured, programmable meditation sessions with variables, loops, and day-by-day progression
@@ -77,7 +80,9 @@ granola_id: not_edlSZRqpzm1aOB
 ---
 
 Chat with meeting transcript: [https://notes.granola.ai/t/853e9ee6-39d8-48f7-baff-f124bb918061](https://notes.granola.ai/t/853e9ee6-39d8-48f7-baff-f124bb918061)
+
 ### Transcript
+
 **speaker:** Hey, Miles.
 **Miles Bloom:** Hello?
 **Miles Bloom:** How are you doing, bro?
