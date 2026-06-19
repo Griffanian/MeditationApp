@@ -1,6 +1,18 @@
 {
   "recentFiles": [
     {
+      "basename": "contract-white-label-licence",
+      "path": "contract-white-label-licence.md"
+    },
+    {
+      "basename": "white-label-technical-spec",
+      "path": "white-label-technical-spec.md"
+    },
+    {
+      "basename": "Users & Permissions",
+      "path": "Users & Permissions.md"
+    },
+    {
       "basename": "Meditation Pro",
       "path": "Organisations/Meditation Pro.md"
     },
@@ -187,18 +199,6 @@
     {
       "basename": "Ring-Theory",
       "path": "General Notes/Ring-Theory.md"
-    },
-    {
-      "basename": "Transactional-Analysis",
-      "path": "General Notes/Transactional-Analysis.md"
-    },
-    {
-      "basename": "First-Order Structural Analysis of Ego States",
-      "path": "General Notes/First-Order Structural Analysis of Ego States.md"
-    },
-    {
-      "basename": "Contamination of Ego States",
-      "path": "General Notes/Contamination of Ego States.md"
     }
   ],
   "omittedPaths": [],

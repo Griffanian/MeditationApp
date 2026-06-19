@@ -27,12 +27,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Organisations/Meditation Pro.md",
+                "file": "contract-white-label-licence.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Meditation Pro"
+              "title": "contract-white-label-licence"
             }
           }
         ],
@@ -205,17 +205,20 @@
   },
   "active": "922b3edf7fca0a08",
   "lastOpenFiles": [
+    "contract-content-creator.md",
+    "white-label-technical-spec.md",
+    "contract-white-label-licence.md",
+    "Users & Permissions.md",
+    "Organisations/Meditation Pro.md",
     "Organisations/Resilient Minds.md",
     "Potential white labelling.md",
     "People/Roger Jackson.md",
-    "Users & Permissions.md",
     "People/Simon Bloom.md",
     "People/Miles Bloom.md",
     "Templates/Person.md",
     "Templates/Organisation.md",
     "Templates/Meeting Notes.md",
     "Infrastructure.md",
-    "Organisations/Meditation Pro.md",
     "Finances.md",
     "untitled folder",
     "Finances.xlsx",

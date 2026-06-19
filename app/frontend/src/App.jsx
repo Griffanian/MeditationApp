@@ -149,6 +149,9 @@ export default function App() {
             </div>
             <AssistantSidebar />
           </div>
+          <footer className="app-footer">
+            © {new Date().getFullYear()} Miles Bloom. All rights reserved.
+          </footer>
         </div>
       </BrowserRouter>
     </AuthProvider>
