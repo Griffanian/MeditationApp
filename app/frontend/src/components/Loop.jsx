@@ -1,65 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
-import { useDroppable } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { useLocalState } from '../utils';
-import { computeDurationRepeat, computeFixedDuration } from '../playback';
+import { resolveRepeat, computeFixedDuration, formatDuration } from '../playback';
 import DragHandle from './DragHandle';
 import KebabMenu from './KebabMenu';
 import Timeline from './Timeline';
 import AddZone from './AddZone';
 
-function formatDuration(seconds) {
-  seconds = Math.round(seconds);
-  if (seconds >= 3600) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  }
-  if (seconds >= 60) {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  }
-  return `${seconds}s`;
-}
 
-const COLOR_THEMES = {
-  green:  { bg: '#1e3a2f', hover: '#264a3a', accent: '#7ecba1' },
-  blue:   { bg: '#2a2a4a', hover: '#333355', accent: '#a0c4ff' },
-  red:    { bg: '#3a1e1e', hover: '#4a2626', accent: '#ff8a8a' },
-  orange: { bg: '#3a2e1e', hover: '#4a3826', accent: '#ffb366' },
-  yellow: { bg: '#3a361e', hover: '#4a4426', accent: '#ffd966' },
-  purple: { bg: '#2e1e3a', hover: '#382646', accent: '#c4a0ff' },
-  pink:   { bg: '#3a1e2e', hover: '#4a2638', accent: '#ff99cc' },
-  teal:   { bg: '#1e3a3a', hover: '#264a4a', accent: '#66cccc' },
-};
 
-function EmptyDropZone({ id, forceHighlight }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `dropzone:${id}` });
-  return (
-    <div
-      ref={setNodeRef}
-      className={`empty-drop-zone${isOver || forceHighlight ? ' drop-over' : ''}`}
-    >
-      Drop segments here
-    </div>
-  );
-}
-
-function BottomDropZone({ id, forceHighlight }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `dropzone:${id}` });
-  return (
-    <div
-      ref={setNodeRef}
-      className={`after-drop-zone${isOver || forceHighlight ? ' drop-over' : ''}`}
-    />
-  );
-}
-
-export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, components, meditationName, stageId, onRefreshComponents, playingParentId, variables = {}, loopCounters = {}, onUpdateVariable, selectedIds = new Set(), onSelect, onContextMenu, fullScript, readOnly }) {
-  const [collapsed, setCollapsed] = useLocalState(`collapse:loop:${seg.id}`, true);
+export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, components, meditationName, stageId, onRefreshComponents, playingParentId, variables = {}, loopCounters = {}, onUpdateVariable, selectedIds = new Set(), onSelect, onContextMenu, fullScript, readOnly, onFlushSave }) {
+  const [collapsed, setCollapsed] = useLocalState(`collapse:loop:${seg.id}`, false);
   const [editLabel, setEditLabel] = useState(seg.label || '');
   const [editRepeat, setEditRepeat] = useState(seg.variable ? `{${seg.variable}}` : seg.repeat);
   const [editTargetDuration, setEditTargetDuration] = useState(seg.targetDuration ?? '');
@@ -74,7 +25,7 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
 
   const lc = loopCounters[seg.id];
   const isDurationLoop = seg.targetDuration != null && !seg.label;
-  const isLoopPlaying = lc && lc.iterDuration != null && playingParentId === seg.id;
+  const isLoopPlaying = lc && lc.iterDuration != null;
 
   // Tick every second while a loop is playing
   useEffect(() => {
@@ -85,24 +36,20 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
     if (tickRef.current) clearInterval(tickRef.current);
   }, [isLoopPlaying]);
 
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({ id: seg.id });
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: seg.id });
 
   const isPlayingParent = playingParentId === seg.id;
   const isSection = !!seg.label;
 
   const defaultColor = isSection ? 'green' : 'blue';
-  const theme = COLOR_THEMES[seg.color || defaultColor] || COLOR_THEMES[defaultColor];
+  const colorKey = seg.color || defaultColor;
 
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition: 'none',
     opacity: isDragging ? 0.3 : 1,
-    '--loop-bg': theme.bg,
-    '--loop-hover': theme.hover,
-    '--loop-accent': theme.accent,
+    '--loop-bg': `var(--loop-${colorKey}-bg)`,
+    '--loop-hover': `var(--loop-${colorKey}-hover)`,
+    '--loop-accent': `var(--loop-${colorKey}-accent)`,
   };
-
-  const dropHighlight = isOver && !isDragging;
 
   return (
     <div ref={setNodeRef} style={style} className={isSection ? 'section-container' : 'loop-container'}>
@@ -272,8 +219,7 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
           {!isSection && (
             <span className="loop-counter">
               {(() => {
-                if (lc && lc.iterDuration != null && isPlayingParent) {
-                  // Live countdown while playing
+                if (isLoopPlaying) {
                   const { current, total, iterDuration, startTime, loopStartTime } = lc;
                   const elapsed = (now - startTime) / 1000;
                   const iterRemaining = Math.max(0, Math.round(iterDuration - elapsed));
@@ -282,26 +228,17 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
                   const totalRemaining = Math.max(0, Math.round(totalTime - totalElapsed));
                   return <>Round {current}/{total}<span className="loop-counter-sep">|</span>{formatDuration(iterRemaining)}<span className="loop-counter-sep">|</span>{formatDuration(totalRemaining)}</>;
                 }
-                // Static display
                 const iterDur = computeFixedDuration(seg.segments, variables, components);
-                if (isDurationLoop) {
-                  const repeat = computeDurationRepeat(seg, variables, components);
+                const repeat = resolveRepeat(seg, variables, components);
+                if (iterDur > 0) {
                   return <>{repeat} rounds × {formatDuration(iterDur)}<span className="loop-counter-sep">|</span>{formatDuration(repeat * iterDur)}</>;
                 }
-                const varName = seg.variable;
-                const repeat = varName && variables[varName] != null
-                  ? (typeof variables[varName] === 'object' ? variables[varName].value : variables[varName])
-                  : seg.repeat;
-                const n = Number(repeat) || 0;
-                if (iterDur > 0) {
-                  return <>{n} rounds × {formatDuration(iterDur)}<span className="loop-counter-sep">|</span>{formatDuration(n * iterDur)}</>;
-                }
-                return n;
+                return repeat;
               })()}
             </span>
           )}
           <button onClick={e => { e.stopPropagation(); onPlay(seg.id, true); }}>
-            {isPlayingParent && !isPaused ? '⏸' : '▶'}
+            {(isPlayingParent || isLoopPlaying) && !isPaused ? '⏸' : '▶'}
           </button>
           {!readOnly && <KebabMenu
             seg={seg}
@@ -311,44 +248,39 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
           />}
         </span>
       </div>
-      {!readOnly && collapsed && dropHighlight && (
-        <div className="after-drop-zone drop-over" />
-      )}
       {!collapsed && (
         <div className="loop-bracket">
           {seg.segments.length === 0 ? (
             readOnly ? null : (
-              <AddZone onAdd={newSeg => onInsert(seg.id, 'append', newSeg)} />
+              <AddZone onAdd={newSeg => onInsert(seg.id, 'append', newSeg)} containerId={seg.id} />
             )
           ) : (
-            <>
-              <Timeline
-                segments={seg.segments}
-                playingId={playingId}
-                isPaused={isPaused}
-                onPlay={onPlay}
-                onWordClick={onWordClick}
-                onDelete={onDelete}
-                onUpdate={onUpdate}
-                onInsert={onInsert}
-                components={components}
-                meditationName={meditationName}
-                stageId={stageId}
-                onRefreshComponents={onRefreshComponents}
-                playingParentId={playingParentId}
-                insidePlayingParent={isPlayingParent}
-                variables={variables}
-                loopCounters={loopCounters}
-                onUpdateVariable={onUpdateVariable}
-                selectedIds={selectedIds}
-                onSelect={onSelect}
-                onContextMenu={onContextMenu}
-                fullScript={fullScript}
-                readOnly={readOnly}
-                containerId={seg.id}
-              />
-              {!readOnly && <BottomDropZone id={seg.id} forceHighlight={dropHighlight} />}
-            </>
+            <Timeline
+              segments={seg.segments}
+              playingId={playingId}
+              isPaused={isPaused}
+              onPlay={onPlay}
+              onWordClick={onWordClick}
+              onDelete={onDelete}
+              onUpdate={onUpdate}
+              onInsert={onInsert}
+              components={components}
+              meditationName={meditationName}
+              stageId={stageId}
+              onRefreshComponents={onRefreshComponents}
+              playingParentId={playingParentId}
+              insidePlayingParent={isPlayingParent}
+              variables={variables}
+              loopCounters={loopCounters}
+              onUpdateVariable={onUpdateVariable}
+              selectedIds={selectedIds}
+              onSelect={onSelect}
+              onContextMenu={onContextMenu}
+              fullScript={fullScript}
+              readOnly={readOnly}
+              containerId={seg.id}
+              onFlushSave={onFlushSave}
+            />
           )}
         </div>
       )}

@@ -5,6 +5,7 @@ import Practices from './pages/Practices';
 import Editor from './pages/Editor';
 import PracticeBuilder from './pages/PracticeBuilder';
 import Player from './pages/Player';
+import ExercisePlayer from './pages/ExercisePlayer';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import UserManagement from './pages/UserManagement';
@@ -99,6 +100,12 @@ export default function App() {
       .catch(() => setAuth(false));
   }, []);
 
+  useEffect(() => {
+    function handleOpenSidebar() { setSidebarOpen(true); }
+    window.addEventListener('open-sidebar', handleOpenSidebar);
+    return () => window.removeEventListener('open-sidebar', handleOpenSidebar);
+  }, []);
+
   const updateAuth = (updates) => setAuth(prev => prev ? { ...prev, ...updates } : prev);
   const authValue = useMemo(() => auth ? { ...auth, updateAuth } : { ...buildAuth({}), updateAuth }, [auth]);
 
@@ -140,6 +147,7 @@ export default function App() {
                 <Route path="/edit/:name" element={<Editor />} />
                 <Route path="/practice/:name" element={authValue.canCreate ? <PracticeBuilder /> : <Navigate to="/practices" replace />} />
                 <Route path="/play/:name" element={<Player />} />
+                <Route path="/play-exercise/:name/:stageId" element={<ExercisePlayer />} />
                 <Route path="/history" element={<History />} />
                 <Route path="/clients" element={authValue.canCreate ? <Clients /> : <Navigate to="/" replace />} />
                 <Route path="/users" element={authValue.isAdmin ? <UserManagement /> : <Navigate to="/" replace />} />

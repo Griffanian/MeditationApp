@@ -126,6 +126,10 @@ class Meditation(models.Model):
     name = models.SlugField(max_length=200, unique=True, primary_key=True)
     display_name = models.CharField(max_length=200, blank=True)
     category = models.CharField(max_length=100, default="uncategorised", db_index=True)
+    group = models.ForeignKey(
+        Group, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="meditations",
+    )
     instructions = models.JSONField(default=dict, blank=True)
     script = models.JSONField(default=list, blank=True)
     created_by = models.ForeignKey(

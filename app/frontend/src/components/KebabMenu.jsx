@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { getClipboard, setClipboard } from '../clipboard';
 import { generateId, cloneWithNewIds } from '../segmentIds';
+import { SEGMENT_TYPES } from '../segmentDefs';
 
 const COLOR_SWATCHES = [
   { key: 'green',  color: '#7ecba1' },
@@ -11,15 +12,6 @@ const COLOR_SWATCHES = [
   { key: 'purple', color: '#c4a0ff' },
   { key: 'pink',   color: '#ff99cc' },
   { key: 'teal',   color: '#66cccc' },
-];
-
-const SEGMENT_TYPES = [
-  { type: 'speech', icon: '🤖', label: 'Speech', default: { type: 'speech', text: 'New spoken segment.' } },
-  { type: 'pause', icon: '⏸', label: 'Pause', default: { type: 'pause', duration_seconds: 5 } },
-  { type: 'asset', icon: '🔊', label: 'Asset', default: { type: 'asset', file: 'and_out.mp3' } },
-  { type: 'loop', icon: '↻', label: 'Loop', default: { type: 'loop', repeat: 3, segments: [] } },
-  { type: 'section', icon: '▼', label: 'Section', default: { type: 'loop', repeat: 1, label: 'New Section', segments: [] } },
-  { type: 'split_marker', icon: '◆', label: 'Split Marker', default: { type: 'split_marker' } },
 ];
 
 function SubmenuItems({ position, onInsert }) {

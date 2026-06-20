@@ -14,7 +14,7 @@ from pydub import AudioSegment
 from . import storage
 
 
-DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL"  # Sarah - Mature, Reassuring, Confident
+DEFAULT_VOICE = "UmQN7jS1Ee8B1czsUtQh"
 
 # Match ElevenLabs mp3_44100_128 output to avoid costly resampling in PyDub
 _FRAME_RATE = 44100

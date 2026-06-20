@@ -1,14 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { getClipboard } from '../clipboard';
-
-const SEGMENT_TYPES = [
-  { type: 'speech', icon: '🤖', label: 'Speech' },
-  { type: 'pause', icon: '⏸', label: 'Pause' },
-  { type: 'asset', icon: '🔊', label: 'Asset' },
-  { type: 'loop', icon: '↻', label: 'Loop' },
-  { type: 'section', icon: '▼', label: 'Section' },
-  { type: 'split_marker', icon: '◆', label: 'Split Marker' },
-];
+import { SEGMENT_TYPES } from '../segmentDefs';
 
 
 export default function ContextMenu({ x, y, selectedCount, onAddAbove, onAddBelow, onCopy, onPaste, onGroup, onDelete, onClose }) {

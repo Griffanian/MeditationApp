@@ -17,9 +17,15 @@ export default function DragOverlayContent({ seg }) {
     label = seg.file;
     className = 'segment asset';
   } else if (seg.type === 'loop') {
-    icon = '↻';
-    label = `Loop × ${seg.repeat} (${seg.segments.length} segments)`;
-    className = 'loop-header';
+    if (seg.label) {
+      icon = '▼';
+      label = seg.label;
+      className = 'section-header';
+    } else {
+      icon = '↻';
+      label = `Loop × ${seg.repeat || '?'} (${seg.segments.length} segments)`;
+      className = 'loop-header';
+    }
   } else if (seg.type === 'split_marker') {
     icon = '◆';
     label = 'Split Marker';

@@ -122,11 +122,13 @@ export async function fetchMeditations() {
   return safeJson(res, []);
 }
 
-export async function createMeditation(displayName, category) {
+export async function createMeditation(displayName, category, group) {
+  const body = { display_name: displayName, category };
+  if (group !== undefined) body.group = group;
   const res = await apiFetch(`${BASE}/api/meditations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ display_name: displayName, category }),
+    body: JSON.stringify(body),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to create');

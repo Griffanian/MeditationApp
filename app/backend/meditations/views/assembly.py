@@ -76,13 +76,15 @@ class AssemblyMixin:
         file_path = storage.output_path(name, filename, stage_id)
         storage.upload_file(file_path, buf.read(), content_type="audio/mpeg")
 
-        # Save record
-        output = AssembledOutput.objects.create(
+        # Save record (use get_or_create to handle concurrent assembly requests)
+        output, _created = AssembledOutput.objects.get_or_create(
             meditation=meditation,
             stage=stage,
             script_hash=h,
-            audio_file=file_path,
-            duration=len(audio) / 1000,
+            defaults={
+                "audio_file": file_path,
+                "duration": len(audio) / 1000,
+            },
         )
 
         return Response({

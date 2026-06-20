@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
-import { fetchGroups, createGroup, updateGroup, deleteGroup, fetchCategories, createCategory, updateCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveMeta, saveStageVariables, assembleStage, cloneMeditation, fetchGroupViewers, shareGroup, unshareGroup, fetchCategoryViewers, shareCategory, unshareCategory, fetchMeditationViewers, shareMeditation, unshareMeditation, fetchPractices, fetchPractice, savePractice, BASE } from '../api';
+import { fetchGroups, createGroup, updateGroup, deleteGroup, fetchCategories, createCategory, updateCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveMeta, saveStageVariables, cloneMeditation, fetchGroupViewers, shareGroup, unshareGroup, fetchCategoryViewers, shareCategory, unshareCategory, fetchMeditationViewers, shareMeditation, unshareMeditation, fetchPractices, fetchPractice, savePractice } from '../api';
 import { useAuth, canEdit } from '../AuthContext';
 import { useLocalState } from '../utils';
 import DashCard from '../components/DashCard';
@@ -16,8 +16,6 @@ export default function Dashboard() {
   const [groups, setGroups] = useState([]);
   const [categories, setCategories] = useState([]);
   const [meditations, setMeditations] = useState([]);
-  const [assembling, setAssembling] = useState(null);
-  const [playing, setPlaying] = useState(null);
   const [openMenu, setOpenMenu] = useState(null);
   const [viewerPanel, setViewerPanel] = useState(null); // 'group:name' or 'cat:name'
   const [editingCategory, setEditingCategory] = useState(null);
@@ -26,7 +24,6 @@ export default function Dashboard() {
   const [selectedGroup, setSelectedGroup] = useLocalState('dashboard:selectedGroup', null);
   const [ownerFilter, setOwnerFilter] = useLocalState('dashboard:ownerFilter', auth.canCreate ? 'mine' : null);
   const [addToProg, setAddToProg] = useState(null); // { med } — exercise to add to a programme
-  const audioRef = useRef(null);
   const navigate = useNavigate();
 
   function loadData() {
@@ -136,6 +133,13 @@ export default function Dashboard() {
     );
   }
 
+  async function handleMoveToGroup(med, newGroupId) {
+    await saveMeta(med.name, { category: 'uncategorised', group: newGroupId });
+    setMeditations(meds =>
+      meds.map(m => m.name === med.name ? { ...m, category: 'uncategorised', group: newGroupId } : m)
+    );
+  }
+
   // --- Drag and drop ---
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const [activeDrag, setActiveDrag] = useState(null); // { type: 'med', med } or { type: 'section', cat }
@@ -171,11 +175,11 @@ export default function Dashboard() {
     }
   }
 
-  async function handleNewExercise(category) {
+  async function handleNewExercise(category, group) {
     const displayName = prompt('Exercise name:');
     if (!displayName || !displayName.trim()) return;
     try {
-      const data = await createMeditation(displayName.trim(), category);
+      const data = await createMeditation(displayName.trim(), category, group);
       navigate(`/edit/${data.name}`);
     } catch (err) {
       alert(err.message);
@@ -204,52 +208,14 @@ export default function Dashboard() {
     );
   }
 
-  // --- Playback ---
-  function stageKey(medName, stageId) {
-    return `${medName}/${stageId}`;
-  }
-
+  // --- Play navigation ---
   async function handlePlayStage(med, stage) {
-    const key = stageKey(med.name, stage.id);
-
-    if (playing === key) {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-      setPlaying(null);
-      return;
-    }
-
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    setPlaying(null);
-
-    if (Object.keys(stage.variables).length > 0) {
+    if (Object.keys(stage.variables || {}).length > 0) {
       await saveStageVariables(med.name, stage.id, stage.variables);
     }
-
-    setAssembling(key);
-    const data = await assembleStage(med.name, stage.id);
-    setAssembling(null);
-
-    const audio = new Audio(`${BASE}/audio/meditation/${med.name}/stage/${stage.id}/output/${data.filename}?t=${Date.now()}`);
-    audioRef.current = audio;
-    setPlaying(key);
-    audio.onended = () => {
-      setPlaying(null);
-      audioRef.current = null;
-    };
-    audio.play();
-  }
-
-  function stageButtonLabel(medName, stageId) {
-    const key = stageKey(medName, stageId);
-    if (assembling === key) return 'Assembling...';
-    if (playing === key) return '■ Stop';
-    return '▶ Play';
+    navigate(`/play-exercise/${med.name}/${stage.id}`, {
+      state: { displayName: med.display_name, stageName: stage.name },
+    });
   }
 
   // --- Filter meditations by ownership ---
@@ -345,23 +311,52 @@ export default function Dashboard() {
                     }}>{canEdit(auth, med) ? 'Duplicate' : 'Make your own copy'}</button>
                   )}
                   {canEdit(auth, med) && (() => {
-                    const myCats = allCats.filter(c => c.name !== med.category && visibleCats.some(vc => vc.name === c.name));
-                    return myCats.length > 0 && (
+                    const moveCats = allCats.filter(c => c.name !== 'uncategorised' && c.name !== med.category);
+                    // Categories organised by group
+                    const catsByGroup = new Map();
+                    for (const c of moveCats) {
+                      const g = c.group || '';
+                      if (!catsByGroup.has(g)) catsByGroup.set(g, []);
+                      catsByGroup.get(g).push(c);
+                    }
+                    // All groups (clickable = move to group uncategorised), then ungrouped
+                    const myGroups = groups.filter(g => g.created_by === auth.username);
+                    const hasUngroupedCats = catsByGroup.has('');
+                    if (myGroups.length === 0 && moveCats.length === 0) return null;
+                    return (
                       <div className="med-kebab-submenu-wrapper">
                         <button className="med-kebab-submenu-trigger">Move to &rsaquo;</button>
                         <div className="med-kebab-submenu">
-                          {myCats.map(c => (
-                            <button key={c.name} onClick={() => { setOpenMenu(null); handleMoveToCategory(med, c.name); }}>
-                              {c.display_name}
-                            </button>
+                          {myGroups.map(g => (
+                            <div key={g.name}>
+                              <button
+                                className="med-kebab-submenu-group"
+                                onClick={() => { setOpenMenu(null); handleMoveToGroup(med, g.name); }}
+                              >{g.display_name}</button>
+                              {(catsByGroup.get(g.name) || []).map(c => (
+                                <button key={c.name} className="med-kebab-submenu-indent" onClick={() => { setOpenMenu(null); handleMoveToCategory(med, c.name); }}>
+                                  {c.display_name}
+                                </button>
+                              ))}
+                            </div>
                           ))}
+                          {hasUngroupedCats && (
+                            <div>
+                              <button
+                                className="med-kebab-submenu-group"
+                                onClick={() => { setOpenMenu(null); handleMoveToGroup(med, ''); }}
+                              >Other</button>
+                              {catsByGroup.get('').map(c => (
+                                <button key={c.name} className="med-kebab-submenu-indent" onClick={() => { setOpenMenu(null); handleMoveToCategory(med, c.name); }}>
+                                  {c.display_name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
                   })()}
-                  {canEdit(auth, med) && med.category !== 'uncategorised' && (
-                    <button onClick={() => { setOpenMenu(null); handleMoveToCategory(med, 'uncategorised'); }}>Ungroup</button>
-                  )}
                   {auth.canCreate && med.stages && med.stages.length > 0 && (
                     <button onClick={() => { setOpenMenu(null); setAddToProg({ med }); }}>Add to programme</button>
                   )}
@@ -394,10 +389,12 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        {effectiveOwnerFilter !== 'mine' && med.created_by_display && (
+          <div className="med-card-creator">{med.created_by_display}</div>
+        )}
         {med.stages && med.stages.length > 0 && (
           <div className="med-card-stages">
             {med.stages.map(stage => {
-              const key = stageKey(med.name, stage.id);
               const vars = Object.entries(stage.variables || {});
               return (
                 <div key={stage.id} className="dash-stage">
@@ -407,11 +404,10 @@ export default function Dashboard() {
                       className="dash-stage-name"
                     >{stage.name}</Link>
                     <button
-                      className={`dash-stage-play ${playing === key ? 'playing' : ''}`}
+                      className="dash-stage-play"
                       onClick={() => handlePlayStage(med, stage)}
-                      disabled={assembling === key}
                     >
-                      {stageButtonLabel(med.name, stage.id)}
+                      &#x25B6; Play
                     </button>
                   </div>
                   {vars.length > 0 && (
@@ -553,6 +549,10 @@ export default function Dashboard() {
   const catsWithContent = new Set(Object.keys(grouped));
   const activeCats = allCats.filter(c => catsWithContent.has(c.name));
   const activeGroupIds = new Set(activeCats.map(c => c.group || ''));
+  // Also include groups from uncategorised exercises
+  for (const m of (grouped['uncategorised'] || [])) {
+    activeGroupIds.add(m.group || '');
+  }
 
   const visibleGroups = (() => {
     if (effectiveOwnerFilter === 'mine') {
@@ -566,8 +566,8 @@ export default function Dashboard() {
   // Current group — default to first visible group
   const validGroupIds = [...visibleGroups.map(g => g.name), ...(hasUngrouped ? [''] : [])];
   const activeGroup = selectedGroup != null && validGroupIds.includes(selectedGroup) ? selectedGroup : (validGroupIds[0] ?? '');
-  const visibleCats = allCats.filter(c => c.name !== 'uncategorised' && (c.group || '') === activeGroup && (catsWithContent.has(c.name) || effectiveOwnerFilter === 'mine'));
-  const uncategorisedMeds = grouped['uncategorised'] || [];
+  const visibleCats = allCats.filter(c => c.name !== 'uncategorised' && (c.group || '') === activeGroup);
+  const uncategorisedMeds = (grouped['uncategorised'] || []).filter(m => (m.group || '') === activeGroup);
 
   const groupIsEmpty = visibleCats.length === 0 && uncategorisedMeds.length === 0;
 
@@ -586,7 +586,7 @@ export default function Dashboard() {
             <strong>Add a category</strong>
             <span>Organise exercises into categories like "Beginner" or "Advanced"</span>
           </button>
-          <button className="group-empty-btn" onClick={() => handleNewExercise('uncategorised')}>
+          <button className="group-empty-btn" onClick={() => handleNewExercise('uncategorised', activeGroup)}>
             <span className="group-empty-btn-icon">+</span>
             <strong>Add an exercise</strong>
             <span>Create an exercise directly in this group</span>

@@ -61,7 +61,6 @@ export default function MarkdownField({ value, onChange, placeholder, readOnly }
           ref={textareaRef}
           className="md-textarea"
           value={value || ''}
-          placeholder={placeholder}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onBlur={() => setEditing(false)}
@@ -77,7 +76,7 @@ export default function MarkdownField({ value, onChange, placeholder, readOnly }
         {value ? (
           <ReactMarkdown>{value}</ReactMarkdown>
         ) : (
-          <p className="md-placeholder">{placeholder || 'Click to edit...'}</p>
+          <p className="md-placeholder" style={{ whiteSpace: 'pre-line' }}>{placeholder || 'Click to edit...'}</p>
         )}
       </div>
     </div>

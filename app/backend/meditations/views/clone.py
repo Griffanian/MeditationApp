@@ -59,6 +59,7 @@ class CloneMeditationView(APIView):
             "name": new_name,
             "display_name": new_display,
             "category": clone.category,
+            "group": "",
             "stages": [],
             "created_by": request.user.username,
             "is_public": False,

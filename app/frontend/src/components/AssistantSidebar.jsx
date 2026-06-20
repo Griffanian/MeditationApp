@@ -80,7 +80,8 @@ function TextPart({ part }) {
 
 function MessageContent() {
   const message = useMessage();
-  const msg = message.message;
+  const msg = message?.message ?? message;
+  if (!msg) return null;
   return (
     <div>
       {msg.content?.map((part, i) => {

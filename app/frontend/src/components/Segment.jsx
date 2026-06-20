@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
+import { useDroppable } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import DragHandle from './DragHandle';
 import KebabMenu from './KebabMenu';
 import RecordingModal from './RecordingModal';
-import { clearTimestampCache, computeMarkerDuration, resolveVar } from '../playback';
+import { clearTimestampCache, computeMarkerDuration } from '../playback';
 
-export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, audioStatus = 'missing', meditationName, stageId, onRefreshComponents, insidePlayingParent, variables = {}, onUpdateVariable, selected, onSelect, onContextMenu, fullScript, components = {}, readOnly }) {
+export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, audioStatus = 'missing', meditationName, stageId, onRefreshComponents, insidePlayingParent, variables = {}, onUpdateVariable, selected, onSelect, onContextMenu, fullScript, components = {}, readOnly, disableDropAbove, disableDropBelow, onFlushSave }) {
   const hasAudio = audioStatus === 'current';
   const isStale = audioStatus === 'stale';
   const [editing, setEditing] = useState(seg.type === 'speech' && seg.text === 'New spoken segment.');
@@ -51,12 +51,14 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
     }
   }, [playingId]);
 
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({ id: seg.id });
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: seg.id });
+  const { setNodeRef: aboveRef, isOver: aboveOver } = useDroppable({ id: `above:${seg.id}`, disabled: isDragging || readOnly || disableDropAbove });
+  const { setNodeRef: belowRef, isOver: belowOver } = useDroppable({ id: `below:${seg.id}`, disabled: isDragging || readOnly || disableDropBelow });
 
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition: 'none',
     opacity: isDragging ? 0.3 : 1,
+    marginTop: aboveOver ? 48 : undefined,
+    marginBottom: belowOver ? 48 : undefined,
   };
 
   const isPlaying = seg.id === playingId && !isPaused;
@@ -219,7 +221,7 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
     <div
       ref={setNodeRef}
       style={style}
-      className={`segment ${seg.type.replace('_', '-')}${isPlaying ? ' playing' : ''}${selected ? ' selected' : ''}${isOver && !isDragging ? ' drag-over' : ''}${seg.type === 'speech' && !hasAudio ? ' no-audio' : ''}${isStale ? ' stale' : ''}${seg.type === 'speech' && /\{\w+\}/.test(seg.text) ? ' has-variables' : ''}`}
+      className={`segment ${seg.type.replace('_', '-')}${isPlaying ? ' playing' : ''}${selected ? ' selected' : ''}${seg.type === 'speech' && !hasAudio ? ' no-audio' : ''}${isStale ? ' stale' : ''}${seg.type === 'speech' && /\{\w+\}/.test(seg.text) ? ' has-variables' : ''}`}
       onContextMenu={readOnly ? undefined : e => onContextMenu(e, seg.id)}
       onClick={e => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.closest('.kebab-wrapper')) return;
@@ -229,6 +231,14 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
         onPlay(seg.id);
       }}
     >
+      {!readOnly && !isDragging && (
+        <>
+          <div ref={aboveRef} className="seg-drop-half seg-drop-top" />
+          <div ref={belowRef} className="seg-drop-half seg-drop-bottom" />
+          {aboveOver && <div className="seg-drop-indicator seg-drop-indicator-above" />}
+          {belowOver && <div className="seg-drop-indicator seg-drop-indicator-below" />}
+        </>
+      )}
       {!readOnly && <DragHandle listeners={listeners} attributes={attributes} />}
       <span className="seg-icon">{icon}</span>
       <span className="seg-label">{readOnly ? readOnlyLabel : label}</span>
@@ -255,6 +265,7 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
           audioStatus={audioStatus}
           variables={variables}
           onUpdateVariable={onUpdateVariable}
+          onFlushSave={onFlushSave}
           onClose={() => setShowModal(false)}
           onDone={() => { clearTimestampCache(seg.id); if (onRefreshComponents) onRefreshComponents(); }}
         />

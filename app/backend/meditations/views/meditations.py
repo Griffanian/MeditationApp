@@ -29,7 +29,7 @@ def _check_meditation_perm(request, name, write=False):
 class MeditationListView(APIView):
     def get(self, request):
         qs = visible_qs(
-            Meditation.objects.prefetch_related("stages").select_related("created_by__profile").order_by("name"),
+            Meditation.objects.prefetch_related("stages").select_related("created_by__profile", "group").order_by("name"),
             request.user,
         )
         meds = []
@@ -52,6 +52,7 @@ class MeditationListView(APIView):
                 "name": m.name,
                 "display_name": m.display_name or m.name.capitalize(),
                 "category": m.category,
+                "group": m.group_id or "",
                 "stages": stages,
                 "created_by": m.created_by.username if m.created_by else None,
                 "created_by_display": m.created_by.profile.name if m.created_by and hasattr(m.created_by, 'profile') else (m.created_by.username if m.created_by else None),
@@ -67,15 +68,17 @@ class MeditationListView(APIView):
         if not display_name:
             return Response({"error": "display_name required"}, status=400)
         med_id = f"med-{uuid.uuid4().hex[:12]}"
+        group = _resolve_group((request.data.get("group") or "").strip())
         Meditation.objects.create(
             name=med_id, display_name=display_name, category=category,
-            created_by=request.user,
+            group=group, created_by=request.user,
             is_public=get_role(request.user) in ("admin", "editor"),
         )
         return Response({
             "name": med_id,
             "display_name": display_name,
             "category": category,
+            "group": group.name if group else "",
             "stages": [],
             "created_by": request.user.username,
             "is_public": get_role(request.user) in ("admin", "editor"),
@@ -90,6 +93,7 @@ class MetaView(APIView):
         return Response({
             "display_name": m.display_name,
             "category": m.category,
+            "group": m.group_id or "",
             "created_by": m.created_by.username if m.created_by else None,
             "is_public": m.is_public,
         })
@@ -102,6 +106,8 @@ class MetaView(APIView):
             m.display_name = request.data["display_name"]
         if "category" in request.data:
             m.category = request.data["category"]
+        if "group" in request.data:
+            m.group = _resolve_group(request.data["group"])
         if "is_public" in request.data:
             m.is_public = request.data["is_public"]
         m.save()
@@ -165,10 +171,12 @@ class GroupListView(APIView):
 
 
 class GroupDetailView(APIView):
-    permission_classes = [IsAdminOrEditor]
+    permission_classes = [CanEditContent]
 
     def put(self, request, name):
         group = get_object_or_404(Group, name=name)
+        if not CanEditContent().has_object_permission(request, self, group):
+            return Response({"error": "Forbidden"}, status=403)
         if "display_name" in request.data:
             group.display_name = request.data["display_name"]
         if "sort_order" in request.data:
@@ -180,6 +188,8 @@ class GroupDetailView(APIView):
 
     def delete(self, request, name):
         group = get_object_or_404(Group, name=name)
+        if not CanEditContent().has_object_permission(request, self, group):
+            return Response({"error": "Forbidden"}, status=403)
         group.categories.update(group=None)
         group.delete()
         return Response({"status": "ok"})
@@ -208,10 +218,12 @@ class CategoryListView(APIView):
 
 
 class CategoryDetailView(APIView):
-    permission_classes = [IsAdminOrEditor]
+    permission_classes = [CanEditContent]
 
     def put(self, request, name):
         cat = get_object_or_404(Category, name=name)
+        if not CanEditContent().has_object_permission(request, self, cat):
+            return Response({"error": "Forbidden"}, status=403)
         if "display_name" in request.data:
             cat.display_name = request.data["display_name"]
         if "sort_order" in request.data:
@@ -225,6 +237,8 @@ class CategoryDetailView(APIView):
 
     def delete(self, request, name):
         cat = get_object_or_404(Category, name=name)
+        if not CanEditContent().has_object_permission(request, self, cat):
+            return Response({"error": "Forbidden"}, status=403)
         Meditation.objects.filter(category=name).update(category="uncategorised")
         cat.delete()
         return Response({"status": "ok"})

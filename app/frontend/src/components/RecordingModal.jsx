@@ -26,7 +26,7 @@ function substituteText(text, variables) {
   });
 }
 
-export default function RecordingModal({ seg, meditationName, stageId, hasAudio, audioStatus, variables = {}, onUpdateVariable, onClose, onDone }) {
+export default function RecordingModal({ seg, meditationName, stageId, hasAudio, audioStatus, variables = {}, onUpdateVariable, onFlushSave, onClose, onDone }) {
   const [recording, setRecording] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -88,7 +88,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
     const endpoint = seg.type === 'asset'
       ? `/api/trim-meta/asset/${seg.file}`
       : `/api/meditations/${meditationName}/stages/${stageId}/trim-meta/${seg.id}`;
-    fetch(endpoint).then(r => r.json()).then(data => {
+    apiFetch(endpoint).then(r => r.json()).then(data => {
       if (data && data.start != null) {
         setSavedTrim(data);
         setTrimStart(data.start);
@@ -192,7 +192,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
     const endpoint = seg.type === 'asset'
       ? `/api/trim-meta/asset/${seg.file}`
       : `/api/meditations/${meditationName}/stages/${stageId}/trim-meta/${seg.id}`;
-    await fetch(endpoint, {
+    await apiFetch(endpoint, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(trimData),
@@ -205,7 +205,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
     const endpoint = seg.type === 'asset'
       ? `/api/trim-meta/asset/${seg.file}`
       : `/api/meditations/${meditationName}/stages/${stageId}/trim-meta/${seg.id}`;
-    await fetch(endpoint, { method: 'DELETE' });
+    await apiFetch(endpoint, { method: 'DELETE' });
     setSavedTrim(null);
     setTrimStart(null);
     setTrimEnd(null);
@@ -237,6 +237,8 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
   async function handleGenerate() {
     setGenerating(true);
     try {
+      // Ensure any pending script save completes before generating
+      if (onFlushSave) await onFlushSave();
       const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/generate-audio/${seg.id}`, {
         method: 'POST',
       });
@@ -260,7 +262,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
       const endpoint = seg.type === 'asset'
         ? `/api/upload-asset/${seg.file}`
         : `/api/meditations/${meditationName}/stages/${stageId}/upload-component/${seg.id}`;
-      await fetch(endpoint, { method: 'POST', body: formData });
+      await apiFetch(endpoint, { method: 'POST', body: formData });
       onDone();
     } catch (err) {
       alert('Upload failed: ' + err.message);

@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DndContext, closestCenter, pointerWithin, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, assembleStage, generateAllAudio } from '../api';
-import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, computeMarkerDuration, computeDurationRepeat, computeFixedDuration, registerExternalStop, unregisterExternalStop, resolveVar } from '../playback';
+import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, computeMarkerDuration, registerExternalStop, unregisterExternalStop } from '../playback';
 import { getClipboard, setClipboard } from '../clipboard';
 import { generateId, ensureIds, findById, findByIdWithContext, allIds, cloneWithNewIds, isDescendantOf } from '../segmentIds';
+import { SEGMENT_TYPES } from '../segmentDefs';
 import { useLocalState } from '../utils';
 import Timeline from './Timeline';
 import AddMenu from './AddMenu';
 import ContextMenu from './ContextMenu';
 import DragOverlayContent from './DragOverlayContent';
+import TimelineGuide from './TimelineGuide';
 
 export default function StageEditor({ stageName, stageId, meditationName, readOnly }) {
   const [script, setScript] = useState([]);
@@ -20,13 +22,14 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   const [status, setStatus] = useState('');
   const [outputUrl, setOutputUrl] = useState(null);
   const [varsCollapsed, setVarsCollapsed] = useLocalState(`collapse:${meditationName}:${stageId}:vars`, true);
-  const [timelineCollapsed, setTimelineCollapsed] = useLocalState(`collapse:${meditationName}:${stageId}:timeline`, true);
+  const [timelineCollapsed, setTimelineCollapsed] = useLocalState(`collapse:${meditationName}:${stageId}:timeline`, false);
   const scriptRef = useRef(script);
   const playAllModeRef = useRef(false);
   const sequenceIdRef = useRef(0);
   const lastClickedRef = useRef(null);
   const undoStack = useRef([]);
   const redoStack = useRef([]);
+  const savePromiseRef = useRef(Promise.resolve());
   const assembledAudioRef = useRef(null);
   const assembledPlayingRef = useRef(false);
 
@@ -38,6 +41,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   const [loadingTimeline, setLoadingTimeline] = useState(true);
   const [loopCounters, setLoopCounters] = useState({});
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showGuide, setShowGuide] = useState(null);
   const selectionAnchor = useRef(null);
 
   function handleSelect(id, shiftKey) {
@@ -108,17 +112,12 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   }
 
   function handleContextAdd(position, segType) {
-    const SEGMENT_DEFAULTS = {
-      speech: { type: 'speech', id: generateId(), text: 'New spoken segment.' },
-      pause: { type: 'pause', id: generateId(), duration_seconds: 5 },
-      asset: { type: 'asset', id: generateId(), file: 'and_out.mp3' },
-      loop: { type: 'loop', id: generateId(), repeat: 3, segments: [] },
-      section: { type: 'loop', id: generateId(), repeat: 1, label: 'New Section', segments: [] },
-      split_marker: { type: 'split_marker', id: generateId() },
-    };
+    const template = SEGMENT_TYPES.find(t => t.type === segType);
+    if (!template) return;
+    const newSeg = JSON.parse(JSON.stringify(template.default));
+    newSeg.id = generateId();
     const sorted = sortedSelectedIds();
     const anchorId = position === 'above' ? sorted[0] : sorted[sorted.length - 1];
-    const newSeg = SEGMENT_DEFAULTS[segType];
     insertNear(anchorId, position === 'above' ? 'above' : 'below', newSeg);
   }
 
@@ -174,16 +173,22 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
 
     const newScript = JSON.parse(JSON.stringify(scriptRef.current));
 
-    // Prevent dropping into self or descendants
-    const targetId = overId.startsWith('dropzone:') ? overId.slice('dropzone:'.length)
-      : overId.startsWith('after:') ? overId.slice('after:'.length)
-      : overId;
+    // Normalize prefixed IDs to the target segment ID
+    const targetId = overId.replace(/^(dropzone|after|before|above|below):/, '');
     if (targetId === fromId || isDescendantOf(newScript, fromId, targetId)) return;
 
     const fromCtx = findByIdWithContext(newScript, fromId);
     if (!fromCtx) return;
 
-    if (overId.startsWith('after:')) {
+    if (overId.startsWith('before:') || overId.startsWith('above:')) {
+      const beforeId = overId.slice('before:'.length);
+      const beforeCtx = findByIdWithContext(newScript, beforeId);
+      if (!beforeCtx) return;
+      fromCtx.parent.splice(fromCtx.index, 1);
+      const updatedCtx = findByIdWithContext(newScript, beforeId);
+      if (!updatedCtx) return;
+      updatedCtx.parent.splice(updatedCtx.index, 0, fromCtx.seg);
+    } else if (overId.startsWith('after:') || overId.startsWith('below:')) {
       const afterId = overId.slice('after:'.length);
       const afterCtx = findByIdWithContext(newScript, afterId);
       if (!afterCtx) return;
@@ -252,7 +257,9 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
     undoStack.current.push(JSON.parse(JSON.stringify(scriptRef.current)));
     redoStack.current = [];
     setScript(newScript);
-    await saveStageScript(meditationName, stageId, newScript);
+    const p = saveStageScript(meditationName, stageId, newScript);
+    savePromiseRef.current = p;
+    await p;
     fetchStageComponents(meditationName, stageId).then(setComponents);
   }, [meditationName, stageId]);
 
@@ -420,22 +427,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
     if (isLoop) {
       setPlayingParentId(id);
       const seg = findById(scriptRef.current, id);
-      const iterDuration = computeFixedDuration(seg.segments, variables, components);
-      let repeat;
-      if (!seg.label && seg.targetDuration != null) {
-        repeat = computeDurationRepeat(seg, variables, components);
-      } else {
-        const varName = seg.variable;
-        repeat = (varName && variables[varName] != null)
-          ? resolveVar(variables[varName]) || 1
-          : (seg.repeat || 1);
-      }
-      const loopFlat = [];
-      for (let r = 0; r < repeat; r++) {
-        seg.segments.forEach(s => {
-          loopFlat.push({ seg: s, loopId: seg.id, loopIteration: r + 1, loopTotal: Number(repeat), loopIterDuration: iterDuration });
-        });
-      }
+      const loopFlat = flattenScript([seg], variables, components);
       playSequence(loopFlat, 0);
       return;
     }
@@ -551,6 +543,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
           <div className="editor-section-label collapsible" onClick={() => setVarsCollapsed(!varsCollapsed)}>
             <span className={`chevron ${varsCollapsed ? 'collapsed' : ''}`}>▼</span> Variables
           </div>
+          <span className="guide-link-inline" onClick={() => setShowGuide(4)}>?</span>
           {!readOnly && <button className="btn-add" onClick={addVariable}>+ Add</button>}
         </div>
         {!varsCollapsed && (loadingVars ? (
@@ -580,14 +573,14 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
                   </td>
                   <td>
                     {readOnly ? (
-                      <span className="variable-unit-select" style={{ border: 'none' }}>{unit === 'seconds' ? 'sec' : unit === 'minutes' ? 'min' : unit === 'hours' ? 'hr' : '—'}</span>
+                      <span className="variable-unit-select" style={{ border: 'none' }}>{unit === 'seconds' ? 'sec' : unit === 'minutes' ? 'min' : unit === 'hours' ? 'hr' : 'times'}</span>
                     ) : (
                       <select
                         className="variable-unit-select"
                         value={unit || ''}
                         onChange={e => updateUnit(varName, e.target.value)}
                       >
-                        <option value="">—</option>
+                        <option value="">times</option>
                         <option value="seconds">sec</option>
                         <option value="minutes">min</option>
                         <option value="hours">hr</option>
@@ -628,13 +621,16 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
             </tbody>
           </table>
         ) : (
-          <p className="empty-hint">No variables defined.</p>
+          <p className="empty-hint">No variables yet. {!readOnly && <><span className="empty-hint-link" onClick={addVariable}>Add one</span> or </>}<span className="empty-hint-link" onClick={() => setShowGuide(4)}>see our guide</span>.</p>
         ))}
       </div>
 
       <div className="stage-subsection">
-        <div className="editor-section-label collapsible" onClick={() => setTimelineCollapsed(!timelineCollapsed)}>
-          <span className={`chevron ${timelineCollapsed ? 'collapsed' : ''}`}>▼</span> Timeline
+        <div className="section-header-row">
+          <div className="editor-section-label collapsible" onClick={() => setTimelineCollapsed(!timelineCollapsed)}>
+            <span className={`chevron ${timelineCollapsed ? 'collapsed' : ''}`}>▼</span> Timeline
+          </div>
+          <span className="guide-link-inline" onClick={() => setShowGuide(1)}>?</span>
         </div>
         {!timelineCollapsed && (loadingTimeline ? (
           <div className="loading-page" style={{ minHeight: 60 }}><div className="loading-spinner" /><span>Loading timeline...</span></div>
@@ -648,6 +644,9 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
             <span className="status">{status}</span>
             {!readOnly && <AddMenu onAdd={handleAddFromToolbar} />}
           </div>
+          {script.length === 0 && (
+            <p className="empty-hint">No segments yet. Use the + to add segments, or <span className="empty-hint-link" onClick={() => setShowGuide(0)}>see our guide to timelines</span>.</p>
+          )}
           {readOnly ? (
             <Timeline
               segments={script}
@@ -655,20 +654,20 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
               isPaused={isPaused}
               onPlay={handlePlay}
               onWordClick={handleWordClick}
-              onDelete={() => {}}
-              onUpdate={() => {}}
-              onInsert={() => {}}
+              onDelete={() => { }}
+              onUpdate={() => { }}
+              onInsert={() => { }}
               components={components}
               meditationName={meditationName}
               stageId={stageId}
-              onRefreshComponents={() => {}}
+              onRefreshComponents={() => { }}
               playingParentId={playingParentId}
               variables={variables}
               loopCounters={loopCounters}
-              onUpdateVariable={() => {}}
+              onUpdateVariable={() => { }}
               selectedIds={selectedIds}
-              onSelect={() => {}}
-              onContextMenu={() => {}}
+              onSelect={() => { }}
+              onContextMenu={() => { }}
               fullScript={script}
               readOnly
             />
@@ -687,6 +686,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
                 meditationName={meditationName}
                 stageId={stageId}
                 onRefreshComponents={() => fetchStageComponents(meditationName, stageId).then(setComponents)}
+                onFlushSave={() => savePromiseRef.current}
                 playingParentId={playingParentId}
                 variables={variables}
                 loopCounters={loopCounters}
@@ -733,6 +733,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
           />
         </div>
       )}
+      {showGuide != null && <TimelineGuide startStep={showGuide} onClose={() => setShowGuide(null)} />}
     </div>
   );
 }

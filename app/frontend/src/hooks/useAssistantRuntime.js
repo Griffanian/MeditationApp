@@ -90,6 +90,21 @@ export function useAssistantRuntime(context) {
     fetchThreads().then(setThreads);
   }, []);
 
+  // Check for initial greeting from guide
+  useEffect(() => {
+    function handleGreeting(e) {
+      setCurrentThreadId(null);
+      setMessages([{
+        role: 'assistant',
+        id: crypto.randomUUID(),
+        content: e.detail,
+        created_at: new Date().toISOString(),
+      }]);
+    }
+    window.addEventListener('assistant-greeting', handleGreeting);
+    return () => window.removeEventListener('assistant-greeting', handleGreeting);
+  }, []);
+
   // Messages for the runtime — filter out tool-result messages
   const visibleMessages = useMemo(
     () => filterDisplayMessages(messages),

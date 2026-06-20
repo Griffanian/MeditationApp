@@ -213,6 +213,9 @@ export default function Practices() {
                   ? `${weeks.length} week${weeks.length !== 1 ? 's' : ''} · ${totalDays} day${totalDays !== 1 ? 's' : ''}`
                   : `${weeks.length} stage${weeks.length !== 1 ? 's' : ''}`
                 }
+                {effectiveFilter !== 'mine' && prac.created_by_display && (
+                  <> · {prac.created_by_display}</>
+                )}
               </div>
               {(() => {
                 const progress = getProgress(prac.name, weeks);
