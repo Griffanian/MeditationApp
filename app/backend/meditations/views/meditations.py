@@ -122,6 +122,7 @@ def _serialize_category(cat):
         "sort_order": cat.sort_order,
         "group": cat.group_id or "",
         "group_display": cat.group.display_name if cat.group else "",
+        "created_by": cat.created_by.username if cat.created_by else None,
         "is_public": cat.is_public,
     }
 
@@ -188,7 +189,7 @@ class CategoryListView(APIView):
     def get(self, request):
         return Response([
             _serialize_category(c)
-            for c in Category.objects.select_related("group").all()
+            for c in Category.objects.select_related("group", "created_by__profile").all()
         ])
 
     def post(self, request):
@@ -200,7 +201,8 @@ class CategoryListView(APIView):
         cat_id = f"cat-{uuid.uuid4().hex[:12]}"
         group = _resolve_group((request.data.get("group") or "").strip())
         cat = Category.objects.create(
-            name=cat_id, display_name=display_name, sort_order=50, group=group,
+            name=cat_id, display_name=display_name, sort_order=50,
+            group=group, created_by=request.user,
         )
         return Response(_serialize_category(cat), status=201)
 

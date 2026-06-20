@@ -1,1 +1,3 @@
-- [ ] Identify speakers in [[meetings/2026-06-18_meditation-app-design-and-spiritual-practice-philosophy-with-hitesh]]: `speaker`
+- [ ]  Identify speakers in [[meetings/2026-06-18_meditation-app-design-and-spiritual-practice-philosophy-with-hitesh]]: `speaker`
+- [ ]  finish scrubbing healthygamer stuff.
+- [ ]
