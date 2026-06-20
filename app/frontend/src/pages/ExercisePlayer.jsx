@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, BASE } from '../api';
-import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration } from '../playback';
+import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration, unlockAudio } from '../playback';
 
 function formatTime(seconds) {
   if (!seconds || !isFinite(seconds)) return '0:00';
@@ -245,31 +245,46 @@ export default function ExercisePlayer() {
     segIdxRef.current = idx;
     updateDisplay(idx, 0);
 
-    if (entry.type === 'speech') {
-      const url = `${BASE}/audio/meditation/${name}/stage/${stageId}/component/${entry.segId}.mp3`;
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      audio.onended = () => { audioRef.current = null; playSegment(idx + 1); };
-      audio.onerror = () => { audioRef.current = null; playSegment(idx + 1); };
+    if (entry.type === 'speech' || entry.type === 'asset') {
+      const url = entry.type === 'speech'
+        ? `${BASE}/audio/meditation/${name}/stage/${stageId}/component/${entry.segId}.mp3`
+        : `${BASE}/audio/asset/${entry.file}`;
+      // Reuse a single Audio element created in handlePlay (user gesture context)
+      // so it stays unlocked for iOS playback from timer callbacks
+      if (!audioRef.current) audioRef.current = new Audio();
+      const audio = audioRef.current;
+      let ended = false;
+      const advance = () => {
+        if (ended) return;
+        ended = true;
+        playSegment(idx + 1);
+      };
+      audio.onended = null;
+      audio.onerror = null;
+      audio.src = url;
+      audio.onended = advance;
+      audio.onerror = advance;
       startTick(idx);
-      audio.play().catch(() => { audioRef.current = null; playSegment(idx + 1); });
-    } else if (entry.type === 'asset') {
-      const url = `${BASE}/audio/asset/${entry.file}`;
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      audio.onended = () => { audioRef.current = null; playSegment(idx + 1); };
-      audio.onerror = () => { audioRef.current = null; playSegment(idx + 1); };
-      startTick(idx);
-      audio.play().catch(() => { audioRef.current = null; playSegment(idx + 1); });
+      audio.play().catch(advance);
     } else {
-      // pause / split_marker — use timer
-      audioRef.current = null;
+      // pause / split_marker — play ambient to keep Audio element active on mobile
+      if (!audioRef.current) audioRef.current = new Audio();
+      const audio = audioRef.current;
+      audio.onended = null;
+      audio.onerror = null;
+      audio.loop = true;
+      audio.volume = 0;
+      audio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+      audio.play().catch(() => {});
+
       pauseStartRef.current = Date.now();
       pauseRemainingRef.current = entry.dur * 1000;
       startTick(idx);
       segTimerRef.current = setTimeout(() => {
         segTimerRef.current = null;
         pauseStartRef.current = null;
+        audio.loop = false;
+        audio.pause();
         playSegment(idx + 1);
       }, entry.dur * 1000);
     }
@@ -278,6 +293,7 @@ export default function ExercisePlayer() {
   // --- Controls ---
 
   function handlePlay() {
+    unlockAudio();
     if (status === 'paused') {
       setStatus('playing');
       const idx = segIdxRef.current;
@@ -300,9 +316,11 @@ export default function ExercisePlayer() {
       return;
     }
 
-    // Fresh play from start
+    // Fresh play from start — create Audio element here (user gesture context)
+    // so it's unlocked for iOS and can play from timer callbacks later
     stoppedRef.current = false;
     setError(null);
+    if (!audioRef.current) audioRef.current = new Audio();
     setStatus('playing');
     playSegment(0);
   }

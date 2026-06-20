@@ -63,11 +63,13 @@ export function resolveRepeat(seg, variables, components) {
 }
 
 let currentAudio = null;
+let unlockedAudio = null; // persistent Audio element unlocked by user gesture
 let wordTimers = [];
 let countdownInterval = null;
 let timestampCache = {};
 let currentMeditation = null;
 let currentStage = null;
+let onEndCalled = false;
 
 const externalStopCallbacks = new Set();
 
@@ -92,7 +94,37 @@ export function clearTimestampCache(segId) {
   }
 }
 
+/**
+ * Unlock the audio element for iOS/mobile playback.
+ * Must be called from a user gesture (click/tap handler).
+ * After this, the element can play from any context (timers, callbacks, etc).
+ */
+export function unlockAudio() {
+  if (unlockedAudio) return;
+  unlockedAudio = new Audio();
+  // Play a tiny silent WAV to activate the element on iOS
+  unlockedAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+  unlockedAudio.play().then(() => {
+    unlockedAudio.pause();
+  }).catch(() => {});
+}
+
+function getAudio() {
+  // Return the unlocked element if available, otherwise create a new one
+  if (unlockedAudio) return unlockedAudio;
+  return new Audio();
+}
+
+function guardedOnEnd(onEnd) {
+  return () => {
+    if (onEndCalled) return;
+    onEndCalled = true;
+    onEnd();
+  };
+}
+
 export function stopPlayback() {
+  onEndCalled = true;
   clearWordHighlights();
   if (countdownInterval) {
     clearInterval(countdownInterval);
@@ -101,7 +133,8 @@ export function stopPlayback() {
   if (currentAudio) {
     if (currentAudio instanceof Audio) {
       currentAudio.pause();
-      currentAudio.src = '';
+      currentAudio.onended = null;
+      currentAudio.onerror = null;
     } else if (currentAudio.pause) {
       currentAudio.pause();
     }
@@ -126,27 +159,56 @@ export function setScriptAndComponents(script, components) {
   currentComponents = components;
 }
 
+function debugLog(msg) {
+  console.warn('[playSeg]', msg);
+  // Show on screen for mobile debugging
+  let el = document.getElementById('playback-debug');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'playback-debug';
+    el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:30vh;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font:11px monospace;padding:6px;z-index:99999;pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  const line = document.createElement('div');
+  line.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  // Keep last 30 lines
+  while (el.children.length > 30) el.removeChild(el.firstChild);
+}
+
 export function playSeg(seg, onEnd, variables = {}, { script, components } = {}) {
   const _script = script || currentScript;
   const _components = components || currentComponents;
+  onEndCalled = false;
+  const safeEnd = guardedOnEnd(onEnd);
+
   if (seg.type === 'speech') {
     const segId = seg.id;
+    debugLog(`speech "${segId}" — loading`);
     const tsPromise = timestampCache[segId]
       ? Promise.resolve(timestampCache[segId])
       : fetchStageTimestamps(currentMeditation, currentStage, segId)
           .then(ts => { timestampCache[segId] = ts; return ts; })
           .catch(() => { timestampCache[segId] = []; return []; });
-    currentAudio = new Audio(`${BASE}/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`);
-    currentAudio.onended = onEnd;
-    currentAudio.onerror = () => { onEnd(); };
+    const audio = getAudio();
+    audio.onended = null;
+    audio.onerror = null;
+    audio.loop = false;
+    audio.volume = 1;
+    audio.src = `${BASE}/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`;
+    currentAudio = audio;
+    audio.onended = () => { debugLog(`speech "${segId}" — ended`); safeEnd(); };
+    audio.onerror = (e) => { debugLog(`speech "${segId}" — ERROR: ${audio.error?.message || e?.type || 'unknown'}`); safeEnd(); };
     const playingPromise = new Promise(resolve => {
-      currentAudio.addEventListener('playing', resolve, { once: true });
+      audio.addEventListener('playing', () => { debugLog(`speech "${segId}" — playing`); resolve(); }, { once: true });
     });
-    currentAudio.play().catch(() => { onEnd(); });
+    audio.play().catch((err) => { debugLog(`speech "${segId}" — play() REJECTED: ${err.message}`); safeEnd(); });
     Promise.all([tsPromise, playingPromise]).then(([words]) => {
+      if (onEndCalled) return;
       clearWordHighlights();
       const wordEls = document.querySelectorAll(`.word[data-seg-id="${segId}"]`);
-      const elapsed = currentAudio.currentTime * 1000;
+      const elapsed = audio.currentTime * 1000;
       words.forEach((w, i) => {
         if (i < wordEls.length) {
           const delay = Math.max(0, w.start * 1000 - elapsed);
@@ -158,37 +220,25 @@ export function playSeg(seg, onEnd, variables = {}, { script, components } = {})
         }
       });
     });
-  } else if (seg.type === 'pause') {
-    const duration = resolvePauseDuration(seg.duration_seconds, variables);
-    let remaining = duration;
-    const cdEl = document.querySelector(`.countdown[data-seg-id="${seg.id}"]`);
-    if (cdEl) cdEl.textContent = formatDuration(remaining);
-    countdownInterval = setInterval(() => {
-      remaining--;
-      const el = document.querySelector(`.countdown[data-seg-id="${seg.id}"]`);
-      if (el) el.textContent = formatDuration(remaining);
-    }, 1000);
-    currentAudio = {
-      _timer: setTimeout(() => {
-        clearInterval(countdownInterval);
-        onEnd();
-      }, duration * 1000),
-      pause() {
-        clearTimeout(this._timer);
-        clearInterval(countdownInterval);
-      },
-    };
-  } else if (seg.type === 'asset') {
-    currentAudio = new Audio(`${BASE}/audio/asset/${seg.file}`);
-    currentAudio.onended = onEnd;
-    currentAudio.onerror = () => { onEnd(); };
-    currentAudio.play().catch(() => { onEnd(); });
-  } else if (seg.type === 'split_marker') {
-    const markerDur = _script
-      ? computeMarkerDuration(_script, seg.id, variables, _components)
-      : null;
-    const mult = seg.multiplier || 1;
-    const duration = markerDur != null ? markerDur * mult : 1;
+  } else if (seg.type === 'pause' || seg.type === 'split_marker') {
+    const duration = seg.type === 'pause'
+      ? resolvePauseDuration(seg.duration_seconds, variables)
+      : (() => {
+          const markerDur = _script ? computeMarkerDuration(_script, seg.id, variables, _components) : null;
+          return markerDur != null ? markerDur * (seg.multiplier || 1) : 1;
+        })();
+    debugLog(`${seg.type} ${duration}s — playing ambient`);
+
+    // Play ambient audio on the same Audio element to keep it active on mobile
+    const audio = getAudio();
+    audio.onended = null;
+    audio.onerror = null;
+    audio.loop = true;
+    audio.volume = 0;
+    // Short silent WAV on loop — keeps Audio element active on mobile without audible output
+    audio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+    audio.play().catch(() => {});
+
     let remaining = Math.round(duration);
     const cdEl = document.querySelector(`.countdown[data-seg-id="${seg.id}"]`);
     if (cdEl) cdEl.textContent = formatDuration(remaining);
@@ -197,16 +247,33 @@ export function playSeg(seg, onEnd, variables = {}, { script, components } = {})
       const el = document.querySelector(`.countdown[data-seg-id="${seg.id}"]`);
       if (el) el.textContent = formatDuration(remaining);
     }, 1000);
+
     currentAudio = {
       _timer: setTimeout(() => {
         clearInterval(countdownInterval);
-        onEnd();
+        audio.loop = false;
+        audio.pause();
+        debugLog(`${seg.type} ${duration}s — ended`);
+        safeEnd();
       }, duration * 1000),
       pause() {
         clearTimeout(this._timer);
         clearInterval(countdownInterval);
+        audio.pause();
       },
     };
+  } else if (seg.type === 'asset') {
+    debugLog(`asset "${seg.file}" — loading`);
+    const audio = getAudio();
+    audio.onended = null;
+    audio.onerror = null;
+    audio.loop = false;
+    audio.volume = 1;
+    audio.src = `${BASE}/audio/asset/${seg.file}`;
+    currentAudio = audio;
+    audio.onended = () => { debugLog(`asset "${seg.file}" — ended`); safeEnd(); };
+    audio.onerror = (e) => { debugLog(`asset "${seg.file}" — ERROR: ${audio.error?.message || 'unknown'}`); safeEnd(); };
+    audio.play().catch((err) => { debugLog(`asset "${seg.file}" — play() REJECTED: ${err.message}`); safeEnd(); });
   }
 }
 
@@ -220,10 +287,14 @@ export async function playSegFromWord(seg, wordIndex, onEnd) {
   const words = timestampCache[segId];
   const startTime = wordIndex < words.length ? words[wordIndex].start : 0;
 
-  currentAudio = new Audio(`${BASE}/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`);
-  currentAudio.currentTime = startTime;
-  currentAudio.onended = onEnd;
-  currentAudio.play();
+  const audio = getAudio();
+  audio.onended = null;
+  audio.onerror = null;
+  audio.src = `${BASE}/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`;
+  currentAudio = audio;
+  audio.currentTime = startTime;
+  audio.onended = onEnd;
+  audio.play();
 
   setTimeout(() => {
     clearWordHighlights();

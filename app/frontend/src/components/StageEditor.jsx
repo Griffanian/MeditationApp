@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DndContext, closestCenter, pointerWithin, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, assembleStage, generateAllAudio } from '../api';
-import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, computeMarkerDuration, registerExternalStop, unregisterExternalStop } from '../playback';
+import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, computeMarkerDuration, registerExternalStop, unregisterExternalStop, unlockAudio } from '../playback';
 import { getClipboard, setClipboard } from '../clipboard';
 import { generateId, ensureIds, findById, findByIdWithContext, allIds, cloneWithNewIds, isDescendantOf } from '../segmentIds';
 import { SEGMENT_TYPES } from '../segmentDefs';
@@ -403,6 +403,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
 
   // --- Playback ---
   function handlePlay(id, isLoop = false) {
+    unlockAudio();
     lastClickedRef.current = id;
     setMeditation(meditationName, stageId);
 
@@ -450,6 +451,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   }
 
   function playAll() {
+    unlockAudio();
     setMeditation(meditationName, stageId);
     if (playingId && !isPaused) {
       sequenceIdRef.current++;
