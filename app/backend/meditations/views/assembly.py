@@ -42,6 +42,11 @@ class AssemblyMixin:
             script = meditation.script
             extra_vars = {}
 
+        # Allow variable overrides from request body (e.g. for demo playback)
+        body_vars = request.data.get("variables") if request.method == "POST" else None
+        if body_vars and isinstance(body_vars, dict):
+            extra_vars.update(self._parse_variables(body_vars))
+
         if not script:
             return Response({"error": "not found"}, status=404)
 

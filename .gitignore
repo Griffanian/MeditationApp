@@ -1,5 +1,6 @@
 .DS_Store
 .env
 .agents/
+.playwright-mcp/
 venv/
 scripts/sync_granola.log

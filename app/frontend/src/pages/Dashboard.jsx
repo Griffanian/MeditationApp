@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { fetchGroups, createGroup, updateGroup, deleteGroup, fetchCategories, createCategory, updateCategory, renameCategory, deleteCategory, fetchMeditations, createMeditation, renameMeditation, deleteMeditation, saveMeta, saveStageVariables, cloneMeditation, fetchGroupViewers, shareGroup, unshareGroup, fetchCategoryViewers, shareCategory, unshareCategory, fetchMeditationViewers, shareMeditation, unshareMeditation, fetchPractices, fetchPractice, savePractice } from '../api';
 import { useAuth, canEdit } from '../AuthContext';
@@ -24,7 +24,16 @@ export default function Dashboard() {
   const [selectedGroup, setSelectedGroup] = useLocalState('dashboard:selectedGroup', null);
   const [ownerFilter, setOwnerFilter] = useLocalState('dashboard:ownerFilter', auth.canCreate ? 'mine' : null);
   const [addToProg, setAddToProg] = useState(null); // { med } — exercise to add to a programme
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+
+  // Handle ?filter=public from onboarding link
+  useEffect(() => {
+    if (searchParams.get('filter') === 'public') {
+      setOwnerFilter('public');
+      setSearchParams({}, { replace: true });
+    }
+  }, []);
 
   function loadData() {
     return Promise.all([
@@ -629,18 +638,16 @@ export default function Dashboard() {
       </p>
 
       {visibleGroups.length === 0 && !hasUngrouped && auth.canCreate && ownerFilter === 'mine' ? (
-        <button className="onboarding-create-btn" onClick={async () => {
-          const displayName = prompt('Group name:');
-          if (!displayName || !displayName.trim()) return;
-          try {
-            const grp = await createGroup(displayName.trim());
-            setGroups(prev => [...prev, grp]);
-            setSelectedGroup(grp.name);
-          } catch (err) { alert(err.message); }
-        }}>
-          <strong>Create your first group of exercises</strong>
-          <span>Exercises are organised into groups, then categories within each group. For example, you might have a group called "Breathing Exercises" with categories like "Beginner" and "Advanced" inside it.</span>
-        </button>
+        <div className="onboarding-actions">
+          <button className="onboarding-create-btn" onClick={() => handleNewExercise('uncategorised', '')}>
+            <strong>Create your first exercise</strong>
+            <span>Build a guided exercise with AI-generated speech, pauses, and breathing cues. You can organise exercises into categories and groups later.</span>
+          </button>
+          {hasPublic && <button className="onboarding-create-btn onboarding-secondary" onClick={() => setOwnerFilter('public')}>
+            <strong>Browse public exercises</strong>
+            <span>Check out pre-built exercises you can use as-is or copy and customise.</span>
+          </button>}
+        </div>
       ) : (
         <>
           {/* Group tabs — bubble style, filtered to groups with content */}

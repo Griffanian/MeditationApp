@@ -47,6 +47,13 @@ function ClientRow({ v, onTogglePublic, onRemove, onShowHistory, allExercises, a
       <div className="client-card-header">
         <div className="client-card-info" onClick={handleExpand} style={{ cursor: 'pointer' }}>
           <span className="client-expand-icon">{expanded ? '▾' : '▸'}</span>
+          <div className="client-avatar">
+            {v.profile_photo ? (
+              <img src={v.profile_photo} alt="" className="client-avatar-img" />
+            ) : (
+              <span className="client-avatar-initials">{(v.username || '?')[0].toUpperCase()}</span>
+            )}
+          </div>
           <span className="client-card-name">{v.username}</span>
           <span className="client-card-date">since {new Date(v.granted_at).toLocaleDateString()}</span>
         </div>

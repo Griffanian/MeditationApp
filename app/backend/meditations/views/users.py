@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 
 from ..models import Category, Group, Meditation, Practice, PracticeSession, UserProfile, ViewerAccess
 from ..permissions import IsAdmin, IsContentCreator, get_role
+from ..services import storage
 
 
 class UserListView(APIView):
@@ -125,13 +126,20 @@ class MyViewerListView(APIView):
         """List viewers who have access to this builder's content."""
         grants = ViewerAccess.objects.filter(
             builder=request.user
-        ).select_related("viewer")
+        ).select_related("viewer", "viewer__profile")
 
         result = []
         for g in grants:
+            photo_url = ""
+            try:
+                if g.viewer.profile.profile_photo:
+                    photo_url = storage.file_url(g.viewer.profile.profile_photo)
+            except UserProfile.DoesNotExist:
+                pass
             result.append({
                 "id": g.viewer.pk,
                 "username": g.viewer.username,
+                "profile_photo": photo_url,
                 "show_public": g.show_public,
                 "granted_at": g.created_at.isoformat(),
             })

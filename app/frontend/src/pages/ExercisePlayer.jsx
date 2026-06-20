@@ -391,7 +391,7 @@ export default function ExercisePlayer() {
           )}
           {status === 'playing' && (
             <button className="ep-play-btn" onClick={handlePause}>
-              <span className="ep-play-icon">&#x23F8;</span>
+              <span className="ep-play-icon ep-pause-icon" />
             </button>
           )}
           {status === 'paused' && (

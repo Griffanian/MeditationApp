@@ -156,6 +156,18 @@ def generate_components(
             print(f"  [{i + 1}/{total}] cached: {seg_id}")
             continue
 
+        # Before overwriting, preserve the old audio under a cache key
+        # so it stays findable by text_hash for future variable variations
+        if component.audio_file and component.text_hash and component.text_hash != text_hash:
+            cache_id = f"__cache__{component.text_hash}"
+            if not Component.objects.filter(meditation=meditation, stage=stage, seg_id=cache_id).exists():
+                Component.objects.create(
+                    meditation=meditation, stage=stage, seg_id=cache_id,
+                    text_hash=component.text_hash,
+                    timestamps=component.timestamps,
+                    audio_file=component.audio_file,
+                )
+
         # Reuse audio from another component with the same text+direction
         existing = Component.objects.filter(
             meditation=meditation, text_hash=text_hash,

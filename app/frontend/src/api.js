@@ -288,8 +288,13 @@ export async function generateAllAudio(name, stageId) {
   return data;
 }
 
-export async function assembleStage(name, stageId) {
-  const res = await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/assemble`, { method: 'POST' });
+export async function assembleStage(name, stageId, variables) {
+  const opts = { method: 'POST' };
+  if (variables) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = JSON.stringify({ variables });
+  }
+  const res = await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/assemble`, opts);
   if (!res.ok) {
     let msg = `Assembly failed (${res.status})`;
     try {
