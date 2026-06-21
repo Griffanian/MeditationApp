@@ -1,6 +1,18 @@
 {
   "recentFiles": [
     {
+      "basename": "Onboarding Best Practices",
+      "path": "Onboarding Best Practices.md"
+    },
+    {
+      "basename": "onboarding-design",
+      "path": "ideas/onboarding-design.md"
+    },
+    {
+      "basename": "Potential white labelling",
+      "path": "Potential white labelling.md"
+    },
+    {
       "basename": "TODO",
       "path": "TODO.md"
     },
@@ -17,10 +29,6 @@
       "path": "Users & Permissions.md"
     },
     {
-      "basename": "Onboarding Best Practices",
-      "path": "Onboarding Best Practices.md"
-    },
-    {
       "basename": "Marketing Questions",
       "path": "Marketing Questions.md"
     },
@@ -35,14 +43,6 @@
     {
       "basename": "Miles Bloom",
       "path": "People/Miles Bloom.md"
-    },
-    {
-      "basename": "Potential white labelling",
-      "path": "Potential white labelling.md"
-    },
-    {
-      "basename": "Public Exercises and Programmes",
-      "path": "Public Exercises and Programmes.md"
     },
     {
       "basename": "contract-white-label-licence",
@@ -195,10 +195,6 @@
     {
       "basename": "topic-graph",
       "path": "Management/topic-graph.png"
-    },
-    {
-      "basename": "Free-Will",
-      "path": "General Notes/Free-Will.md"
     }
   ],
   "omittedPaths": [],

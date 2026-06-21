@@ -1,4 +1,2 @@
 - [ ] Design and build onboarding flow (see [[ideas/onboarding-design|Onboarding Design]])
-- [ ] Build generic invite link for coaches (open sign-up)
-- [ ] Build generic invite link for students (coach shares one link to a group)
 - [ ] Coach can fill in student profile at individual invite time

@@ -180,7 +180,7 @@ export default function Clients() {
     fetchInvites().then(setInvites);
     fetchMeditations().then(meds => setMyExercises(meds.filter(m => m.created_by === auth.username)));
     fetchPractices().then(pracs => setMyProgrammes(pracs.filter(p => p.created_by === auth.username)));
-    fetchMySignupLink().then(data => setSignupLink(`${window.location.origin}/join/${data.token}`)).catch(() => {});
+    fetchMySignupLink().then(data => setSignupLink(`${window.location.origin}/join/${data.token}`)).catch(() => { });
   }, []);
 
   async function handleAddViewer(e) {
@@ -226,8 +226,13 @@ export default function Clients() {
     finally { setCreating(false); }
   }
 
-  function copyLink(token) {
-    navigator.clipboard.writeText(`${window.location.origin}/signup/${token}`);
+  function shareLink(token) {
+    const url = `${window.location.origin}/signup/${token}`;
+    if (navigator.share) {
+      navigator.share({ title: 'Join Meditation Pro', url }).catch(() => { });
+    } else {
+      navigator.clipboard.writeText(url);
+    }
   }
 
   const activeInvites = invites.filter(i => !i.used_by && i.is_active);
@@ -244,7 +249,7 @@ export default function Clients() {
       {tab === 'active' && (
         <>
           {viewers.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No clients yet. Go to the Invite Clients tab to share your signup link.</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No clients yet. Go to the <button className="link-btn" onClick={() => setTab('invite')}>Invite Clients</button> tab to invite personally or share your signup link.</p>
           ) : (
             <div className="client-card-list">
               {viewers.map(v => (
@@ -270,20 +275,23 @@ export default function Clients() {
               <button onClick={handleCreateInvite} disabled={creating}>{creating ? 'Creating...' : 'Create Invite'}</button>
             </div>
             {activeInvites.length > 0 && (
-              <table className="user-mgmt-table">
-                <thead><tr><th>Name</th><th>Actions</th></tr></thead>
-                <tbody>
-                  {activeInvites.map(inv => (
-                    <tr key={inv.id}>
-                      <td>{inv.name || '(unnamed)'}</td>
-                      <td>
-                        <button className="btn-small" onClick={() => copyLink(inv.token)}>Copy link</button>
-                        <button className="btn-small btn-danger" onClick={async () => { await deleteInvite(inv.id); setInvites(prev => prev.filter(i => i.id !== inv.id)); }}>Revoke</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <>
+                <h3 style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 16, marginBottom: 8 }}>Open Invites</h3>
+                <table className="user-mgmt-table">
+                  <thead><tr><th>Name</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {activeInvites.map(inv => (
+                      <tr key={inv.id}>
+                        <td>{inv.name || '(unnamed)'}</td>
+                        <td>
+                          <button className="btn-small" onClick={() => shareLink(inv.token)}>Share</button>
+                          <button className="btn-small btn-danger" onClick={async () => { await deleteInvite(inv.id); setInvites(prev => prev.filter(i => i.id !== inv.id)); }}>Revoke</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
             )}
           </section>
 
@@ -295,7 +303,7 @@ export default function Clients() {
                 <input type="text" readOnly value={signupLink} className="user-mgmt-input signup-link-input" onClick={e => e.target.select()} />
                 <button onClick={() => {
                   if (navigator.share) {
-                    navigator.share({ title: 'Join Meditation Pro', url: signupLink }).catch(() => {});
+                    navigator.share({ title: 'Join Meditation Pro', url: signupLink }).catch(() => { });
                   } else {
                     navigator.clipboard.writeText(signupLink);
                     setLinkCopied(true);

@@ -175,6 +175,11 @@ class Stage(models.Model):
 
 
 class Component(models.Model):
+    SOURCE_CHOICES = [
+        ("generated", "Generated"),
+        ("uploaded", "Uploaded"),
+    ]
+
     meditation = models.ForeignKey(
         Meditation, on_delete=models.CASCADE, related_name="components"
     )
@@ -187,6 +192,8 @@ class Component(models.Model):
     timestamps = models.JSONField(default=list, blank=True)
     trim_meta = models.JSONField(default=dict, blank=True)
     audio_file = models.FileField(upload_to="components/", max_length=300, blank=True)
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, blank=True)
+    variable_values = models.JSONField(default=dict, blank=True)
 
     class Meta:
         unique_together = ("meditation", "stage", "seg_id")

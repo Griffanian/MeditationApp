@@ -175,6 +175,8 @@ function BoxBreathingDemo({ onNext, demoData }) {
   const [activeEntry, setActiveEntry] = useState(null);
   const [activeWordIdx, setActiveWordIdx] = useState(-1);
   const [countdown, setCountdown] = useState('');
+  const [hasTweaked, setHasTweaked] = useState(false);
+  const [nudge, setNudge] = useState(false);
 
   const audioRef = useRef(null);
   const tickRef = useRef(null);
@@ -239,6 +241,11 @@ function BoxBreathingDemo({ onNext, demoData }) {
   }
 
   async function handlePlay() {
+    if (!hasTweaked) {
+      setNudge(true);
+      return;
+    }
+
     if (status === 'paused' && audioRef.current) {
       audioRef.current.play();
       setStatus('playing');
@@ -289,6 +296,8 @@ function BoxBreathingDemo({ onNext, demoData }) {
 
   function updateVar(varName, value) {
     if (status === 'playing' || status === 'paused') handleStop();
+    setHasTweaked(true);
+    setNudge(false);
     setVariables(prev => ({ ...prev, [varName]: typeof prev[varName] === 'object' ? { ...prev[varName], value } : value }));
   }
 
@@ -307,12 +316,33 @@ function BoxBreathingDemo({ onNext, demoData }) {
 
   return (
     <div className="ob-slide ob-slide-demo">
-      <div className="ob-demo-text">
+      <div className="ob-demo-vars-card">
         <div className="ob-eyebrow">Try it</div>
-        <h2 className="ob-heading">Box Breathing</h2>
-        <p className="ob-desc">Ready to see how this works? Change the variables, hit play, and hear the difference.</p>
+        <h2 className="ob-heading" style={{ marginBottom: 4 }}>Box Breathing</h2>
+        <p className="ob-demo-hint" style={{ marginBottom: 12 }}>Breathe in, hold, breathe out, hold. Adjust the sliders to control how long each phase is and then hit play.</p>
+        {[...varEntries].sort(([, a], [, b]) => {
+          const uA = typeof a === 'object' ? a.unit : '';
+          const uB = typeof b === 'object' ? b.unit : '';
+          return uA === 'seconds' ? -1 : uB === 'seconds' ? 1 : 0;
+        }).map(([varName, varData]) => {
+          const val = typeof varData === 'object' ? varData.value : varData;
+          const unit = typeof varData === 'object' ? varData.unit : '';
+          const rawDisplay = typeof varData === 'object' && varData.displayName ? varData.displayName : varName;
+          const display = rawDisplay.replace(/^Phase\s+/i, '');
+          return (
+            <div key={varName} className="ob-demo-field">
+              <label>{display}{unit === 'seconds' ? ' (s)' : ''}</label>
+              <div className="ob-demo-input-row">
+                <input type="range" min="1" max="7" step="1" value={val} list={`ticks-${varName}`} onChange={e => updateVar(varName, Number(e.target.value))} />
+                <datalist id={`ticks-${varName}`}>
+                  {[1, 2, 3, 4, 5, 6, 7].map(n => <option key={n} value={n} />)}
+                </datalist>
+                <span className="ob-demo-value">{val}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
-
       <div className="ob-demo-player-card">
         <div className="ob-player">
           <button
@@ -324,6 +354,7 @@ function BoxBreathingDemo({ onNext, demoData }) {
               : status === 'playing' ? <span className="ep-pause-icon" />
                 : <span>&#x25B6;</span>}
           </button>
+          {nudge && <div className="ob-demo-nudge">Hey, try adjusting the sliders!</div>}
         </div>
 
         <div className="ep-script-box">
@@ -363,31 +394,7 @@ function BoxBreathingDemo({ onNext, demoData }) {
         </div>
       </div>
 
-      <div className="ob-demo-vars-card">
-        <div className="ob-demo-vars-label">Variables</div>
-        {[...varEntries].sort(([, a], [, b]) => {
-          const uA = typeof a === 'object' ? a.unit : '';
-          const uB = typeof b === 'object' ? b.unit : '';
-          return uA === 'seconds' ? -1 : uB === 'seconds' ? 1 : 0;
-        }).map(([varName, varData]) => {
-          const val = typeof varData === 'object' ? varData.value : varData;
-          const unit = typeof varData === 'object' ? varData.unit : '';
-          const rawDisplay = typeof varData === 'object' && varData.displayName ? varData.displayName : varName;
-          const display = rawDisplay.replace(/^Phase\s+/i, '');
-          return (
-            <div key={varName} className="ob-demo-field">
-              <label>{display}{unit === 'seconds' ? ' (s)' : ''}</label>
-              <div className="ob-demo-input-row">
-                <input type="range" min="1" max="7" step="1" value={val} list={`ticks-${varName}`} onChange={e => updateVar(varName, Number(e.target.value))} />
-                <datalist id={`ticks-${varName}`}>
-                  {[1, 2, 3, 4, 5, 6, 7].map(n => <option key={n} value={n} />)}
-                </datalist>
-                <span className="ob-demo-value">{val}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+
 
       <div className="ob-slide-bottom">
         <button className="ob-next" onClick={() => { handleStop(); onNext(); }}>Next</button>
@@ -459,6 +466,20 @@ export function BuilderOnboarding() {
             <div className="ob-eyebrow">Our approach to AI</div>
             <h2 className="ob-heading">AI is a dial, not a switch.</h2>
             <p className="ob-desc">Use it for everything, nothing, or anything in between.</p>
+            <div className="ob-ai-demo" style={{ marginTop: 20 }}>
+              <div className="ob-ai-row">
+                <span className="ob-ai-level ob-ai-full">Full AI</span>
+                <span className="ob-ai-example">Paste a YouTube link → AI writes the script → AI generates the audio</span>
+              </div>
+              <div className="ob-ai-row">
+                <span className="ob-ai-level ob-ai-mid">Mixed</span>
+                <span className="ob-ai-example">Import a PDF → AI extracts the script → record your own voice</span>
+              </div>
+              <div className="ob-ai-row">
+                <span className="ob-ai-level ob-ai-none">No AI</span>
+                <span className="ob-ai-example">Write your own script → upload your own audio</span>
+              </div>
+            </div>
           </div>
           <div className="ob-slide-bottom">
             <button className="ob-next" onClick={() => setStep(3)}>Next</button>
@@ -489,6 +510,7 @@ export function BuilderOnboarding() {
       {step === 5 && (
         <div className="ob-slide">
           <div className="ob-slide-top">
+            <div className="ob-eyebrow">Get started</div>
             <h2 className="ob-heading">Your turn</h2>
             <p className="ob-desc">That same approach works for any exercise; from basic breathwork to advanced contemplative work. Create your first one, or explore what's already been built.</p>
           </div>

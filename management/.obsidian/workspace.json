@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Potential white labelling.md",
+                "file": "Onboarding Best Practices.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Potential white labelling"
+              "title": "Onboarding Best Practices"
             }
           },
           {
@@ -27,16 +27,15 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "TODO.md",
+                "file": "ideas/onboarding-design.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "TODO"
+              "title": "onboarding-design"
             }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "vertical"
@@ -203,18 +202,19 @@
       "darlal-switcher-plus:Open Symbols for the active editor": false
     }
   },
-  "active": "5a81b8b60a4dadfa",
+  "active": "19b35cfccf05e958",
   "lastOpenFiles": [
     "ideas/onboarding-design.md",
+    "Onboarding Best Practices.md",
+    "Potential white labelling.md",
+    "TODO.md",
     "meetings/2026-06-18_meditation-app-design-and-spiritual-practice-philosophy-with-hitesh.md",
     "People/Hitesh Bhatt.md",
     "Users & Permissions.md",
-    "Onboarding Best Practices.md",
     "Marketing Questions.md",
     "Users profiles.md",
     "People/Roger Jackson.md",
     "People/Miles Bloom.md",
-    "Potential white labelling.md",
     "Public Exercises and Programmes.md",
     "Advanced Segments in Meditation Pro.md",
     "Pasted image 20260620114737.png",
@@ -233,7 +233,6 @@
     "untitled folder",
     "Finances.xlsx",
     "meetings/2026-06-17_meditation-app-architecture-and-integration-with-resilientminds.md",
-    "meetings/2026-06-16_perfect-stillness-practice-body-awareness-and-sitting-still.md",
     "Organisations",
     "Meetings1",
     "People",

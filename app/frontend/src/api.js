@@ -457,11 +457,11 @@ export async function validateJoinLink(token) {
   return res.json();
 }
 
-export async function joinSignup(token, displayName, username, password) {
+export async function joinSignup(token, displayName, password) {
   const res = await fetch(`${BASE}/api/auth/join`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, display_name: displayName, username, password }),
+    body: JSON.stringify({ token, display_name: displayName, password }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Signup failed');

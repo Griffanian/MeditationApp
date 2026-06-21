@@ -7,7 +7,6 @@ export default function Join({ onSignup }) {
   const { token } = useParams();
   const [link, setLink] = useState(null); // null=loading, false=invalid, {valid,role,owner_name}
   const [displayName, setDisplayName] = useState('');
-  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -19,13 +18,6 @@ export default function Join({ onSignup }) {
       .then(data => setLink(data.valid ? data : false))
       .catch(() => setLink(false));
   }, [token]);
-
-  // Auto-derive username from display name
-  function handleNameChange(val) {
-    setDisplayName(val);
-    const derived = val.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9._-]/g, '');
-    setUsername(derived);
-  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -40,7 +32,7 @@ export default function Join({ onSignup }) {
     }
     setLoading(true);
     try {
-      const data = await joinSignup(token, displayName.trim(), username.trim(), password);
+      const data = await joinSignup(token, displayName.trim(), password);
       onSignup(data);
     } catch (err) {
       setError(err.message);
@@ -77,17 +69,9 @@ export default function Join({ onSignup }) {
           type="text"
           placeholder="Your name"
           value={displayName}
-          onChange={e => handleNameChange(e.target.value)}
+          onChange={e => setDisplayName(e.target.value)}
           autoFocus
           autoComplete="name"
-        />
-        <input
-          className="login-input"
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))}
-          autoComplete="username"
         />
         <div className="login-password-wrapper">
           <input
@@ -111,7 +95,7 @@ export default function Join({ onSignup }) {
           autoComplete="new-password"
         />
         {password && <PasswordChecker password={password} />}
-        <button className="login-btn" type="submit" disabled={loading || !displayName.trim() || !username.trim()}>
+        <button className="login-btn" type="submit" disabled={loading || !displayName.trim()}>
           {loading ? 'Creating account...' : 'Create account'}
         </button>
       </form>

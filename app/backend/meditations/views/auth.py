@@ -365,13 +365,10 @@ class JoinSignupView(APIView):
 
         token_str = request.data.get("token", "")
         display_name = request.data.get("display_name", "").strip()
-        username = request.data.get("username", "").strip()
         password = request.data.get("password", "")
 
         if not display_name:
             return Response({"error": "Display name is required"}, status=400)
-        if not username:
-            return Response({"error": "Username is required"}, status=400)
         if not password:
             return Response({"error": "Password is required"}, status=400)
 
@@ -379,12 +376,8 @@ class JoinSignupView(APIView):
         if pw_error:
             return Response({"error": pw_error}, status=400)
 
-        # Validate username format
-        import re as _re
-        if not _re.match(r"^[a-z0-9][a-z0-9._-]*$", username):
-            return Response({"error": "Username must be lowercase letters, numbers, dots, hyphens, or underscores"}, status=400)
-        if len(username) < 3:
-            return Response({"error": "Username must be at least 3 characters"}, status=400)
+        import uuid
+        username = f"u-{uuid.uuid4().hex[:12]}"
 
         # Look up the signup token owner
         try:
@@ -407,9 +400,6 @@ class JoinSignupView(APIView):
 
         try:
             with transaction.atomic():
-                if User.objects.filter(username=username).exists():
-                    return Response({"error": "Username already taken"}, status=400)
-
                 user = User.objects.create_user(username=username, password=password)
 
                 profile = UserProfile.objects.create(
@@ -422,7 +412,7 @@ class JoinSignupView(APIView):
                     ViewerAccess.objects.create(viewer=user, builder=owner)
 
         except IntegrityError:
-            return Response({"error": "Username already taken"}, status=400)
+            return Response({"error": "Signup failed, please try again"}, status=400)
         except Exception:
             logger.exception("Join signup failed for token %s", token_str[:8])
             return Response({"error": "Signup failed, please try again"}, status=500)

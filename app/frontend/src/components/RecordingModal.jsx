@@ -300,7 +300,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={onClose} onContextMenu={e => e.stopPropagation()}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Manage Recording</h2>

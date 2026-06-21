@@ -162,6 +162,7 @@ class ComponentMixin:
         file_path = storage.component_path(name, seg_id, stage_id)
         storage.upload_file(file_path, f.read(), content_type="audio/mpeg")
         component.audio_file = file_path
+        component.source = "uploaded"
         component.save()
         return Response({"status": "ok"})
 
@@ -172,8 +173,10 @@ class ComponentMixin:
                 stage__stage_id=stage_id if stage_id else None,
                 seg_id=seg_id,
             )
-            if component.audio_file:
+            if component.audio_file and component.source == "uploaded":
+                # User-recorded audio is unique — fully delete from storage.
                 storage.delete_file(component.audio_file.name)
+            # AI-generated audio stays in storage — reusable via text_hash.
             component.delete()
         except Component.DoesNotExist:
             pass
@@ -236,6 +239,158 @@ class StageDeleteComponentView(ComponentMixin, APIView):
         if err:
             return err
         return self._delete_component(name, stage_id, seg_id)
+
+
+class VariableRecordingsView(ComponentMixin, APIView):
+    """List audio status for multiple variable value sets for a segment."""
+
+    def post(self, request, name, stage_id, seg_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
+
+        values_list = request.data.get("values", [])
+        script, extra_vars = self._get_script_and_vars(name, stage_id)
+        if not script:
+            return Response({"error": "No script"}, status=400)
+
+        speech = _collect_speech_segments(script)
+        if seg_id not in speech:
+            return Response({"error": f"Segment '{seg_id}' not found"}, status=404)
+
+        seg_info = speech[seg_id]
+        raw_text = seg_info["text"]
+        direction = seg_info["direction"]
+
+        # Base variables from script + stage
+        base_vars = _collect_variables(script)
+        base_vars.update(extra_vars)
+
+        results = []
+        for var_set in values_list:
+            # Merge base vars with this specific override
+            merged = {**base_vars, **var_set}
+            substituted = _substitute_variables(raw_text, merged)
+            text_hash = hashlib.md5((substituted + direction).encode()).hexdigest()[:8]
+
+            # Look for any component with this text_hash in the meditation
+            comp = Component.objects.filter(
+                meditation_id=name, text_hash=text_hash,
+            ).exclude(audio_file="").first()
+
+            if comp:
+                results.append({
+                    "variables": var_set,
+                    "text": substituted,
+                    "status": "has_audio",
+                    "source": comp.source or "unknown",
+                    "seg_id": comp.seg_id,
+                })
+            else:
+                results.append({
+                    "variables": var_set,
+                    "text": substituted,
+                    "status": "missing",
+                    "source": None,
+                })
+
+        return Response({"recordings": results})
+
+
+class GenerateVariableAudioView(ComponentMixin, APIView):
+    """Generate audio for a segment with specific variable overrides."""
+
+    def post(self, request, name, stage_id, seg_id):
+        err = _check_med_perm(request, name, write=True)
+        if err:
+            return err
+
+        override_vars = request.data.get("variables", {})
+        script, extra_vars = self._get_script_and_vars(name, stage_id)
+        if not script:
+            return Response({"error": "No script"}, status=400)
+
+        speech = _collect_speech_segments(script)
+        if seg_id not in speech:
+            return Response({"error": f"Segment '{seg_id}' not found"}, status=404)
+
+        # Merge override into stage variables
+        merged_vars = {**extra_vars, **override_vars}
+
+        try:
+            generate_components(
+                script, name, stage_id,
+                extra_variables=merged_vars,
+                only_seg_ids={seg_id},
+            )
+            # Update variable_values on the component
+            stage_obj = Stage.objects.filter(meditation_id=name, stage_id=stage_id).first()
+            comp = Component.objects.filter(
+                meditation_id=name, stage=stage_obj, seg_id=seg_id,
+            ).first()
+            if comp:
+                comp.variable_values = override_vars
+                comp.save(update_fields=["variable_values"])
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({"error": str(e)}, status=500)
+        return Response({"status": "ok"})
+
+
+class UploadVariableAudioView(ComponentMixin, APIView):
+    """Upload audio for a segment with specific variable overrides."""
+
+    def post(self, request, name, stage_id, seg_id):
+        err = _check_med_perm(request, name, write=True)
+        if err:
+            return err
+
+        if "file" not in request.FILES:
+            return Response({"error": "no file"}, status=400)
+
+        override_vars = {}
+        for key in request.POST:
+            if key.startswith("var_"):
+                var_name = key[4:]
+                override_vars[var_name] = request.POST[key]
+
+        f = request.FILES["file"]
+        script, extra_vars = self._get_script_and_vars(name, stage_id)
+        speech = _collect_speech_segments(script)
+        if seg_id not in speech:
+            return Response({"error": f"Segment '{seg_id}' not found"}, status=404)
+
+        seg_info = speech[seg_id]
+        raw_text = seg_info["text"]
+        direction = seg_info["direction"]
+
+        # Compute text_hash for these variable values
+        base_vars = _collect_variables(script)
+        base_vars.update(extra_vars)
+        merged = {**base_vars, **override_vars}
+        substituted = _substitute_variables(raw_text, merged)
+        text_hash = hashlib.md5((substituted + direction).encode()).hexdigest()[:8]
+
+        meditation = get_object_or_404(Meditation, name=name)
+        stage_obj = Stage.objects.filter(meditation=meditation, stage_id=stage_id).first()
+
+        # Store under a cache-style seg_id so it doesn't overwrite the active component
+        cache_id = f"__cache__{text_hash}"
+        component, _ = Component.objects.get_or_create(
+            meditation=meditation, stage=stage_obj, seg_id=cache_id,
+            defaults={"text_hash": text_hash},
+        )
+
+        file_path = storage.component_path(name, cache_id, stage_id)
+        storage.upload_file(file_path, f.read(), content_type="audio/mpeg")
+        component.audio_file = file_path
+        component.text_hash = text_hash
+        component.source = "uploaded"
+        component.variable_values = override_vars
+        component.save()
+
+        return Response({"status": "ok"})
 
 
 # --- Root-level views ---

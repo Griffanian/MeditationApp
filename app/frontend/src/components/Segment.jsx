@@ -4,6 +4,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import DragHandle from './DragHandle';
 import KebabMenu from './KebabMenu';
 import RecordingModal from './RecordingModal';
+import VariableRecordingsModal from './VariableRecordingsModal';
 import { clearTimestampCache, computeMarkerDuration } from '../playback';
 
 export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, audioStatus = 'missing', meditationName, stageId, onRefreshComponents, insidePlayingParent, variables = {}, onUpdateVariable, selected, onSelect, onContextMenu, fullScript, components = {}, readOnly, disableDropAbove, disableDropBelow, onFlushSave }) {
@@ -257,18 +258,30 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
         />}
       </span>
       {!readOnly && showModal && (
-        <RecordingModal
-          seg={seg}
-          meditationName={meditationName}
-          stageId={stageId}
-          hasAudio={audioStatus !== 'missing'}
-          audioStatus={audioStatus}
-          variables={variables}
-          onUpdateVariable={onUpdateVariable}
-          onFlushSave={onFlushSave}
-          onClose={() => setShowModal(false)}
-          onDone={() => { clearTimestampCache(seg.id); if (onRefreshComponents) onRefreshComponents(); }}
-        />
+        seg.type === 'speech' && /\{\w+\}/.test(seg.text) ? (
+          <VariableRecordingsModal
+            seg={seg}
+            meditationName={meditationName}
+            stageId={stageId}
+            variables={variables}
+            onFlushSave={onFlushSave}
+            onClose={() => setShowModal(false)}
+            onDone={() => { clearTimestampCache(seg.id); if (onRefreshComponents) onRefreshComponents(); }}
+          />
+        ) : (
+          <RecordingModal
+            seg={seg}
+            meditationName={meditationName}
+            stageId={stageId}
+            hasAudio={audioStatus !== 'missing'}
+            audioStatus={audioStatus}
+            variables={variables}
+            onUpdateVariable={onUpdateVariable}
+            onFlushSave={onFlushSave}
+            onClose={() => setShowModal(false)}
+            onDone={() => { clearTimestampCache(seg.id); if (onRefreshComponents) onRefreshComponents(); }}
+          />
+        )
       )}
     </div>
   );

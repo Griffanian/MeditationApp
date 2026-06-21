@@ -166,6 +166,8 @@ def generate_components(
                     text_hash=component.text_hash,
                     timestamps=component.timestamps,
                     audio_file=component.audio_file,
+                    source=component.source,
+                    variable_values=component.variable_values,
                 )
 
         # Reuse audio from another component with the same text+direction
@@ -231,6 +233,8 @@ def generate_components(
         component.text_hash = text_hash
         component.timestamps = words
         component.audio_file = file_path
+        component.source = "generated"
+        component.variable_values = extra_variables or {}
         component.save()
 
 

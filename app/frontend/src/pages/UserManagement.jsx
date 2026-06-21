@@ -37,9 +37,13 @@ function InviteSection() {
     setInvites(prev => prev.filter(i => i.id !== id));
   }
 
-  function copyLink(token) {
+  function shareLink(token) {
     const url = `${window.location.origin}/signup/${token}`;
-    navigator.clipboard.writeText(url);
+    if (navigator.share) {
+      navigator.share({ title: 'Join Meditation Pro', url }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url);
+    }
   }
 
   return (
@@ -50,14 +54,22 @@ function InviteSection() {
         <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 8 }}>Share this permanent link to let new builders create their own accounts.</p>
         <div className="signup-link-row">
           <input type="text" readOnly value={signupLink} className="user-mgmt-input signup-link-input" onClick={e => e.target.select()} />
-          <button onClick={() => { navigator.clipboard.writeText(signupLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); }}>
-            {linkCopied ? 'Copied!' : 'Copy'}
+          <button onClick={() => {
+            if (navigator.share) {
+              navigator.share({ title: 'Join Meditation Pro', url: signupLink }).catch(() => {});
+            } else {
+              navigator.clipboard.writeText(signupLink);
+              setLinkCopied(true);
+              setTimeout(() => setLinkCopied(false), 2000);
+            }
+          }}>
+            {linkCopied ? 'Copied!' : 'Share'}
           </button>
         </div>
       </section>
     )}
     <section className="user-mgmt-section">
-      <h2>One-Time Invite Links</h2>
+      <h2>Invite Personally</h2>
       <div className="user-mgmt-create-row">
         <input
           type="text"
@@ -75,24 +87,28 @@ function InviteSection() {
           {creating ? 'Creating...' : 'Create Invite'}
         </button>
       </div>
-      <table className="user-mgmt-table">
-        <thead>
-          <tr><th>Name</th><th>Role</th><th>Status</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-          {invites.filter(inv => !inv.used_by && inv.is_active).map(inv => (
-            <tr key={inv.id}>
-              <td>{inv.name || '(unnamed)'}</td>
-              <td>{inv.role}</td>
-              <td>Pending</td>
-              <td>
-                <button className="btn-small" onClick={() => copyLink(inv.token)}>Copy link</button>
-                <button className="btn-small btn-danger" onClick={() => handleDelete(inv.id)}>Revoke</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {invites.filter(inv => !inv.used_by && inv.is_active).length > 0 && (
+        <>
+          <h3 style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 16, marginBottom: 8 }}>Open Invites</h3>
+          <table className="user-mgmt-table">
+            <thead>
+              <tr><th>Name</th><th>Role</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {invites.filter(inv => !inv.used_by && inv.is_active).map(inv => (
+                <tr key={inv.id}>
+                  <td>{inv.name || '(unnamed)'}</td>
+                  <td>{inv.role}</td>
+                  <td>
+                    <button className="btn-small" onClick={() => shareLink(inv.token)}>Share</button>
+                    <button className="btn-small btn-danger" onClick={() => handleDelete(inv.id)}>Revoke</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
     </section>
     </>
   );

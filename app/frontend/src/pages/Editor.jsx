@@ -205,8 +205,7 @@ export default function Editor() {
 
       {isAdmin && !bannerDismissed && (
         <div className="welcome-banner">
-          <span>Welcome to the exercise builder. </span>
-          <span className="empty-hint-link" onClick={() => setGuideStep(0)}>Click here to get started</span>.
+          <span>Welcome to the exercise builder. <span className="empty-hint-link" onClick={() => setGuideStep(0)}>Click here to get started</span>.</span>
           <button className="welcome-banner-close" onClick={() => setBannerDismissed(true)}>✕</button>
         </div>
       )}

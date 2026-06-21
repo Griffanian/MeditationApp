@@ -94,6 +94,9 @@ urlpatterns = [
     path("api/meditations/<str:name>/stages/<str:stage_id>/generate-audio/<str:seg_id>", components.StageGenerateAudioView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/upload-component/<str:seg_id>", components.StageUploadComponentView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/delete-component/<str:seg_id>", components.StageDeleteComponentView.as_view()),
+    path("api/meditations/<str:name>/stages/<str:stage_id>/variable-recordings/<str:seg_id>", components.VariableRecordingsView.as_view()),
+    path("api/meditations/<str:name>/stages/<str:stage_id>/generate-variable-audio/<str:seg_id>", components.GenerateVariableAudioView.as_view()),
+    path("api/meditations/<str:name>/stages/<str:stage_id>/upload-variable-audio/<str:seg_id>", components.UploadVariableAudioView.as_view()),
 
     # Stage assembly
     path("api/meditations/<str:name>/stages/<str:stage_id>/assemble", assembly.StageAssembleView.as_view()),

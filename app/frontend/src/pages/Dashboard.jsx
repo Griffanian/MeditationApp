@@ -632,7 +632,7 @@ export default function Dashboard() {
 
       <p className="owner-filter-desc">
         {effectiveOwnerFilter === 'mine' && <>Your exercises. Use the <span style={{ fontSize: 15 }}>&#x22EE;</span> menu to share with clients, add to programmes, duplicate, or organise into groups and categories.</>}
-        {effectiveOwnerFilter === 'public' && <>Publicly available exercises. Use the <span style={{ fontSize: 15 }}>&#x22EE;</span> menu to make your a customisable copy, or add it to a programme as is.</>}
+        {effectiveOwnerFilter === 'public' && <>Publicly available exercises. Use the <span style={{ fontSize: 15 }}>&#x22EE;</span> menu to make your a customisable copy, or <Link to="/practices">add it to a programme</Link> as is.</>}
         {effectiveOwnerFilter === 'all' && 'All exercises across all users.'}
         {effectiveOwnerFilter !== 'mine' && effectiveOwnerFilter !== 'public' && effectiveOwnerFilter !== 'all' && `Exercises shared with you by ${builderTabs.find(b => b.username === effectiveOwnerFilter)?.display || effectiveOwnerFilter}.`}
       </p>
