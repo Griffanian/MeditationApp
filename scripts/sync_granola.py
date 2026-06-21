@@ -15,11 +15,15 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import json
+
+import anthropic
 import requests
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / "app" / ".env")
 
 API_BASE = "https://public-api.granola.ai/v1"
 NOTES_DIR = PROJECT_ROOT / "management" / "meetings"
@@ -83,19 +87,16 @@ def fetch_note_detail(api_key, note_id, include_transcript=False):
     return resp.json()
 
 
+PEOPLE_DIR = PROJECT_ROOT / "management" / "People"
 OWNER_NAME = "Miles Bloom"
+TODO_PATH = PROJECT_ROOT / "management" / "TODO.md"
 
 
-def extract_participants(note):
-    """Pull participant names from attendees and note owner."""
-    participants = set()
-    for att in note.get("attendees", []):
-        if att.get("name"):
-            participants.add(att["name"])
-    owner = note.get("owner", {})
-    if owner.get("name"):
-        participants.add(owner["name"])
-    return sorted(participants)
+def load_people():
+    """Load known people names from the People folder."""
+    if not PEOPLE_DIR.exists():
+        return []
+    return sorted(f.stem for f in PEOPLE_DIR.glob("*.md"))
 
 
 def get_unmapped_sources(transcript):
@@ -112,45 +113,116 @@ def get_unmapped_sources(transcript):
     return sorted(sources)
 
 
-def auto_speaker_map(note):
-    """Auto-map microphone → owner, speaker → other attendee for 1-on-1 calls."""
-    attendees = note.get("attendees", [])
-    owner = note.get("owner", {})
-    owner_name = owner.get("name", OWNER_NAME)
-    other_names = [a["name"] for a in attendees if a.get("name") and a["name"] != owner_name]
-    mapping = {"microphone": owner_name}
-    if len(other_names) == 1:
-        mapping["speaker"] = other_names[0]
-    return mapping
+def get_transcript_preview(transcript, max_lines=60):
+    """Get the first N lines of transcript for context."""
+    lines = []
+    for entry in transcript[:max_lines]:
+        speaker_info = entry.get("speaker", {})
+        if isinstance(speaker_info, dict):
+            label = speaker_info.get("label", "")
+            source = speaker_info.get("source", "Unknown")
+            raw = label if label else source
+        else:
+            raw = speaker_info
+        text = entry.get("text", "").strip()
+        if text:
+            lines.append(f"{raw}: {text}")
+    return "\n".join(lines)
 
 
-TODO_PATH = PROJECT_ROOT / "management" / "TODO.md"
-
-
-def resolve_speakers(note):
-    """Auto-map what we can, flag unknowns as TODOs."""
-    mapping = auto_speaker_map(note)
+def resolve_speakers_with_ai(note):
+    """Use Claude to identify who each speaker source maps to, given the transcript and known People."""
+    people = load_people()
     transcript = note.get("transcript", [])
-    if not transcript:
-        return mapping
-
     sources = get_unmapped_sources(transcript)
-    unmapped = [s for s in sources if s not in mapping]
-
-    if not unmapped:
-        return mapping
-
     title = note.get("title", "Untitled")
-    filename = note_filename(note)
-    print(f"  Unknown speakers in '{title}': {', '.join(unmapped)}")
-    print(f"  Added to TODO.md")
+    attendees = [a.get("name", "") for a in note.get("attendees", []) if a.get("name")]
 
-    # Append to TODO list
-    todo_line = f"- [ ] Identify speakers in [[meetings/{filename[:-3]}]]: {', '.join(f'`{s}`' for s in unmapped)}\n"
-    with open(TODO_PATH, "a") as f:
-        f.write(todo_line)
+    if not sources:
+        return {}
 
-    return mapping
+    preview = get_transcript_preview(transcript)
+
+    prompt = f"""I have a meeting transcript and need to identify who each speaker label refers to.
+
+Meeting title: {title}
+Attendees listed by the meeting app: {', '.join(attendees) if attendees else 'unknown'}
+Known people in our system: {', '.join(people)}
+Speaker labels found in transcript: {', '.join(sources)}
+
+Here is the beginning of the transcript:
+---
+{preview}
+---
+
+For each speaker label, tell me which person it maps to. Use the exact full name from the "Known people" list when possible.
+
+Rules:
+- "microphone" is always the meeting owner recording locally — that's {OWNER_NAME}.
+- For other labels, use clues from the conversation (names mentioned, context, topics).
+- If a person is clearly one of the known people, use their full name exactly as listed.
+- If you're uncertain, return "unknown" for that label.
+
+Respond with ONLY a JSON object mapping each speaker label to a person name. Example:
+{{"microphone": "Miles Bloom", "speaker": "Roger Jackson"}}"""
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("  Warning: ANTHROPIC_API_KEY not set, skipping AI speaker resolution")
+        return {"microphone": OWNER_NAME}
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text.strip()
+        # Extract JSON from response
+        if text.startswith("{"):
+            mapping = json.loads(text)
+        else:
+            # Try to find JSON in the response
+            start = text.index("{")
+            end = text.rindex("}") + 1
+            mapping = json.loads(text[start:end])
+
+        # Filter out unknowns
+        resolved = {}
+        unknown_labels = []
+        for label, name in mapping.items():
+            if name.lower() == "unknown":
+                unknown_labels.append(label)
+            else:
+                resolved[label] = name
+
+        if unknown_labels:
+            filename = note_filename(note)
+            print(f"  AI couldn't identify: {', '.join(unknown_labels)}")
+            print(f"  Added to TODO.md")
+            todo_line = f"- [ ] Identify speakers in [[meetings/{filename[:-3]}]]: {', '.join(f'`{s}`' for s in unknown_labels)}\n"
+            with open(TODO_PATH, "a") as f:
+                f.write(todo_line)
+
+        print(f"  Speaker mapping: {resolved}")
+        return resolved
+
+    except Exception as e:
+        print(f"  Warning: AI speaker resolution failed: {e}")
+        return {"microphone": OWNER_NAME}
+
+
+def extract_participants(note):
+    """Pull participant names from attendees and note owner."""
+    participants = set()
+    for att in note.get("attendees", []):
+        if att.get("name"):
+            participants.add(att["name"])
+    owner = note.get("owner", {})
+    if owner.get("name"):
+        participants.add(owner["name"])
+    return sorted(participants)
 
 
 def format_transcript(transcript, speaker_map=None):
@@ -170,8 +242,24 @@ def format_transcript(transcript, speaker_map=None):
         speaker = speaker_map.get(raw, raw)
         text = entry.get("text", "").strip()
         if text:
-            lines.append(f"**{speaker}:** {text}")
+            lines.append(f"[[{speaker}]]: {text}")
     return "\n".join(lines)
+
+
+def compact_headings(text):
+    """Remove blank lines before and after heading lines for compact Obsidian formatting."""
+    lines = text.split("\n")
+    result = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        # Skip blank lines immediately before a heading
+        if stripped == "" and i + 1 < len(lines) and lines[i + 1].strip().startswith("#"):
+            continue
+        # Skip blank lines immediately after a heading
+        if stripped == "" and i > 0 and lines[i - 1].strip().startswith("#"):
+            continue
+        result.append(line)
+    return "\n".join(result)
 
 
 def note_to_obsidian(note, include_transcript=False, speaker_map=None):
@@ -215,7 +303,8 @@ def note_to_obsidian(note, include_transcript=False, speaker_map=None):
     # Body
     parts = ["\n".join(fm), meta, f"# {title}"]
     if summary_md:
-        parts.append(f"### Summary\n{summary_md}")
+        summary_md = compact_headings(summary_md)
+        parts.append(f"## Summary\n{summary_md}")
     if include_transcript and note.get("transcript"):
         parts.append(f"### Transcript\n{format_transcript(note['transcript'], speaker_map=speaker_map)}")
 
@@ -240,18 +329,27 @@ def note_filename(note):
     return f"{slug}.md"
 
 
+SYNCED_IDS_FILE = NOTES_DIR / ".synced_ids"
+
+
+def load_synced_ids():
+    """Load the set of granola IDs that have already been imported."""
+    if not SYNCED_IDS_FILE.exists():
+        return set()
+    return {line.strip() for line in SYNCED_IDS_FILE.read_text().splitlines() if line.strip()}
+
+
+def save_synced_id(note_id):
+    """Append a granola ID to the synced tracker."""
+    with open(SYNCED_IDS_FILE, "a") as f:
+        f.write(f"{note_id}\n")
+
+
 def sync(created_after=None, include_transcript=False, speaker_map=None):
     api_key = get_api_key()
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Load existing granola IDs to avoid re-fetching details unnecessarily
-    existing_ids = set()
-    for f in NOTES_DIR.glob("*.md"):
-        content = f.read_text()
-        for line in content.splitlines():
-            if line.startswith("granola_id:"):
-                existing_ids.add(line.split(":", 1)[1].strip())
-                break
+    synced_ids = load_synced_ids()
 
     print("Fetching notes from Granola...")
     notes = fetch_all_notes(api_key, created_after=created_after)
@@ -259,31 +357,27 @@ def sync(created_after=None, include_transcript=False, speaker_map=None):
 
     created = 0
     skipped = 0
-    updated = 0
 
     for note_summary in notes:
         note_id = note_summary.get("id")
-        filename = note_filename(note_summary)
-        filepath = NOTES_DIR / filename
 
-        if note_id in existing_ids and filepath.exists():
+        if note_id in synced_ids:
             skipped += 1
             continue
 
         # Fetch full note detail
+        filename = note_filename(note_summary)
+        filepath = NOTES_DIR / filename
         note = fetch_note_detail(api_key, note_id, include_transcript=include_transcript)
-        note_speakers = speaker_map if speaker_map else resolve_speakers(note)
+        note_speakers = speaker_map if speaker_map else resolve_speakers_with_ai(note)
         md_content = note_to_obsidian(note, include_transcript=include_transcript, speaker_map=note_speakers)
 
         filepath.write_text(md_content)
-        if note_id in existing_ids:
-            updated += 1
-            print(f"  Updated: {filename}")
-        else:
-            created += 1
-            print(f"  Created: {filename}")
+        save_synced_id(note_id)
+        created += 1
+        print(f"  Created: {filename}")
 
-    print(f"\nDone: {created} created, {updated} updated, {skipped} unchanged")
+    print(f"\nDone: {created} created, {skipped} already imported")
 
 
 def parse_speakers(value):

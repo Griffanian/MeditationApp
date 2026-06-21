@@ -153,7 +153,7 @@ function useDemoData() {
           fetchStageTimestamps(DEMO_MED, stage.id, id).then(ts => ({ id, ts })).catch(() => ({ id, ts: [] }))
         ));
         for (const { id, ts } of tsResults) wordTimestampsRef.current[id] = ts;
-      } catch {} finally { if (!cancelled) setLoading(false); }
+      } catch { } finally { if (!cancelled) setLoading(false); }
     }
     init();
     return () => { cancelled = true; };
@@ -322,7 +322,7 @@ function BoxBreathingDemo({ onNext, demoData }) {
           >
             {status === 'assembling' ? <span className="ep-play-icon ep-spin">&#x25CC;</span>
               : status === 'playing' ? <span className="ep-pause-icon" />
-              : <span>&#x25B6;</span>}
+                : <span>&#x25B6;</span>}
           </button>
         </div>
 
@@ -365,7 +365,7 @@ function BoxBreathingDemo({ onNext, demoData }) {
 
       <div className="ob-demo-vars-card">
         <div className="ob-demo-vars-label">Variables</div>
-        {[...varEntries].sort(([,a],[,b]) => {
+        {[...varEntries].sort(([, a], [, b]) => {
           const uA = typeof a === 'object' ? a.unit : '';
           const uB = typeof b === 'object' ? b.unit : '';
           return uA === 'seconds' ? -1 : uB === 'seconds' ? 1 : 0;
@@ -380,7 +380,7 @@ function BoxBreathingDemo({ onNext, demoData }) {
               <div className="ob-demo-input-row">
                 <input type="range" min="1" max="7" step="1" value={val} list={`ticks-${varName}`} onChange={e => updateVar(varName, Number(e.target.value))} />
                 <datalist id={`ticks-${varName}`}>
-                  {[1,2,3,4,5,6,7].map(n => <option key={n} value={n} />)}
+                  {[1, 2, 3, 4, 5, 6, 7].map(n => <option key={n} value={n} />)}
                 </datalist>
                 <span className="ob-demo-value">{val}</span>
               </div>
@@ -396,7 +396,7 @@ function BoxBreathingDemo({ onNext, demoData }) {
   );
 }
 
-function BuilderOnboarding() {
+export function BuilderOnboarding() {
   const [step, setStep] = useState(0);
   const total = 6;
   const demoData = useDemoData(); // preload immediately
@@ -457,8 +457,8 @@ function BuilderOnboarding() {
         <div className="ob-slide">
           <div className="ob-slide-top">
             <div className="ob-eyebrow">Our approach to AI</div>
-            <h2 className="ob-heading">As Much or As Little As You Want</h2>
-            <p className="ob-desc">Generate speech from your script, record your own voice, extract exercises from a PDF or video — or write everything from scratch. You're in control.</p>
+            <h2 className="ob-heading">AI is a dial, not a switch.</h2>
+            <p className="ob-desc">Use it for everything, nothing, or anything in between.</p>
           </div>
           <div className="ob-slide-bottom">
             <button className="ob-next" onClick={() => setStep(3)}>Next</button>
@@ -490,7 +490,7 @@ function BuilderOnboarding() {
         <div className="ob-slide">
           <div className="ob-slide-top">
             <h2 className="ob-heading">Your turn</h2>
-            <p className="ob-desc">That same approach works for any exercise — breathwork, body scans, visualisations. Create your first one, or explore what's already been built.</p>
+            <p className="ob-desc">That same approach works for any exercise; from basic breathwork to advanced contemplative work. Create your first one, or explore what's already been built.</p>
           </div>
           <div className="ob-slide-bottom">
             <Link to="/exercises" className="ob-next">Create your first exercise</Link>

@@ -1,8 +1,48 @@
 {
   "recentFiles": [
     {
+      "basename": "TODO",
+      "path": "TODO.md"
+    },
+    {
+      "basename": "2026-06-18_meditation-app-design-and-spiritual-practice-philosophy-with-hitesh",
+      "path": "meetings/2026-06-18_meditation-app-design-and-spiritual-practice-philosophy-with-hitesh.md"
+    },
+    {
+      "basename": "Hitesh Bhatt",
+      "path": "People/Hitesh Bhatt.md"
+    },
+    {
+      "basename": "Users & Permissions",
+      "path": "Users & Permissions.md"
+    },
+    {
+      "basename": "Onboarding Best Practices",
+      "path": "Onboarding Best Practices.md"
+    },
+    {
+      "basename": "Marketing Questions",
+      "path": "Marketing Questions.md"
+    },
+    {
+      "basename": "Users profiles",
+      "path": "Users profiles.md"
+    },
+    {
+      "basename": "Roger Jackson",
+      "path": "People/Roger Jackson.md"
+    },
+    {
+      "basename": "Miles Bloom",
+      "path": "People/Miles Bloom.md"
+    },
+    {
       "basename": "Potential white labelling",
       "path": "Potential white labelling.md"
+    },
+    {
+      "basename": "Public Exercises and Programmes",
+      "path": "Public Exercises and Programmes.md"
     },
     {
       "basename": "contract-white-label-licence",
@@ -13,10 +53,6 @@
       "path": "white-label-technical-spec.md"
     },
     {
-      "basename": "Users & Permissions",
-      "path": "Users & Permissions.md"
-    },
-    {
       "basename": "Meditation Pro",
       "path": "Organisations/Meditation Pro.md"
     },
@@ -25,16 +61,8 @@
       "path": "Organisations/Resilient Minds.md"
     },
     {
-      "basename": "Roger Jackson",
-      "path": "People/Roger Jackson.md"
-    },
-    {
       "basename": "Simon Bloom",
       "path": "People/Simon Bloom.md"
-    },
-    {
-      "basename": "Miles Bloom",
-      "path": "People/Miles Bloom.md"
     },
     {
       "basename": "Person",
@@ -109,10 +137,6 @@
       "path": "Catecholamines.md"
     },
     {
-      "basename": "Untitled",
-      "path": "Untitled.md"
-    },
-    {
       "basename": "L-Tyrosine",
       "path": "L-Tyrosine.md"
     },
@@ -175,30 +199,6 @@
     {
       "basename": "Free-Will",
       "path": "General Notes/Free-Will.md"
-    },
-    {
-      "basename": "Thoughts on free Will at the start of module",
-      "path": "General Notes/Thoughts on free Will at the start of module.md"
-    },
-    {
-      "basename": "Abstract-Algebra",
-      "path": "General Notes/Abstract-Algebra.md"
-    },
-    {
-      "basename": "Metric-Spaces",
-      "path": "General Notes/Metric-Spaces.md"
-    },
-    {
-      "basename": "The Preimage of a Function",
-      "path": "General Notes/The Preimage of a Function.md"
-    },
-    {
-      "basename": "Tautologically Validity",
-      "path": "General Notes/Tautologically Validity.md"
-    },
-    {
-      "basename": "Ring-Theory",
-      "path": "General Notes/Ring-Theory.md"
     }
   ],
   "omittedPaths": [],

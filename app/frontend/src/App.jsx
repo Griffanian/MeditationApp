@@ -13,6 +13,8 @@ import Account from './pages/Account';
 import Clients from './pages/Clients';
 import History from './pages/History';
 import Home from './pages/Home';
+import Preview from './pages/Preview';
+import Join from './pages/Join';
 import AssistantSidebar from './components/AssistantSidebar';
 import { AuthProvider, buildAuth } from './AuthContext';
 import { checkAuth, logoutUser } from './api';
@@ -119,6 +121,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/signup/:token" element={<Signup onSignup={(data) => setAuth(buildAuth(data))} />} />
+          <Route path="/join/:token" element={<Join onSignup={(data) => setAuth(buildAuth(data))} />} />
+          <Route path="/preview" element={<Preview />} />
           <Route path="*" element={<Login onLogin={(data) => setAuth(buildAuth(data))} />} />
         </Routes>
       </BrowserRouter>
@@ -152,7 +156,9 @@ export default function App() {
                 <Route path="/clients" element={authValue.canCreate ? <Clients /> : <Navigate to="/" replace />} />
                 <Route path="/users" element={authValue.isAdmin ? <UserManagement /> : <Navigate to="/" replace />} />
                 <Route path="/account" element={<Account />} />
+                <Route path="/preview" element={<Preview />} />
                 <Route path="/signup/:token" element={<Navigate to="/" replace />} />
+                <Route path="/join/:token" element={<Navigate to="/" replace />} />
               </Routes>
             </div>
             <AssistantSidebar />

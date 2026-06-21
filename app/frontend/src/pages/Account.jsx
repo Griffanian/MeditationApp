@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useAuth } from '../AuthContext';
 import { apiFetch, BASE, logoutUser, uploadProfilePhoto } from '../api';
 import { useLocalState } from '../utils';
+import ChangePasswordModal from '../components/ChangePasswordModal';
 
 const EditIcon = () => (
   <svg width="14" height="14" viewBox="0 0 512 512" fill="currentColor"><path d="M410.3 231l11.3-11.3-33.9-33.9-62.1-62.1L291.7 89.8l-11.3 11.3-22.6 22.6L58.6 322.9c-10.4 10.4-18 23.3-22.2 37.4L1 480.7c-2.5 8.4-.2 17.5 6.1 23.7s15.3 8.5 23.7 6.1l120.3-35.4c14.1-4.2 27-11.8 37.4-22.2L387.7 253.7 410.3 231zM160 399.4l-9.1 22.7c-4 3.1-8.5 5.4-13.3 6.9L59.4 452l23-78.1c1.4-4.9 3.8-9.4 6.9-13.3l22.7-9.1 0 32c0 8.8 7.2 16 16 16l32 0zM362.7 18.7L348.3 33.2 325.7 55.8 314.3 67.1l33.9 33.9 62.1 62.1 33.9 33.9 11.3-11.3 22.6-22.6 14.5-14.5c25-25 25-65.5 0-90.5L453.3 18.7c-25-25-65.5-25-90.5 0z"/></svg>
@@ -11,15 +12,13 @@ export default function Account() {
   const auth = useAuth();
   const [username, setUsername] = useState(auth.username);
   const [displayName, setDisplayName] = useState(auth.displayName);
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [photoUrl, setPhotoUrl] = useState(auth.profilePhoto);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const photoInputRef = useRef(null);
   const [editingProfile, setEditingProfile] = useState(false);
-  const [editingPassword, setEditingPassword] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   async function handleSaveProfile(e) {
     e.preventDefault();
@@ -32,15 +31,11 @@ export default function Account() {
         body: JSON.stringify({
           username: username.trim(),
           display_name: displayName.trim(),
-          current_password: currentPassword || undefined,
-          new_password: newPassword || undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save');
       setMessage('Saved');
-      setCurrentPassword('');
-      setNewPassword('');
       auth.updateAuth({ username: data.username || username.trim(), displayName: displayName.trim() });
     } catch (err) {
       setMessage(err.message);
@@ -140,32 +135,18 @@ export default function Account() {
       <section className="account-section">
         <h2 className="account-section-title">Security</h2>
         <p className="account-section-desc">Update your password</p>
-        {!editingPassword ? (
-          <div className="account-row">
-            <div className="account-field">
-              <span className="account-field-label">Password</span>
-              <span className="account-field-value">••••••••</span>
-            </div>
-            <button className="account-edit-btn" onClick={() => setEditingPassword(true)} title="Change password"><EditIcon /></button>
+        <div className="account-row">
+          <div className="account-field">
+            <span className="account-field-label">Password</span>
+            <span className="account-field-value">••••••••</span>
           </div>
-        ) : (
-          <form className="account-form" onSubmit={async (e) => { await handleSaveProfile(e); if (!saving) setEditingPassword(false); }}>
-            <div className="account-row">
-              <label className="account-label">
-                <span>Current Password</span>
-                <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} className="account-input" placeholder="Required to change password" autoFocus />
-              </label>
-              <label className="account-label">
-                <span>New Password</span>
-                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="account-input" placeholder="Min 8 characters" />
-              </label>
-            </div>
-            <div className="account-actions">
-              <button type="submit" disabled={saving} className="account-save-btn">{saving ? 'Saving...' : 'Update Password'}</button>
-              <button type="button" className="account-save-btn" onClick={() => { setEditingPassword(false); setCurrentPassword(''); setNewPassword(''); setMessage(''); }}>Cancel</button>
-              {message && <span className={`account-message ${message === 'Saved' ? 'success' : ''}`}>{message}</span>}
-            </div>
-          </form>
+          <button className="account-save-btn" onClick={() => setShowPasswordModal(true)}>Change password</button>
+        </div>
+        {showPasswordModal && (
+          <ChangePasswordModal
+            onClose={() => setShowPasswordModal(false)}
+            onSuccess={() => {}}
+          />
         )}
       </section>
 

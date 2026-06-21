@@ -68,12 +68,10 @@ Accessible via "Account Settings" in the top right.
 - Toggle "See public" per viewer
 - Add viewers by username
 - Remove viewers
-
 ### Invite Links (Builders Only)
 - Create viewer invites
 - Copy signup links
 - Revoke unused invites
-
 ## Data Model
 
 | Model | Purpose |

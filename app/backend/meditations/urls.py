@@ -12,6 +12,10 @@ urlpatterns = [
     path("api/auth/status", auth.AuthStatusView.as_view()),
     path("api/auth/signup", auth.SignupView.as_view()),
     path("api/auth/profile", auth.ProfileView.as_view()),
+    path("api/auth/verify-password", auth.VerifyPasswordView.as_view()),
+    path("api/auth/join/validate/<str:token>", auth.JoinValidateView.as_view()),
+    path("api/auth/join", auth.JoinSignupView.as_view()),
+    path("api/auth/signup-link", auth.MySignupLinkView.as_view()),
 
     # Invites
     path("api/invites", invites.InviteListView.as_view()),

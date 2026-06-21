@@ -1,0 +1,11 @@
+graph LR
+    A[Builder arrives] --> B[Receive invite link]
+    B --> C[Create account]
+    C --> D[Onboarding walkthrough]
+    D --> E{Create or browse?}
+    E -->|Create| F[Build first exercise]
+    E -->|Browse| G[Explore public exercises]
+    F --> H[Add to programme]
+    G --> H
+    H --> I[Invite clients]
+    I --> J[Share content]

@@ -452,6 +452,30 @@ export async function streamChat(threadId, message, context, callbacks) {
 
 // --- Signup ---
 
+export async function validateJoinLink(token) {
+  const res = await fetch(`${BASE}/api/auth/join/validate/${token}`);
+  return res.json();
+}
+
+export async function joinSignup(token, displayName, username, password) {
+  const res = await fetch(`${BASE}/api/auth/join`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, display_name: displayName, username, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Signup failed');
+  setToken(data.token);
+  return data;
+}
+
+export async function fetchMySignupLink() {
+  const res = await apiFetch(`${BASE}/api/auth/signup-link`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed');
+  return data;
+}
+
 export async function validateInvite(token) {
   const res = await fetch(`${BASE}/api/invites/validate/${token}`);
   return res.json();
@@ -466,6 +490,28 @@ export async function signupUser(token, password) {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Signup failed');
   setToken(data.token);
+  return data;
+}
+
+export async function verifyPassword(password) {
+  const res = await apiFetch(`${BASE}/api/auth/verify-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Verification failed');
+  return data;
+}
+
+export async function changePassword(currentPassword, newPassword) {
+  const res = await apiFetch(`${BASE}/api/auth/profile`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to change password');
   return data;
 }
 

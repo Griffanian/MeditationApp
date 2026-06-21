@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   fetchUsers, updateUserRole, deleteUser,
   fetchInvites, createInvite, deleteInvite,
-  apiFetch, BASE,
+  fetchMySignupLink, apiFetch, BASE,
 } from '../api';
 
 function InviteSection() {
@@ -10,8 +10,13 @@ function InviteSection() {
   const [role, setRole] = useState('builder');
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [signupLink, setSignupLink] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
-  useEffect(() => { fetchInvites().then(setInvites); }, []);
+  useEffect(() => {
+    fetchInvites().then(setInvites);
+    fetchMySignupLink().then(data => setSignupLink(`${window.location.origin}/join/${data.token}`)).catch(() => {});
+  }, []);
 
   async function handleCreate() {
     if (!name.trim()) { alert('Enter a name for this invite'); return; }
@@ -38,8 +43,21 @@ function InviteSection() {
   }
 
   return (
+    <>
+    {signupLink && (
+      <section className="user-mgmt-section">
+        <h2>Builder Signup Link</h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 8 }}>Share this permanent link to let new builders create their own accounts.</p>
+        <div className="signup-link-row">
+          <input type="text" readOnly value={signupLink} className="user-mgmt-input signup-link-input" onClick={e => e.target.select()} />
+          <button onClick={() => { navigator.clipboard.writeText(signupLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); }}>
+            {linkCopied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+      </section>
+    )}
     <section className="user-mgmt-section">
-      <h2>Invite Links</h2>
+      <h2>One-Time Invite Links</h2>
       <div className="user-mgmt-create-row">
         <input
           type="text"
@@ -76,6 +94,7 @@ function InviteSection() {
         </tbody>
       </table>
     </section>
+    </>
   );
 }
 

@@ -1,4 +1,5 @@
 import logging
+import re
 
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
@@ -12,6 +13,19 @@ logger = logging.getLogger(__name__)
 
 import time
 from collections import defaultdict
+
+
+def _validate_password(password):
+    """Return an error string if the password is too weak, else None."""
+    if len(password) < 8:
+        return "Password must be at least 8 characters"
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least one uppercase letter"
+    if not re.search(r"[a-z]", password):
+        return "Password must contain at least one lowercase letter"
+    if not re.search(r"[0-9]", password):
+        return "Password must contain at least one number"
+    return None
 
 from ..authentication import make_token
 from ..models import InviteLink, UserProfile, ViewerAccess
@@ -60,6 +74,16 @@ def _profile_photo_url(profile):
     return ""
 
 
+class VerifyPasswordView(APIView):
+    def post(self, request):
+        password = request.data.get("password", "")
+        if not password:
+            return Response({"error": "Password is required"}, status=400)
+        if not request.user.check_password(password):
+            return Response({"error": "Incorrect password"}, status=400)
+        return Response({"ok": True})
+
+
 class ProfileView(APIView):
     def get(self, request):
         user = request.user
@@ -105,8 +129,9 @@ class ProfileView(APIView):
                 return Response({"error": "Current password required"}, status=400)
             if not user.check_password(current_password):
                 return Response({"error": "Current password is incorrect"}, status=400)
-            if len(new_password) < 8:
-                return Response({"error": "New password must be at least 8 characters"}, status=400)
+            pw_error = _validate_password(new_password)
+            if pw_error:
+                return Response({"error": pw_error}, status=400)
             user.set_password(new_password)
             user.save()
 
@@ -239,8 +264,9 @@ class SignupView(APIView):
 
         if not password:
             return Response({"error": "Password is required"}, status=400)
-        if len(password) < 8:
-            return Response({"error": "Password must be at least 8 characters"}, status=400)
+        pw_error = _validate_password(password)
+        if pw_error:
+            return Response({"error": pw_error}, status=400)
 
         # Validate invite
         try:
@@ -265,6 +291,7 @@ class SignupView(APIView):
                 profile = UserProfile.objects.create(
                     user=user, role=invite.role,
                     display_name=invite.name,
+                    invited_by=invite.created_by,
                 )
 
                 # If viewer invite, create ViewerAccess linking to the builder who invited them
@@ -297,4 +324,138 @@ class SignupView(APIView):
             "show_public": show_public,
             "has_programmes": False,
             "profile_photo": _profile_photo_url(profile),
+        })
+
+
+class JoinValidateView(APIView):
+    """Public endpoint: validate a permanent signup link."""
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        try:
+            profile = UserProfile.objects.select_related("user").get(signup_token=token)
+        except UserProfile.DoesNotExist:
+            return Response({"valid": False})
+
+        if not profile.user.is_active:
+            return Response({"valid": False})
+
+        # Admin's link → creates builders; builder/editor's link → creates viewers
+        if profile.role == "admin":
+            signup_role = "builder"
+        elif profile.role in ("builder", "editor"):
+            signup_role = "viewer"
+        else:
+            return Response({"valid": False})
+
+        return Response({
+            "valid": True,
+            "role": signup_role,
+            "owner_name": profile.name,
+        })
+
+
+class JoinSignupView(APIView):
+    """Public endpoint: create an account via a permanent signup link."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        if not _check_rate_limit(request):
+            return Response({"error": "Too many attempts. Try again in a few minutes."}, status=429)
+
+        token_str = request.data.get("token", "")
+        display_name = request.data.get("display_name", "").strip()
+        username = request.data.get("username", "").strip()
+        password = request.data.get("password", "")
+
+        if not display_name:
+            return Response({"error": "Display name is required"}, status=400)
+        if not username:
+            return Response({"error": "Username is required"}, status=400)
+        if not password:
+            return Response({"error": "Password is required"}, status=400)
+
+        pw_error = _validate_password(password)
+        if pw_error:
+            return Response({"error": pw_error}, status=400)
+
+        # Validate username format
+        import re as _re
+        if not _re.match(r"^[a-z0-9][a-z0-9._-]*$", username):
+            return Response({"error": "Username must be lowercase letters, numbers, dots, hyphens, or underscores"}, status=400)
+        if len(username) < 3:
+            return Response({"error": "Username must be at least 3 characters"}, status=400)
+
+        # Look up the signup token owner
+        try:
+            owner_profile = UserProfile.objects.select_related("user").get(signup_token=token_str)
+        except UserProfile.DoesNotExist:
+            return Response({"error": "Invalid signup link"}, status=400)
+
+        if not owner_profile.user.is_active:
+            return Response({"error": "Invalid signup link"}, status=400)
+
+        owner = owner_profile.user
+
+        # Determine role
+        if owner_profile.role == "admin":
+            new_role = "builder"
+        elif owner_profile.role in ("builder", "editor"):
+            new_role = "viewer"
+        else:
+            return Response({"error": "Invalid signup link"}, status=400)
+
+        try:
+            with transaction.atomic():
+                if User.objects.filter(username=username).exists():
+                    return Response({"error": "Username already taken"}, status=400)
+
+                user = User.objects.create_user(username=username, password=password)
+
+                profile = UserProfile.objects.create(
+                    user=user, role=new_role,
+                    display_name=display_name,
+                    invited_by=owner,
+                )
+
+                if new_role == "viewer":
+                    ViewerAccess.objects.create(viewer=user, builder=owner)
+
+        except IntegrityError:
+            return Response({"error": "Username already taken"}, status=400)
+        except Exception:
+            logger.exception("Join signup failed for token %s", token_str[:8])
+            return Response({"error": "Signup failed, please try again"}, status=500)
+
+        auth_token = make_token(user)
+        show_public = True
+        if new_role == "viewer":
+            show_public = ViewerAccess.objects.filter(
+                viewer=user, show_public=True,
+            ).exists()
+        return Response({
+            "ok": True,
+            "token": auth_token,
+            "role": new_role,
+            "username": user.username,
+            "display_name": display_name,
+            "is_admin": False,
+            "show_public": show_public,
+            "has_programmes": False,
+            "profile_photo": "",
+        })
+
+
+class MySignupLinkView(APIView):
+    """Authenticated endpoint: get or generate your permanent signup link."""
+
+    def get(self, request):
+        profile = request.user.profile
+        if profile.role not in ("admin", "builder", "editor"):
+            return Response({"error": "Not available for your role"}, status=403)
+        token = profile.get_signup_token()
+        target_role = "builder" if profile.role == "admin" else "viewer"
+        return Response({
+            "token": token,
+            "target_role": target_role,
         })

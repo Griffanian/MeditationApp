@@ -1,3 +1,4 @@
-- [ ]  Identify speakers in [[meetings/2026-06-18_meditation-app-design-and-spiritual-practice-philosophy-with-hitesh]]: `speaker`
-- [ ]  finish scrubbing healthygamer stuff.
-- [ ]
+- [ ] Design and build onboarding flow (see [[ideas/onboarding-design|Onboarding Design]])
+- [ ] Build generic invite link for coaches (open sign-up)
+- [ ] Build generic invite link for students (coach shares one link to a group)
+- [ ] Coach can fill in student profile at individual invite time

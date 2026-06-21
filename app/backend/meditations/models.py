@@ -25,7 +25,19 @@ class UserProfile(models.Model):
     display_name = models.CharField(max_length=200, blank=True)
     show_public_to_viewers = models.BooleanField(default=True)
     profile_photo = models.CharField(max_length=500, blank=True, default="")
+    signup_token = models.CharField(max_length=64, unique=True, blank=True, null=True)
+    invited_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="invited_users",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def get_signup_token(self):
+        """Return existing token or generate one on first access."""
+        if not self.signup_token:
+            self.signup_token = secrets.token_urlsafe(32)
+            self.save(update_fields=["signup_token"])
+        return self.signup_token
 
     @property
     def name(self):
