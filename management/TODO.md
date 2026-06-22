@@ -1,2 +1,3 @@
 - [ ] Design and build onboarding flow (see [[ideas/onboarding-design|Onboarding Design]])
 - [ ] Coach can fill in student profile at individual invite time
+- [ ] Identify speakers in [[meetings/2026-06-22_monday-morning-team-standup-marketing-proposals-sas-trial-security-and-product-r]]: `speaker`

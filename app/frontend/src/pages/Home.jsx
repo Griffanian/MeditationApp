@@ -298,6 +298,7 @@ function BoxBreathingDemo({ onNext, demoData }) {
     if (status === 'playing' || status === 'paused') handleStop();
     setHasTweaked(true);
     setNudge(false);
+    audioUrlRef.current = null;
     setVariables(prev => ({ ...prev, [varName]: typeof prev[varName] === 'object' ? { ...prev[varName], value } : value }));
   }
 
