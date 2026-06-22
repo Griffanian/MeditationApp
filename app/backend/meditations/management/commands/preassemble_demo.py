@@ -1,22 +1,32 @@
-"""Pre-generate speech component variations for the box breathing demo.
+"""Pre-assemble all box breathing demo combinations.
 
-Generates audio components for each variable value (1-7). Thanks to
-the cache-preservation in generate_components, all variations remain
-findable by text_hash for instant reuse during assembly.
+Generates TTS components and fully assembled MP3s for every
+phaseDuration × rounds combination (1-7 each = 49 total).
+All are stored in Supabase so users always hit the cache instantly.
 """
+
+import hashlib
+import io
+import json
 
 from django.core.management.base import BaseCommand
 
-from meditations.models import Meditation, Stage
-from meditations.services.synthesize import generate_components
+from meditations.models import AssembledOutput, Meditation, Stage
+from meditations.services import storage
+from meditations.services.synthesize import assemble, generate_components
 
 
 MED_NAME = "box-breathing"
 STAGE_ID = "box-breathing"
 
 
+def _content_hash(script, variables):
+    blob = json.dumps({"s": script, "v": variables or {}}, sort_keys=True)
+    return hashlib.md5(blob.encode()).hexdigest()[:10]
+
+
 class Command(BaseCommand):
-    help = "Pre-generate speech components for all box breathing variable values (1-7)"
+    help = "Pre-assemble all box breathing variable combinations (49 total)"
 
     def handle(self, *args, **options):
         try:
@@ -30,6 +40,8 @@ class Command(BaseCommand):
 
         script = stage.script
         base_vars = dict(stage.variables or {})
+        total = 49
+        done = 0
 
         for dur in range(1, 8):
             for rounds in range(1, 8):
@@ -43,7 +55,35 @@ class Command(BaseCommand):
                 else:
                     extra_vars["rounds"] = rounds
 
-                self.stdout.write(f"  dur={dur}s rounds={rounds}:")
-                generate_components(script, MED_NAME, STAGE_ID, extra_variables=extra_vars)
+                h = _content_hash(script, extra_vars)
 
-        self.stdout.write(self.style.SUCCESS("\nDone. All component variations cached."))
+                # Skip if already assembled
+                if AssembledOutput.objects.filter(meditation=meditation, stage=stage, script_hash=h).exists():
+                    done += 1
+                    self.stdout.write(f"  [{done}/{total}] cached dur={dur}s rounds={rounds}")
+                    continue
+
+                self.stdout.write(f"  [{done + 1}/{total}] assembling dur={dur}s rounds={rounds}...")
+
+                generate_components(script, MED_NAME, STAGE_ID, extra_variables=extra_vars)
+                audio = assemble(script, MED_NAME, STAGE_ID, variables=extra_vars)
+
+                buf = io.BytesIO()
+                audio.export(buf, format="mp3", bitrate="192k")
+                buf.seek(0)
+
+                filename = f"output_{h}.mp3"
+                file_path = storage.output_path(MED_NAME, filename, STAGE_ID)
+                storage.upload_file(file_path, buf.read(), content_type="audio/mpeg")
+
+                AssembledOutput.objects.get_or_create(
+                    meditation=meditation,
+                    stage=stage,
+                    script_hash=h,
+                    defaults={"audio_file": file_path, "duration": len(audio) / 1000},
+                )
+
+                done += 1
+                self.stdout.write(f"    done ({len(audio) / 1000:.0f}s audio)")
+
+        self.stdout.write(self.style.SUCCESS(f"\nDone. All {total} combinations assembled."))
