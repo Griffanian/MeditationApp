@@ -116,7 +116,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     setLoading(true);
     try {
       // Load all known recordings from the DB table
-      const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`);
+      const res = await apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`);
       const data = await res.json();
       const parsed = parseGetRows(data);
 
@@ -127,7 +127,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
           const vObj = variables[v];
           fallbackVarSet[v] = String(typeof vObj === 'object' ? vObj.value : vObj);
         }
-        const fallback = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`, {
+        const fallback = await apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ values: [fallbackVarSet] }),
@@ -151,7 +151,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
 
   async function refreshRows() {
     try {
-      const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`);
+      const res = await apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`);
       const data = await res.json();
       const parsed = parseGetRows(data);
       setRows(parsed);
@@ -216,7 +216,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     // Load saved trim for this variable recording row
     const rowKey = rows[selectedRow]?.variableKey;
     if (rowKey != null) {
-      apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/trim/${rowKey}`)
+      apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/trim/${rowKey}`)
         .then(r => r.json())
         .then(data => {
           if (data && data.start != null) {
@@ -275,7 +275,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     const rowKey = rows[selectedRow]?.variableKey;
     if (rowKey == null) return;
     const trimData = { start: trimStart, end: trimEnd };
-    await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/trim/${rowKey}`, {
+    await apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/trim/${rowKey}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(trimData),
@@ -288,7 +288,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     if (selectedRow === null) return;
     const rowKey = rows[selectedRow]?.variableKey;
     if (rowKey == null) return;
-    await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/trim/${rowKey}`, { method: 'DELETE' });
+    await apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/trim/${rowKey}`, { method: 'DELETE' });
     setSavedTrim(null);
     setTrimStart(null);
     setTrimEnd(null);
@@ -321,7 +321,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     if (selectedRow === null) return;
     const row = rows[selectedRow];
     if (!row.variableKey || !window.confirm('Delete this recording?')) return;
-    await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/delete/${row.variableKey}`, { method: 'DELETE' });
+    await apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/delete/${row.variableKey}`, { method: 'DELETE' });
     setSelectedRow(null);
     await refreshRows();
     if (onDone) onDone();
@@ -370,7 +370,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     setNewValues({});
 
     // Check status for the newly-added combination
-    apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`, {
+    apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ values: [normalised] }),
@@ -391,7 +391,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     // If it has audio, confirm and delete the component record from the backend
     if (row.status === 'has_audio') {
       if (!window.confirm(`Delete the recording for ${row.variableKey}?`)) return;
-      await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/delete/${row.variableKey}`, { method: 'DELETE' });
+      await apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/delete/${row.variableKey}`, { method: 'DELETE' });
       if (onDone) onDone();
     }
     if (selectedRow === index) {
@@ -416,7 +416,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     setGenerating(index);
     try {
       if (onFlushSave) await onFlushSave();
-      const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/generate-variable-audio/${seg.id}`, {
+      const res = await apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/generate-variable-audio/${seg.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ variables: row.variableValues }),
@@ -502,7 +502,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     }
 
     try {
-      const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/upload-variable-audio/${seg.id}`, {
+      const res = await apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/upload-variable-audio/${seg.id}`, {
         method: 'POST',
         body: formData,
       });

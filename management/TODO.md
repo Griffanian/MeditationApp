@@ -4,3 +4,4 @@
 - [ ]  Identify speakers in [[meetings/2026-06-22_guided-meditation-app-progressive-exercises-ai-voices-and-jewish-music-with-host]]: `speaker`
 - [ ]  Identify speakers in [[meetings/2026-06-22_version-control-setup-staging-deployment-and-app-design-scaling]]: `speaker`
 - [ ]  Figure out how to limit ranges for recorded audios.
+- [ ] Identify speakers in [[meetings/2026-06-23_special-forces-app-onboarding-user-wins-and-design-flow]]: `speaker`
