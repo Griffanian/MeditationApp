@@ -182,21 +182,7 @@ function _varKeyForSeg(seg, variables) {
 }
 
 function debugLog(msg) {
-  console.warn('[playSeg]', msg);
-  // Show on screen for mobile debugging
-  let el = document.getElementById('playback-debug');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'playback-debug';
-    el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:30vh;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font:11px monospace;padding:6px;z-index:99999;pointer-events:none;';
-    document.body.appendChild(el);
-  }
-  const line = document.createElement('div');
-  line.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
-  el.appendChild(line);
-  el.scrollTop = el.scrollHeight;
-  // Keep last 30 lines
-  while (el.children.length > 30) el.removeChild(el.firstChild);
+  if (import.meta.env.DEV) console.warn('[playSeg]', msg);
 }
 
 export function playSeg(seg, onEnd, variables = {}, { script, components } = {}) {
