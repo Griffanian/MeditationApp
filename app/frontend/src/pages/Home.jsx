@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
-import { fetchHistory, fetchPractices, fetchMyViewers, fetchMeditations, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, BASE } from '../api';
+import { fetchHistory, fetchPractices, fetchMyViewers, fetchMeditations, createMeditation, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, BASE } from '../api';
 import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration as formatDur, unlockAudio } from '../playback';
 import { formatDuration, formatDate } from '../components/HistoryViews';
 
@@ -407,9 +407,21 @@ function BoxBreathingDemo({ onNext, demoData }) {
 }
 
 export function BuilderOnboarding() {
+  const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const total = 6;
   const demoData = useDemoData(); // preload immediately
+
+  async function handleCreateExercise() {
+    const displayName = prompt('Exercise name:');
+    if (!displayName || !displayName.trim()) return;
+    try {
+      const data = await createMeditation(displayName.trim(), 'uncategorised', '');
+      navigate(`/edit/${data.name}`);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
 
   useEffect(() => {
     document.body.classList.add('onboarding-active');
@@ -518,7 +530,7 @@ export function BuilderOnboarding() {
             <p className="ob-desc">That same approach works for any exercise; from basic breathwork to advanced contemplative work. Create your first one, or explore what's already been built.</p>
           </div>
           <div className="ob-slide-bottom">
-            <Link to="/exercises" className="ob-next">Create your first exercise</Link>
+            <button className="ob-next" onClick={handleCreateExercise}>Create your first exercise</button>
             <Link to="/exercises?filter=public" className="ob-link">Browse public exercises</Link>
           </div>
         </div>

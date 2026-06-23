@@ -18,6 +18,7 @@ import Join from './pages/Join';
 import AssistantSidebar from './components/AssistantSidebar';
 import { AuthProvider, buildAuth } from './AuthContext';
 import { checkAuth, logoutUser } from './api';
+import { initPostHog, identifyUser, resetUser } from './posthog';
 import { useLocalState } from './utils';
 import './styles.scss';
 
@@ -97,8 +98,13 @@ export default function App() {
   useThemeEffect();
 
   useEffect(() => {
+    initPostHog();
     checkAuth()
-      .then(data => setAuth(data.authenticated ? buildAuth(data) : false))
+      .then(data => {
+        const a = data.authenticated ? buildAuth(data) : false;
+        setAuth(a);
+        if (a) identifyUser(a);
+      })
       .catch(() => setAuth(false));
   }, []);
 
@@ -120,16 +126,17 @@ export default function App() {
     return (
       <BrowserRouter>
         <Routes>
-          <Route path="/signup/:token" element={<Signup onSignup={(data) => setAuth(buildAuth(data))} />} />
-          <Route path="/join/:token" element={<Join onSignup={(data) => setAuth(buildAuth(data))} />} />
+          <Route path="/signup/:token" element={<Signup onSignup={(data) => { const a = buildAuth(data); setAuth(a); identifyUser(a); }} />} />
+          <Route path="/join/:token" element={<Join onSignup={(data) => { const a = buildAuth(data); setAuth(a); identifyUser(a); }} />} />
           <Route path="/preview" element={<Preview />} />
-          <Route path="*" element={<Login onLogin={(data) => setAuth(buildAuth(data))} />} />
+          <Route path="*" element={<Login onLogin={(data) => { const a = buildAuth(data); setAuth(a); identifyUser(a); }} />} />
         </Routes>
       </BrowserRouter>
     );
   }
 
   function handleLogout() {
+    resetUser();
     logoutUser();
     setAuth(false);
   }

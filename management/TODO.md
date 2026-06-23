@@ -6,3 +6,4 @@
 - [ ]  Figure out how to limit ranges for recorded audios.
 - [ ] Identify speakers in [[meetings/2026-06-23_special-forces-app-onboarding-user-wins-and-design-flow]]: `speaker`
 - [ ] Identify speakers in [[meetings/2026-06-23_therapy-session-urges-shame-cycles-and-mindfulness-techniques-with-mentor]]: `speaker`
+- [ ] Identify speakers in [[meetings/2026-06-23_personal-meditation-coaching-intake-and-software-collaboration-discussion]]: `speaker`

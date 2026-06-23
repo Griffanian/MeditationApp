@@ -6226,6 +6226,29 @@ body.onboarding-active {
   text-decoration: underline;
 }
 
+/* Signup card inside onboarding */
+.ob-signup-card {
+  max-width: 380px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.ob-signup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin-top: 16px;
+}
+
+.ob-signup-form .login-input {
+  width: 100%;
+}
+
+.ob-signup-form .login-error {
+  margin-bottom: 0;
+}
+
 /* Onboarding footer */
 .ob-footer {
   display: flex;
@@ -7817,6 +7840,39 @@ body.onboarding-active {
   color: var(--text-subtle);
 }
 
+.user-mgmt-users-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.user-mgmt-users-header h2 {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.user-mgmt-search {
+  flex: 1;
+  max-width: 280px;
+}
+
+.user-mgmt-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.user-mgmt-result-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 8px;
+}
+
 .user-mgmt-create-row button {
   background: var(--btn-bg);
   color: var(--btn-text);
@@ -9185,3 +9241,4 @@ body.onboarding-active {
   color: var(--text-muted, #888);
   border-top: 1px solid var(--border, #333);
 }
+

@@ -1,24 +1,38 @@
 import { useState } from 'react';
 import PasswordChecker from '../components/PasswordChecker';
-import { BuilderOnboarding } from './Home';
+import PreSignupOnboarding from '../components/PreSignupOnboarding';
 
 const ROLES = ['viewer', 'builder'];
 
-function PersonalSignupPreview({ role, name, onComplete }) {
+function ViewerSignupPreview({ linkType, name, role, onComplete }) {
+  const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const isPersonal = linkType === 'personal';
 
   return (
     <div className="login-page">
       <form className="login-form" onSubmit={e => { e.preventDefault(); onComplete(); }}>
         <h1 className="login-title">Meditation Pro</h1>
-        <p style={{ textAlign: 'center', color: 'var(--text-primary, #e0e0ff)', fontSize: '1.1rem', marginBottom: '0.25rem' }}>
-          Welcome, {name}
-        </p>
+        {isPersonal && (
+          <p style={{ textAlign: 'center', color: 'var(--text-primary, #e0e0ff)', fontSize: '1.1rem', marginBottom: '0.25rem' }}>
+            Welcome, {name}
+          </p>
+        )}
         <p style={{ textAlign: 'center', color: 'var(--text-secondary, #888)', marginBottom: '1rem', fontSize: '0.85rem' }}>
-          Set up your {role} account
+          {isPersonal ? `Set up your ${role} account` : `Create your ${role} account`}
         </p>
+        {!isPersonal && (
+          <input
+            className="login-input"
+            type="text"
+            placeholder="Your name"
+            value={displayName}
+            onChange={e => setDisplayName(e.target.value)}
+            autoComplete="name"
+          />
+        )}
         <div className="login-password-wrapper">
           <input
             className="login-input"
@@ -47,19 +61,21 @@ function PersonalSignupPreview({ role, name, onComplete }) {
   );
 }
 
-function GenericSignupPreview({ role, onComplete }) {
+function BuilderSignupFields({ linkType, name, onComplete }) {
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const isPersonal = linkType === 'personal';
 
   return (
-    <div className="login-page">
-      <form className="login-form" onSubmit={e => { e.preventDefault(); onComplete(); }}>
-        <h1 className="login-title">Meditation Pro</h1>
-        <p className="login-subtitle">
-          Create your {role} account
+    <form className="ob-signup-form" onSubmit={e => { e.preventDefault(); onComplete(); }}>
+      {isPersonal && (
+        <p style={{ textAlign: 'center', color: 'var(--text-primary, #e0e0ff)', fontSize: '1.1rem', marginBottom: '0.25rem' }}>
+          Welcome, {name}
         </p>
+      )}
+      {!isPersonal && (
         <input
           className="login-input"
           type="text"
@@ -68,31 +84,31 @@ function GenericSignupPreview({ role, onComplete }) {
           onChange={e => setDisplayName(e.target.value)}
           autoComplete="name"
         />
-        <div className="login-password-wrapper">
-          <input
-            className="login-input"
-            type={showPassword ? 'text' : 'password'}
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            autoComplete="new-password"
-          />
-          <button type="button" className="login-toggle-pw" onClick={() => setShowPassword(!showPassword)}>
-            {showPassword ? 'Hide' : 'Show'}
-          </button>
-        </div>
+      )}
+      <div className="login-password-wrapper">
         <input
           className="login-input"
           type={showPassword ? 'text' : 'password'}
-          placeholder="Confirm password"
-          value={confirmPassword}
-          onChange={e => setConfirmPassword(e.target.value)}
+          placeholder="Password (8+ characters)"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
           autoComplete="new-password"
         />
-        {password && <PasswordChecker password={password} />}
-        <button className="login-btn" type="submit">Create account</button>
-      </form>
-    </div>
+        <button type="button" className="login-toggle-pw" onClick={() => setShowPassword(!showPassword)}>
+          {showPassword ? 'Hide' : 'Show'}
+        </button>
+      </div>
+      <input
+        className="login-input"
+        type={showPassword ? 'text' : 'password'}
+        placeholder="Confirm password"
+        value={confirmPassword}
+        onChange={e => setConfirmPassword(e.target.value)}
+        autoComplete="new-password"
+      />
+      {password && <PasswordChecker password={password} />}
+      <button className="ob-next" type="submit">Create account</button>
+    </form>
   );
 }
 
@@ -113,54 +129,28 @@ function ViewerHomePreview({ name }) {
   );
 }
 
-function BuilderHomePreview({ name }) {
-  return (
-    <div className="home-page" style={{ minHeight: '100dvh' }}>
-      <div className="home-greeting">
-        <h1 className="home-greeting-title">Good morning, {name}</h1>
-        <p className="home-greeting-sub">Welcome to Meditation Pro. Start your first session today.</p>
-      </div>
-      <div className="home-stats">
-        <div className="home-stat-card"><div className="home-stat-value">0</div><div className="home-stat-label">Sessions</div></div>
-        <div className="home-stat-card"><div className="home-stat-value">0</div><div className="home-stat-label">Day Streak</div></div>
-        <div className="home-stat-card"><div className="home-stat-value">0m</div><div className="home-stat-label">Total Time</div></div>
-      </div>
-      <div className="home-section">
-        <h2 className="home-section-title">Quick Links</h2>
-        <div className="home-quick-links">
-          <button className="home-quick-link" onClick={() => {}}>Exercises</button>
-          <button className="home-quick-link" onClick={() => {}}>Programmes</button>
-          <button className="home-quick-link" onClick={() => {}}>Clients</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const LINK_TYPES = [
   { id: 'personal', label: 'Personal invite', desc: 'Name and role already known' },
   { id: 'generic', label: 'Generic link', desc: 'User enters their own name' },
 ];
-
-const STAGES = {
-  pick: 'Setup',
-  signup: 'Signup',
-  onboarding: 'Onboarding',
-  home: 'Home',
-};
 
 export default function Preview() {
   const [linkType, setLinkType] = useState(null);
   const [role, setRole] = useState(null);
   const [stage, setStage] = useState('pick');
   const name = 'Test User';
-  const canCreate = role && ['builder', 'editor', 'admin'].includes(role);
+  const isBuilder = role === 'builder';
 
   function reset() {
     setLinkType(null);
     setRole(null);
     setStage('pick');
   }
+
+  // Label for the toolbar — just show the current stage name
+  const stageLabel = stage === 'pick' ? 'Setup'
+    : stage === 'flow' ? (isBuilder ? 'Onboarding' : 'Signup')
+    : stage === 'home' ? 'Home' : '';
 
   return (
     <div className="preview-wrapper">
@@ -169,26 +159,10 @@ export default function Preview() {
         <span className="preview-bar-label">UX Preview</span>
         {linkType && <button className="preview-bar-role" onClick={() => { setLinkType(null); setRole(null); setStage('pick'); }}>{linkType}</button>}
         {role && <button className="preview-bar-role" onClick={() => { setRole(null); setStage('pick'); }}>{role}</button>}
-        <div className="preview-bar-stages">
-          {(() => {
-            const keys = Object.keys(STAGES);
-            const currentIdx = keys.indexOf(stage);
-            return Object.entries(STAGES).map(([key, label], i) => (
-              <button
-                key={key}
-                className={`preview-bar-step${stage === key ? ' active' : ''}${i < currentIdx ? ' done' : ''}`}
-                onClick={() => { if (key === 'pick') reset(); else if (role) setStage(key); }}
-                disabled={!role && key !== 'pick'}
-              >
-                {label}
-              </button>
-            ));
-          })()}
-        </div>
         <button className="preview-bar-reset" onClick={reset}>Reset</button>
       </div>
 
-      {/* content */}
+      {/* Setup: pick link type and role */}
       {stage === 'pick' && (
         <div className="login-page">
           <div className="login-form" style={{ gap: 16 }}>
@@ -211,13 +185,11 @@ export default function Preview() {
               <p style={{ textAlign: 'center', color: 'var(--text-2)', fontSize: 13, margin: '8px 0 4px' }}>What role?</p>
               <div className="preview-role-grid">
                 {ROLES.map(r => (
-                  <button key={r} className="preview-role-btn" onClick={() => { setRole(r); setStage('signup'); }}>
+                  <button key={r} className="preview-role-btn" onClick={() => { setRole(r); setStage('flow'); }}>
                     <span className="preview-role-name">{r}</span>
                     <span className="preview-role-desc">
                       {r === 'viewer' ? 'Can play exercises shared with them'
-                        : r === 'builder' ? 'Can create & share exercises'
-                        : r === 'editor' ? 'Can edit any content'
-                        : 'Full access + user management'}
+                        : 'Can create & share exercises'}
                     </span>
                   </button>
                 ))}
@@ -227,18 +199,22 @@ export default function Preview() {
         </div>
       )}
 
-      {stage === 'signup' && linkType === 'personal' && (
-        <PersonalSignupPreview role={role} name={name} onComplete={() => setStage(canCreate ? 'onboarding' : 'home')} />
-      )}
-      {stage === 'signup' && linkType === 'generic' && (
-        <GenericSignupPreview role={role} onComplete={() => setStage(canCreate ? 'onboarding' : 'home')} />
+      {/* Builder flow: onboarding slides → signup card → your turn — all inside PreSignupOnboarding */}
+      {stage === 'flow' && isBuilder && (
+        <PreSignupOnboarding
+          onDone={reset}
+          renderSignup={(onComplete) => (
+            <BuilderSignupFields linkType={linkType} name={name} onComplete={onComplete} />
+          )}
+        />
       )}
 
-      {stage === 'onboarding' && canCreate && <BuilderOnboarding />}
-      {stage === 'onboarding' && !canCreate && <ViewerHomePreview name={name} />}
+      {/* Viewer flow: signup → home */}
+      {stage === 'flow' && !isBuilder && (
+        <ViewerSignupPreview linkType={linkType} name={name} role={role} onComplete={() => setStage('home')} />
+      )}
 
-      {stage === 'home' && canCreate && <BuilderHomePreview name={name} />}
-      {stage === 'home' && !canCreate && <ViewerHomePreview name={name} />}
+      {stage === 'home' && <ViewerHomePreview name={name} />}
     </div>
   );
 }

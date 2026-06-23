@@ -116,7 +116,9 @@ function InviteSection() {
 
 function UserSection() {
   const [users, setUsers] = useState([]);
-  const [statusFilter, setStatusFilter] = useState('active'); // 'active' | 'inactive' | 'all'
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('active');
 
   useEffect(() => { fetchUsers().then(setUsers); }, []);
 
@@ -137,7 +139,6 @@ function UserSection() {
     if (!confirm(msg)) return;
     try {
       const res = await deleteUser(u.id);
-      // Mark all deactivated users
       setUsers(prev => prev.map(x => (x.id === u.id || (res?.deactivated && res.deactivated.includes(x.id))) ? { ...x, is_active: false } : x));
     } catch (err) {
       alert(err.message);
@@ -155,16 +156,22 @@ function UserSection() {
     }
   }
 
+  const q = search.toLowerCase().trim();
   const filtered = users.filter(u => {
-    if (statusFilter === 'active') return u.is_active;
-    if (statusFilter === 'inactive') return !u.is_active;
+    if (statusFilter === 'active' && !u.is_active) return false;
+    if (statusFilter === 'inactive' && u.is_active) return false;
+    if (roleFilter !== 'all' && u.role !== roleFilter) return false;
+    if (q && !u.display_name.toLowerCase().includes(q) && !u.username.toLowerCase().includes(q)) return false;
     return true;
   });
+
   const admins = filtered.filter(u => u.role === 'admin');
   const editors = filtered.filter(u => u.role === 'editor');
   const builders = filtered.filter(u => u.role === 'builder');
   const viewers = filtered.filter(u => u.role === 'viewer');
   const inactiveCount = users.filter(u => !u.is_active).length;
+  const roleCounts = { admin: 0, editor: 0, builder: 0, viewer: 0 };
+  for (const u of users) { if (u.is_active || statusFilter !== 'active') roleCounts[u.role] = (roleCounts[u.role] || 0) + 1; }
 
   function renderUserRow(u, indent = false) {
     const inactive = !u.is_active;
@@ -196,29 +203,56 @@ function UserSection() {
 
   return (
     <section className="user-mgmt-section">
-      <h2>Users</h2>
-      <div className="group-tabs" style={{ marginBottom: 12 }}>
-        <button className={`group-tab${statusFilter === 'active' ? ' active' : ''}`} onClick={() => setStatusFilter('active')}>Active</button>
-        <button className={`group-tab${statusFilter === 'inactive' ? ' active' : ''}`} onClick={() => setStatusFilter('inactive')}>Inactive{inactiveCount > 0 ? ` (${inactiveCount})` : ''}</button>
-        <button className={`group-tab${statusFilter === 'all' ? ' active' : ''}`} onClick={() => setStatusFilter('all')}>All</button>
+      <div className="user-mgmt-users-header">
+        <h2>Users</h2>
+        <input
+          type="text"
+          className="user-mgmt-input user-mgmt-search"
+          placeholder="Search users..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
       </div>
-      <table className="user-mgmt-table">
-        <thead>
-          <tr><th>Name</th><th>Role</th><th>Joined</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-          {admins.map(u => renderUserRow(u))}
-          {editors.map(u => renderUserRow(u))}
-          {builders.map(builder => {
-            const buildersViewers = viewers.filter(v => v.builders.includes(builder.username));
-            return [
-              renderUserRow(builder),
-              ...buildersViewers.map(v => renderUserRow(v, true)),
-            ];
-          })}
-          {viewers.filter(v => !v.builders.length).map(v => renderUserRow(v))}
-        </tbody>
-      </table>
+
+      <div className="user-mgmt-filter-bar">
+        <div className="group-tabs">
+          <button className={`group-tab${roleFilter === 'all' ? ' active' : ''}`} onClick={() => setRoleFilter('all')}>All roles</button>
+          {['admin', 'editor', 'builder', 'viewer'].map(r => (
+            <button key={r} className={`group-tab${roleFilter === r ? ' active' : ''}`} onClick={() => setRoleFilter(r)}>
+              {r.charAt(0).toUpperCase() + r.slice(1)}{roleCounts[r] ? ` (${roleCounts[r]})` : ''}
+            </button>
+          ))}
+        </div>
+        <div className="group-tabs">
+          <button className={`group-tab${statusFilter === 'active' ? ' active' : ''}`} onClick={() => setStatusFilter('active')}>Active</button>
+          <button className={`group-tab${statusFilter === 'inactive' ? ' active' : ''}`} onClick={() => setStatusFilter('inactive')}>Inactive{inactiveCount > 0 ? ` (${inactiveCount})` : ''}</button>
+          <button className={`group-tab${statusFilter === 'all' ? ' active' : ''}`} onClick={() => setStatusFilter('all')}>All</button>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginTop: 24 }}>No users match your filters.</p>
+      ) : (
+        <table className="user-mgmt-table">
+          <thead>
+            <tr><th>Name</th><th>Role</th><th>Joined</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {admins.map(u => renderUserRow(u))}
+            {editors.map(u => renderUserRow(u))}
+            {builders.map(builder => {
+              const buildersViewers = viewers.filter(v => v.builders.includes(builder.username));
+              return [
+                renderUserRow(builder),
+                ...buildersViewers.map(v => renderUserRow(v, true)),
+              ];
+            })}
+            {viewers.filter(v => !v.builders.length).map(v => renderUserRow(v))}
+          </tbody>
+        </table>
+      )}
+
+      <div className="user-mgmt-result-count">{filtered.length} of {users.length} users</div>
     </section>
   );
 }
