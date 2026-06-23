@@ -80,7 +80,7 @@ urlpatterns = [
 
     # Root-level trim
     path("api/meditations/<str:name>/trim-meta/<str:seg_id>", trim.RootTrimMetaView.as_view()),
-    path("api/meditations/<str:name>/trim-component/<str:seg_id>", trim.RootTrimComponentView.as_view()),
+    # trim-component removed: trimming is non-destructive metadata, not file modification
 
     # Stage script & variables
     path("api/meditations/<str:name>/stages/<str:stage_id>/script", scripts.StageScriptView.as_view()),
@@ -97,6 +97,8 @@ urlpatterns = [
     path("api/meditations/<str:name>/stages/<str:stage_id>/variable-recordings/<str:seg_id>", components.VariableRecordingsView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/generate-variable-audio/<str:seg_id>", components.GenerateVariableAudioView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/upload-variable-audio/<str:seg_id>", components.UploadVariableAudioView.as_view()),
+    path("api/meditations/<str:name>/stages/<str:stage_id>/variable-recordings/<str:seg_id>/delete/<str:variable_key>", components.DeleteVariableRecordingView.as_view()),
+    path("api/meditations/<str:name>/stages/<str:stage_id>/variable-recordings/<str:seg_id>/trim/<str:variable_key>", trim.VariableRecordingTrimView.as_view()),
 
     # Stage assembly
     path("api/meditations/<str:name>/stages/<str:stage_id>/assemble", assembly.StageAssembleView.as_view()),
@@ -118,6 +120,8 @@ urlpatterns = [
     path("api/practices/<str:name>/share", sharing.PracticeShareView.as_view()),
 
     # Audio & PDF serving — redirect to Supabase Storage public URLs
+    path("audio/clip/<str:text_hash>.mp3", components.serve_clip),
+    path("audio/upload/<int:clip_id>.mp3", components.serve_upload),
     path("audio/meditation/<str:name>/component/<str:filename>", components.serve_component),
     path("audio/meditation/<str:name>/output/<str:filename>", components.serve_output),
     path("audio/meditation/<str:name>/stage/<str:stage_id>/component/<str:filename>", components.serve_stage_component),

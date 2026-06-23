@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Onboarding Best Practices.md",
+                "file": "Users profiles.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Onboarding Best Practices"
+              "title": "Users profiles"
             }
           },
           {
@@ -204,9 +204,11 @@
   },
   "active": "19b35cfccf05e958",
   "lastOpenFiles": [
+    "meetings/2026-06-22_version-control-setup-staging-deployment-and-app-design-scaling.md",
+    "Onboarding Best Practices.md",
+    "meetings/2026-06-22_guided-meditation-app-progressive-exercises-ai-voices-and-jewish-music-with-host.md",
     "meetings/2026-06-22_monday-morning-team-standup-marketing-proposals-sas-trial-security-and-product-r.md",
     "ideas/onboarding-design.md",
-    "Onboarding Best Practices.md",
     "Potential white labelling.md",
     "TODO.md",
     "meetings/2026-06-18_meditation-app-design-and-spiritual-practice-philosophy-with-hitesh.md",
@@ -229,8 +231,6 @@
     "Templates/Person.md",
     "Templates/Organisation.md",
     "Templates/Meeting Notes.md",
-    "Infrastructure.md",
-    "Finances.md",
     "untitled folder",
     "Finances.xlsx",
     "Organisations",

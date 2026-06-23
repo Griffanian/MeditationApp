@@ -5,13 +5,12 @@ from pydub import AudioSegment
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import Asset, Component, Meditation, Stage
+from ..models import Asset, Meditation, SpeechSegmentAudio, Stage, VariableRecording
 from ..permissions import CanEditContent, IsAdminOrEditor
 from ..services import storage
 
 
 def _check_med_perm(request, name):
-    """Check edit permission on parent meditation."""
     med = get_object_or_404(Meditation, name=name)
     if not CanEditContent().has_object_permission(request, None, med):
         return Response({"error": "Forbidden"}, status=403)
@@ -19,9 +18,9 @@ def _check_med_perm(request, name):
 
 
 class TrimMixin:
-    def _get_component(self, name, stage_id, seg_id):
+    def _get_ssa(self, name, stage_id, seg_id):
         return get_object_or_404(
-            Component,
+            SpeechSegmentAudio,
             meditation_id=name,
             stage__stage_id=stage_id if stage_id else None,
             seg_id=seg_id,
@@ -29,36 +28,36 @@ class TrimMixin:
 
     def _get_trim_meta(self, name, stage_id, seg_id):
         try:
-            component = self._get_component(name, stage_id, seg_id)
-            return Response(component.trim_meta or {})
+            ssa = self._get_ssa(name, stage_id, seg_id)
+            return Response({"start": ssa.trim_start, "end": ssa.trim_end})
         except Exception:
-            return Response({})
+            return Response({"start": None, "end": None})
 
     def _save_trim_meta(self, request, name, stage_id, seg_id):
         meditation, _ = Meditation.objects.get_or_create(name=name)
         stage = None
         if stage_id:
-            stage, _ = Stage.objects.get_or_create(
-                meditation=meditation, stage_id=stage_id,
-            )
-        component, _ = Component.objects.get_or_create(
+            stage, _ = Stage.objects.get_or_create(meditation=meditation, stage_id=stage_id)
+        ssa, _ = SpeechSegmentAudio.objects.get_or_create(
             meditation=meditation, stage=stage, seg_id=seg_id,
         )
-        component.trim_meta = request.data
-        component.save()
+        ssa.trim_start = request.data.get("start")
+        ssa.trim_end = request.data.get("end")
+        ssa.save(update_fields=["trim_start", "trim_end"])
         return Response({"status": "ok"})
 
     def _delete_trim_meta(self, name, stage_id, seg_id):
         try:
-            component = self._get_component(name, stage_id, seg_id)
-            component.trim_meta = {}
-            component.save()
+            ssa = self._get_ssa(name, stage_id, seg_id)
+            ssa.trim_start = None
+            ssa.trim_end = None
+            ssa.save(update_fields=["trim_start", "trim_end"])
         except Exception:
             pass
         return Response({"status": "ok"})
 
 
-# --- Stage-level trim meta ---
+# --- Stage-level trim meta (fixed segments) ---
 
 class StageTrimMetaView(TrimMixin, APIView):
     def get(self, request, name, stage_id, seg_id):
@@ -80,7 +79,7 @@ class StageTrimMetaView(TrimMixin, APIView):
         return self._delete_trim_meta(name, stage_id, seg_id)
 
 
-# --- Root-level trim meta ---
+# --- Root-level trim meta (fixed segments) ---
 
 class RootTrimMetaView(TrimMixin, APIView):
     def get(self, request, name, seg_id):
@@ -102,36 +101,51 @@ class RootTrimMetaView(TrimMixin, APIView):
         return self._delete_trim_meta(name, None, seg_id)
 
 
-# --- Trim execution (in-place audio trimming) ---
+# --- Variable recording trim (per variable_value) ---
 
-class RootTrimComponentView(APIView):
-    def post(self, request, name, seg_id):
+class VariableRecordingTrimView(APIView):
+    """GET/PUT/DELETE trim for a specific VariableRecording row."""
+
+    def _get_rec(self, name, stage_id, seg_id, variable_key):
+        stage = Stage.objects.filter(meditation_id=name, stage_id=stage_id).first() if stage_id else None
+        return VariableRecording.objects.filter(
+            meditation_id=name,
+            stage=stage,
+            seg_id=seg_id,
+            variable_key=variable_key,
+        ).first()
+
+    def get(self, request, name, stage_id, seg_id, variable_key):
         err = _check_med_perm(request, name)
         if err:
             return err
-        data = request.data
-        if not data or "start" not in data or "end" not in data:
-            return Response({"error": "missing start/end"}, status=400)
+        rec = self._get_rec(name, stage_id, seg_id, variable_key)
+        if not rec:
+            return Response({"start": None, "end": None})
+        return Response({"start": rec.trim_start, "end": rec.trim_end})
 
-        component = get_object_or_404(
-            Component, meditation_id=name, stage=None, seg_id=seg_id,
-        )
-        if not component.audio_file:
+    def put(self, request, name, stage_id, seg_id, variable_key):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
+        rec = self._get_rec(name, stage_id, seg_id, variable_key)
+        if not rec:
             return Response({"error": "not found"}, status=404)
+        rec.trim_start = request.data.get("start")
+        rec.trim_end = request.data.get("end")
+        rec.save(update_fields=["trim_start", "trim_end"])
+        return Response({"status": "ok"})
 
-        audio_data = storage.download_file(component.audio_file.name)
-        audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
-
-        start_ms = int(data["start"] * 1000)
-        end_ms = int(data["end"] * 1000)
-        trimmed = audio[start_ms:end_ms]
-
-        buf = io.BytesIO()
-        trimmed.export(buf, format="mp3", bitrate="192k")
-        buf.seek(0)
-        storage.upload_file(component.audio_file.name, buf.read(), content_type="audio/mpeg")
-
-        return Response({"status": "ok", "duration": len(trimmed) / 1000})
+    def delete(self, request, name, stage_id, seg_id, variable_key):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
+        rec = self._get_rec(name, stage_id, seg_id, variable_key)
+        if rec:
+            rec.trim_start = None
+            rec.trim_end = None
+            rec.save(update_fields=["trim_start", "trim_end"])
+        return Response({"status": "ok"})
 
 
 # --- Asset trim meta (global assets — admin/editor only) ---

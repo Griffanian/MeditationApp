@@ -26,19 +26,28 @@ function substituteText(text, variables) {
   });
 }
 
+function makeVariableKey(variableValues) {
+  return Object.entries(variableValues)
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([k, v]) => `${k}=${v}`)
+    .join(',');
+}
+
 export default function VariableRecordingsModal({ seg, meditationName, stageId, variables = {}, onFlushSave, onClose, onDone }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(null);
+  const [genDots, setGenDots] = useState('.');
   const [recording, setRecording] = useState(null);
   const [selectedRow, setSelectedRow] = useState(null);
   const [playing, setPlaying] = useState(false);
+  const [waveformLoading, setWaveformLoading] = useState(false);
   const [duration, setDuration] = useState(null);
   const [trimMode, setTrimMode] = useState(false);
   const [trimStart, setTrimStart] = useState(null);
   const [trimEnd, setTrimEnd] = useState(null);
   const [savedTrim, setSavedTrim] = useState(null);
-  const [newValue, setNewValue] = useState('');
+  const [newValues, setNewValues] = useState({});
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const fileInputRef = useRef(null);
@@ -47,7 +56,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
   const wavesurferRef = useRef(null);
   const regionsRef = useRef(null);
 
-  // Find which variables this segment uses
+  // Find which variables this segment uses (ordered)
   const usedVarNames = [];
   const matches = seg.text.matchAll(/\{(\w+)\}/g);
   for (const m of matches) {
@@ -55,11 +64,6 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
       usedVarNames.push(m[1]);
     }
   }
-
-  const primaryVar = usedVarNames[0];
-  const currentValue = primaryVar && variables[primaryVar]
-    ? (typeof variables[primaryVar] === 'object' ? variables[primaryVar].value : variables[primaryVar])
-    : '';
 
   // Register stop handler so other audio sources can stop us
   useEffect(() => {
@@ -70,65 +74,98 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     return () => unregisterExternalStop(stopWs);
   }, []);
 
+  // Animate dots while generating
+  useEffect(() => {
+    if (generating === null) { setGenDots('.'); return; }
+    const id = setInterval(() => setGenDots(d => d.length >= 3 ? '.' : d + '.'), 400);
+    return () => clearInterval(id);
+  }, [generating]);
+
   // Load existing recordings status and auto-select first row with audio
   useEffect(() => {
     loadRecordings();
   }, []);
 
-  function parseRows(data) {
+  function parseGetRows(data) {
     if (!data.recordings) return [];
     return data.recordings.map(r => ({
-      value: r.variables[primaryVar],
+      variableValues: r.variable_values,
+      variableKey: r.variable_key,
+      text: substituteText(seg.text, { ...variables, ...r.variable_values }),
+      status: r.status,
+      source: r.source,
+      textHash: r.text_hash || null,
+      userClipId: r.user_clip_id || null,
+    }));
+  }
+
+  function parsePostRows(data) {
+    if (!data.recordings) return [];
+    return data.recordings.map(r => ({
+      variableValues: r.variable_values,
+      variableKey: r.variable_key,
       text: r.text,
       status: r.status,
       source: r.source,
-      segId: r.seg_id || null,
+      textHash: r.text_hash || null,
+      userClipId: r.user_clip_id || null,
     }));
   }
 
   async function loadRecordings() {
     setLoading(true);
-    const valueSets = currentValue !== '' ? [{ [primaryVar]: currentValue }] : [];
-    if (valueSets.length === 0) { setLoading(false); return; }
-
     try {
-      const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: valueSets }),
-      });
+      // Load all known recordings from the DB table
+      const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`);
       const data = await res.json();
-      const parsed = parseRows(data);
-      setRows(parsed);
-      // Auto-select first row that has audio
-      const firstWithAudio = parsed.findIndex(r => r.status === 'has_audio');
-      if (firstWithAudio !== -1) setSelectedRow(firstWithAudio);
+      const parsed = parseGetRows(data);
+
+      // If no recordings in DB yet, fall back to showing just the current values for all used vars
+      if (parsed.length === 0 && usedVarNames.length > 0) {
+        const fallbackVarSet = {};
+        for (const v of usedVarNames) {
+          const vObj = variables[v];
+          fallbackVarSet[v] = String(typeof vObj === 'object' ? vObj.value : vObj);
+        }
+        const fallback = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [fallbackVarSet] }),
+        });
+        const fallbackData = await fallback.json();
+        const fallbackParsed = parsePostRows(fallbackData);
+        setRows(fallbackParsed);
+        const firstWithAudio = fallbackParsed.findIndex(r => r.status === 'has_audio');
+        if (firstWithAudio !== -1) setSelectedRow(firstWithAudio);
+      } else {
+        setRows(parsed);
+        // Auto-select first with audio
+        const firstWithAudio = parsed.findIndex(r => r.status === 'has_audio');
+        if (firstWithAudio !== -1) setSelectedRow(firstWithAudio);
+      }
     } catch (err) {
       console.error('Failed to load variable recordings:', err);
     }
     setLoading(false);
   }
 
-  async function refreshRows(newRows) {
-    const valueSets = newRows.map(r => ({ [primaryVar]: r.value }));
-    if (valueSets.length === 0) return;
-
+  async function refreshRows() {
     try {
-      const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: valueSets }),
-      });
+      const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`);
       const data = await res.json();
-      setRows(parseRows(data));
+      const parsed = parseGetRows(data);
+      setRows(parsed);
+      return parsed;
     } catch (err) {
       console.error('Failed to refresh:', err);
+      return null;
     }
   }
 
   function audioUrlForRow(row) {
-    if (!row.segId) return null;
-    return `${BASE}/audio/meditation/${meditationName}/stage/${stageId}/component/${row.segId}.mp3`;
+    if (row.userClipId) return `${BASE}/audio/upload/${row.userClipId}.mp3`;
+    if (row.textHash) return `${BASE}/audio/clip/${row.textHash}.mp3`;
+    return null;
   }
 
   // Create/recreate WaveSurfer when selectedRow changes and the container is mounted
@@ -146,6 +183,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     }
 
     setPlaying(false);
+    setWaveformLoading(true);
     setDuration(null);
     setTrimMode(false);
     setTrimStart(null);
@@ -168,16 +206,17 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
       plugins: [regions],
     });
 
-    ws.on('ready', () => setDuration(ws.getDuration()));
+    ws.on('ready', () => { setWaveformLoading(false); setDuration(ws.getDuration()); });
     ws.on('play', () => setPlaying(true));
     ws.on('pause', () => setPlaying(false));
     ws.on('finish', () => setPlaying(false));
 
     wavesurferRef.current = ws;
 
-    // Load saved trim for this component
-    if (row.segId) {
-      apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/trim-meta/${row.segId}`)
+    // Load saved trim for this variable recording row
+    const rowKey = rows[selectedRow]?.variableKey;
+    if (rowKey != null) {
+      apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/trim/${rowKey}`)
         .then(r => r.json())
         .then(data => {
           if (data && data.start != null) {
@@ -233,10 +272,10 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
 
   async function saveTrimPoints() {
     if (trimStart === null || trimEnd === null || selectedRow === null) return;
-    const row = rows[selectedRow];
-    if (!row.segId) return;
+    const rowKey = rows[selectedRow]?.variableKey;
+    if (rowKey == null) return;
     const trimData = { start: trimStart, end: trimEnd };
-    await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/trim-meta/${row.segId}`, {
+    await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/trim/${rowKey}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(trimData),
@@ -247,9 +286,9 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
 
   async function undoTrim() {
     if (selectedRow === null) return;
-    const row = rows[selectedRow];
-    if (!row.segId) return;
-    await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/trim-meta/${row.segId}`, { method: 'DELETE' });
+    const rowKey = rows[selectedRow]?.variableKey;
+    if (rowKey == null) return;
+    await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/trim/${rowKey}`, { method: 'DELETE' });
     setSavedTrim(null);
     setTrimStart(null);
     setTrimEnd(null);
@@ -281,10 +320,10 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
   async function handleDeleteRecording() {
     if (selectedRow === null) return;
     const row = rows[selectedRow];
-    if (!row.segId || !window.confirm('Delete this recording?')) return;
-    await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/delete-component/${row.segId}`, { method: 'DELETE' });
+    if (!row.variableKey || !window.confirm('Delete this recording?')) return;
+    await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/delete/${row.variableKey}`, { method: 'DELETE' });
     setSelectedRow(null);
-    await refreshRows(rows);
+    await refreshRows();
     if (onDone) onDone();
   }
 
@@ -300,7 +339,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
       wavesurferRef.current.pause();
     } else {
       stopPlayback();
-      if (savedTrim && !trimMode) {
+      if (isEffectiveTrim && !trimMode) {
         wavesurferRef.current.play(savedTrim.start, savedTrim.end);
       } else {
         wavesurferRef.current.play();
@@ -309,30 +348,51 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
   }
 
   function addRow() {
-    const val = newValue.trim();
-    if (!val) return;
-    if (rows.some(r => String(r.value) === val)) {
-      setNewValue('');
+    // All inputs must have values
+    const filled = usedVarNames.every(v => (newValues[v] || '').trim() !== '');
+    if (!filled) return;
+
+    const normalised = {};
+    for (const v of usedVarNames) {
+      normalised[v] = newValues[v].trim();
+    }
+    const key = makeVariableKey(normalised);
+
+    if (rows.some(r => r.variableKey === key)) {
+      setNewValues({});
       return;
     }
-    const varObj = variables[primaryVar];
-    const merged = { ...variables, [primaryVar]: { ...(typeof varObj === 'object' ? varObj : { value: varObj }), value: val } };
-    const text = substituteText(seg.text, merged);
-    const newRows = [...rows, { value: val, text, status: 'missing', source: null, segId: null }];
+
+    const text = substituteText(seg.text, { ...variables, ...normalised });
+    const newRow = { variableValues: normalised, variableKey: key, text, status: 'missing', source: null };
+    const newRows = [...rows, newRow];
     setRows(newRows);
-    setNewValue('');
-    refreshRows(newRows);
+    setNewValues({});
+
+    // Check status for the newly-added combination
+    apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: [normalised] }),
+    }).then(r => r.json()).then(data => {
+      if (data.recordings?.[0]) {
+        const rec = data.recordings[0];
+        setRows(prev => prev.map(r =>
+          r.variableKey === key
+            ? { ...r, status: rec.status, source: rec.source, textHash: rec.text_hash || null, userClipId: rec.user_clip_id || null }
+            : r
+        ));
+      }
+    }).catch(() => {});
   }
 
   async function removeRow(index) {
     const row = rows[index];
     // If it has audio, confirm and delete the component record from the backend
     if (row.status === 'has_audio') {
-      if (!window.confirm(`Delete the recording for value ${row.value}?`)) return;
-      if (row.segId) {
-        await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/delete-component/${row.segId}`, { method: 'DELETE' });
-        if (onDone) onDone();
-      }
+      if (!window.confirm(`Delete the recording for ${row.variableKey}?`)) return;
+      await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/delete/${row.variableKey}`, { method: 'DELETE' });
+      if (onDone) onDone();
     }
     if (selectedRow === index) {
       setSelectedRow(null);
@@ -351,7 +411,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
   async function handleGenerate(index) {
     const row = rows[index];
     if (row.status === 'has_audio') {
-      if (!window.confirm(`This will replace the existing ${row.source === 'uploaded' ? 'recorded' : 'AI-generated'} audio for value ${row.value}. Continue?`)) return;
+      if (!window.confirm(`This will replace the existing ${row.source === 'uploaded' ? 'recorded' : 'AI-generated'} audio for ${row.variableKey}. Continue?`)) return;
     }
     setGenerating(index);
     try {
@@ -359,13 +419,20 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
       const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/generate-variable-audio/${seg.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variables: { [primaryVar]: row.value } }),
+        body: JSON.stringify({ variables: row.variableValues }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         alert('Generation failed: ' + (data.error || res.statusText));
       } else {
-        await refreshRows(rows);
+        const generatedKey = row.variableKey;
+        const newRows = await refreshRows();
+        if (newRows && generatedKey) {
+          const newIndex = newRows.findIndex(r => r.variableKey === generatedKey);
+          if (newIndex !== -1 && newRows[newIndex]?.status === 'has_audio') {
+            setSelectedRow(newIndex);
+          }
+        }
         if (onDone) onDone();
       }
     } catch (err) {
@@ -378,7 +445,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     if (recording !== null) return;
     const row = rows[index];
     if (row.status === 'has_audio') {
-      if (!window.confirm(`This will replace the existing ${row.source === 'uploaded' ? 'recorded' : 'AI-generated'} audio for value ${row.value}. Continue?`)) return;
+      if (!window.confirm(`This will replace the existing ${row.source === 'uploaded' ? 'recorded' : 'AI-generated'} audio for ${row.variableKey}. Continue?`)) return;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -411,7 +478,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
   function handleUploadClick(index) {
     const row = rows[index];
     if (row.status === 'has_audio') {
-      if (!window.confirm(`This will replace the existing ${row.source === 'uploaded' ? 'recorded' : 'AI-generated'} audio for value ${row.value}. Continue?`)) return;
+      if (!window.confirm(`This will replace the existing ${row.source === 'uploaded' ? 'recorded' : 'AI-generated'} audio for ${row.variableKey}. Continue?`)) return;
     }
     uploadRowRef.current = index;
     fileInputRef.current.click();
@@ -429,7 +496,10 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     const row = rows[index];
     const formData = new FormData();
     formData.append('file', file);
-    formData.append(`var_${primaryVar}`, row.value);
+    // Append each variable as var_NAME=value
+    for (const [k, v] of Object.entries(row.variableValues)) {
+      formData.append(`var_${k}`, v);
+    }
 
     try {
       const res = await apiFetch(`/api/meditations/${meditationName}/stages/${stageId}/upload-variable-audio/${seg.id}`, {
@@ -440,7 +510,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
         const data = await res.json().catch(() => ({}));
         alert('Upload failed: ' + (data.error || res.statusText));
       } else {
-        await refreshRows(rows);
+        await refreshRows();
         if (onDone) onDone();
       }
     } catch (err) {
@@ -449,16 +519,26 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
   }
 
   const selectedHasAudio = selectedRow !== null && rows[selectedRow]?.status === 'has_audio';
+  const canAddRow = usedVarNames.every(v => (newValues[v] || '').trim() !== '');
+  const isEffectiveTrim = savedTrim && duration != null &&
+    !(savedTrim.start <= 0.05 && savedTrim.end >= duration - 0.05);
 
   return (
     <div className="modal-overlay" onClick={onClose} onContextMenu={e => e.stopPropagation()}>
       <div className="modal variable-recordings-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Variable Recordings</h2>
+          <h2>Variables Recording Manager</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
         <div className="modal-body">
+          {loading ? (
+            <div className="var-rec-loading">
+              <div className="var-rec-spinner" />
+              <p>Loading recordings…</p>
+            </div>
+          ) : (<>
+
           {/* Template */}
           <div className="modal-section">
             <p className="modal-section-label">Template</p>
@@ -475,13 +555,20 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
           {selectedHasAudio ? (
             <div className="modal-section">
               <p className="modal-section-label">
-                Current recording — value: {rows[selectedRow].value}
+                Current recording — {rows[selectedRow].variableKey}
                 {duration && <span className="modal-duration"> ({duration.toFixed(1)}s)</span>}
-                {savedTrim && !trimMode && (
+                {isEffectiveTrim && !trimMode && (
                   <span className="modal-trim-info"> — trimmed to {savedTrim.start.toFixed(1)}s–{savedTrim.end.toFixed(1)}s</span>
                 )}
               </p>
-              <div ref={waveformRef} className="waveform-container" />
+              <div className="waveform-wrapper">
+                <div ref={waveformRef} className="waveform-container" />
+                {waveformLoading && (
+                  <div className="waveform-buffering">
+                    <div className="var-rec-spinner" />
+                  </div>
+                )}
+              </div>
 
               {trimMode && (
                 <p className="trim-instructions">
@@ -494,13 +581,13 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
               )}
 
               <div className="waveform-controls">
-                <button className="modal-btn-sm" onClick={togglePlay}>
+                <button className="modal-btn-sm" onClick={togglePlay} disabled={waveformLoading}>
                   {playing ? '⏸ Pause' : '▶ Play'}
                 </button>
                 {!trimMode ? (
                   <>
                     <button className="modal-btn-sm" onClick={enterTrimMode}>✂ Trim</button>
-                    {savedTrim && (
+                    {isEffectiveTrim && (
                       <button className="modal-btn-sm modal-btn-undo" onClick={undoTrim}>↩ Undo trim</button>
                     )}
                     <button className="modal-btn-sm modal-btn-delete" onClick={handleDeleteRecording}>🗑 Delete</button>
@@ -523,19 +610,22 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
 
           <div className="modal-divider" />
 
-          {/* Add value */}
+          {/* Add value combination */}
           <div className="modal-section">
-            <p className="modal-section-label">Add a value for <strong>{primaryVar}</strong> only needed if your recorded your own audios.</p>
+            <p className="modal-section-label">Add a value combination — only needed if you recorded your own audios.</p>
             <div className="var-rec-add-row">
-              <input
-                type="text"
-                className="var-rec-input"
-                placeholder={`e.g. ${Number(currentValue) + 1 || '5'}`}
-                value={newValue}
-                onChange={e => setNewValue(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') addRow(); }}
-              />
-              <button className="modal-btn-sm" onClick={addRow}>+ Add</button>
+              {usedVarNames.map(varName => (
+                <input
+                  key={varName}
+                  type="text"
+                  className="var-rec-input"
+                  placeholder={varName}
+                  value={newValues[varName] || ''}
+                  onChange={e => setNewValues(prev => ({ ...prev, [varName]: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter' && canAddRow) addRow(); }}
+                />
+              ))}
+              <button className="modal-btn-sm" onClick={addRow} disabled={!canAddRow}>+ Add</button>
             </div>
           </div>
 
@@ -543,10 +633,13 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
           {rows.length > 0 && (
             <div className="modal-section">
               <p className="modal-section-label">Recordings <span className="modal-section-hint">— click a row to preview its audio</span></p>
+              <div className="var-rec-table-scroll">
               <table className="var-rec-table">
                 <thead>
                   <tr>
-                    <th>Value</th>
+                    {usedVarNames.map(varName => (
+                      <th key={varName}>{varName}</th>
+                    ))}
                     <th>Source</th>
                     <th>Actions</th>
                     <th></th>
@@ -559,7 +652,11 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
                       className={`${row.status === 'has_audio' ? 'has-audio' : 'no-audio'}${selectedRow === i ? ' selected' : ''}${row.status === 'has_audio' ? ' clickable' : ''}`}
                       onClick={() => handleRowClick(i)}
                     >
-                      <td className="var-rec-col-value"><strong>{row.value}</strong></td>
+                      {usedVarNames.map(varName => (
+                        <td key={varName} className="var-rec-col-value">
+                          <strong>{row.variableValues[varName]}</strong>
+                        </td>
+                      ))}
                       <td className="var-rec-col-source">
                         {row.status === 'has_audio' ? (
                           row.source === 'uploaded'
@@ -584,7 +681,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
                               disabled={generating !== null}
                               title={row.status === 'has_audio' ? 'Regenerate with AI' : 'Generate with AI'}
                             >
-                              {generating === i ? '...' : row.status === 'has_audio' ? '🤖 Regenerate' : '🤖 Generate'}
+                              {generating === i ? `⏳${genDots}` : row.status === 'has_audio' ? '🤖 Regenerate' : '🤖 Generate'}
                             </button>
                             <button
                               className="modal-btn-sm"
@@ -618,10 +715,11 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
 
-          {loading && <p className="modal-section" style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading...</p>}
+          </>)}
 
           <input
             ref={fileInputRef}

@@ -1,4 +1,3 @@
-import hashlib
 import io
 import json
 
@@ -11,22 +10,20 @@ from ..permissions import CanViewContent
 from ..services import storage
 from ..services.synthesize import (
     _collect_variables,
+    _compute_content_hash,
     _preload_asset_durations,
-    _preload_component_durations,
+    _preload_segment_durations,
     assemble,
     compute_stage_duration,
     generate_components,
 )
+from ..services.synthesize import _compute_duration
 
 
 class AssemblyMixin:
     def _parse_variables(self, variables_data):
         """Pass through variable objects as-is so synthesize can handle units."""
         return dict(variables_data or {})
-
-    def _content_hash(self, script, variables=None):
-        blob = json.dumps({"s": script, "v": variables or {}}, sort_keys=True)
-        return hashlib.md5(blob.encode()).hexdigest()[:10]
 
     def _assemble(self, request, name, stage_id=None):
         meditation = get_object_or_404(Meditation, name=name)
@@ -37,12 +34,14 @@ class AssemblyMixin:
             stage = get_object_or_404(Stage, meditation=meditation, stage_id=stage_id)
             script = stage.script
             extra_vars = self._parse_variables(stage.variables)
+            stage_variables = stage.variables or {}
         else:
             stage = None
             script = meditation.script
             extra_vars = {}
+            stage_variables = {}
 
-        # Allow variable overrides from request body (e.g. for demo playback)
+        # Allow variable overrides from request body
         body_vars = request.data.get("variables") if request.method == "POST" else None
         if body_vars and isinstance(body_vars, dict):
             extra_vars.update(self._parse_variables(body_vars))
@@ -50,29 +49,32 @@ class AssemblyMixin:
         if not script:
             return Response({"error": "not found"}, status=404)
 
-        h = self._content_hash(script, extra_vars)
+        # Generate all components first (idempotent — reuses existing clips)
+        generate_components(script, name, stage_id, extra_variables=extra_vars)
+
+        # Compute content hash (includes clip text_hashes for cache correctness)
+        h = _compute_content_hash(script, extra_vars, name, stage_id, stage_variables)
+        print(f"[assemble] med={name} stage={stage_id} hash={h}")
 
         # Check for cached output
         try:
             cached = AssembledOutput.objects.get(
-                meditation=meditation, stage=stage, script_hash=h,
+                meditation=meditation, stage=stage, content_hash=h,
             )
+            print(f"[assemble] cache HIT → {cached.audio_file}")
             return Response({
                 "status": "cached",
                 "filename": f"output_{h}.mp3",
                 "duration": cached.duration,
             })
         except AssembledOutput.DoesNotExist:
-            pass
+            print(f"[assemble] cache MISS — assembling fresh")
 
-        # Generate components and assemble
-        generate_components(script, name, stage_id, extra_variables=extra_vars)
         try:
             audio = assemble(script, name, stage_id, variables=extra_vars)
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
 
-        # Upload assembled output
         buf = io.BytesIO()
         audio.export(buf, format="mp3", bitrate="192k")
         buf.seek(0)
@@ -81,11 +83,10 @@ class AssemblyMixin:
         file_path = storage.output_path(name, filename, stage_id)
         storage.upload_file(file_path, buf.read(), content_type="audio/mpeg")
 
-        # Save record (use get_or_create to handle concurrent assembly requests)
         output, _created = AssembledOutput.objects.get_or_create(
             meditation=meditation,
             stage=stage,
-            script_hash=h,
+            content_hash=h,
             defaults={
                 "audio_file": file_path,
                 "duration": len(audio) / 1000,
@@ -100,7 +101,7 @@ class AssemblyMixin:
 
 
 class StageDurationsView(APIView):
-    """Return cached durations for a list of meditation/stage pairs."""
+    """Return most-recent cached durations for a list of meditation/stage pairs."""
     def post(self, request):
         items = request.data.get("items", [])
         results = {}
@@ -111,14 +112,12 @@ class StageDurationsView(APIView):
                 continue
             key = f"{med_name}/{stage_id}"
             try:
-                stage = Stage.objects.get(meditation_id=med_name, stage_id=stage_id)
-                blob = json.dumps({"s": stage.script or [], "v": stage.variables or {}}, sort_keys=True)
-                content_hash = hashlib.md5(blob.encode()).hexdigest()[:10]
-                output = AssembledOutput.objects.get(
-                    meditation_id=med_name, stage=stage, script_hash=content_hash,
-                )
-                results[key] = output.duration
-            except (Stage.DoesNotExist, AssembledOutput.DoesNotExist):
+                output = AssembledOutput.objects.filter(
+                    meditation_id=med_name,
+                    stage__stage_id=stage_id,
+                ).order_by("-id").first()
+                results[key] = output.duration if output else None
+            except Exception:
                 results[key] = None
         return Response(results)
 
@@ -135,18 +134,19 @@ class ComputeDurationsView(APIView):
             if key[0] and key[1]:
                 stage_groups.setdefault(key, []).append(item)
 
-        # Preload script + component + asset caches per unique stage
+        # Preload caches per unique stage
         caches = {}
         for (med_name, stage_id) in stage_groups:
             stage = Stage.objects.filter(
                 meditation_id=med_name, stage_id=stage_id,
             ).first()
             script = stage.script if stage else []
+            stage_variables = stage.variables or {} if stage else {}
             base_vars = _collect_variables(script)
             caches[(med_name, stage_id)] = {
                 "script": script,
+                "stage_variables": stage_variables,
                 "base_vars": base_vars,
-                "comp": _preload_component_durations(med_name, stage_id),
                 "asset": _preload_asset_durations(script),
             }
 
@@ -165,10 +165,14 @@ class ComputeDurationsView(APIView):
                 merged = {**cache["base_vars"]}
                 if variables:
                     merged.update(variables)
-                from ..services.synthesize import _compute_duration
+                comp = _preload_segment_durations(
+                    med_name, stage_id,
+                    variables=merged,
+                    stage_variables=cache["stage_variables"],
+                )
                 dur = _compute_duration(
                     cache["script"], merged,
-                    comp_cache=cache["comp"],
+                    comp_cache=comp,
                     asset_cache=cache["asset"],
                 )
                 results[item_id] = round(dur, 1)
@@ -208,7 +212,7 @@ class DayAssembleView(APIView):
         if not day_items:
             return Response({"error": "Day has no stages"}, status=400)
 
-        # Build a content hash from all stages + their variables
+        import hashlib, json as _json
         hash_input = []
         for item in day_items:
             stage = Stage.objects.filter(
@@ -219,25 +223,18 @@ class DayAssembleView(APIView):
             merged_vars = dict(stage.variables or {})
             if item.get("variables"):
                 merged_vars.update(item["variables"])
-            hash_input.append({
-                "s": stage.script,
-                "v": merged_vars,
-            })
+            hash_input.append({"s": stage.script, "v": merged_vars})
 
         content_hash = hashlib.md5(
-            json.dumps(hash_input, sort_keys=True).encode()
+            _json.dumps(hash_input, sort_keys=True).encode()
         ).hexdigest()[:12]
 
-        # Check cache
-        cache_key = f"day_{name}_{week_idx}_{day_idx}"
         filename = f"day_{content_hash}.mp3"
         file_path = f"programmes/{name}/{filename}"
 
-        # Look for existing cached file by checking storage
         try:
             existing = storage.download_file(file_path)
             if existing:
-                # File exists — compute timestamps from individual durations
                 timestamps = self._compute_timestamps(day_items)
                 return Response({
                     "status": "cached",
@@ -247,12 +244,10 @@ class DayAssembleView(APIView):
         except Exception:
             pass
 
-        # Assemble each stage and concatenate
         from pydub import AudioSegment as PydubSegment
 
         combined = PydubSegment.empty()
         timestamps = []
-        mixin = AssemblyMixin()
 
         for item in day_items:
             med_name = item["meditation"]
@@ -267,7 +262,6 @@ class DayAssembleView(APIView):
             if item.get("variables"):
                 merged_vars.update(item["variables"])
 
-            # Generate components and assemble this stage
             generate_components(stage.script, med_name, stage_id, extra_variables=merged_vars)
             stage_audio = assemble(stage.script, med_name, stage_id, variables=merged_vars)
 
@@ -285,7 +279,6 @@ class DayAssembleView(APIView):
         if len(combined) == 0:
             return Response({"error": "No audio produced"}, status=400)
 
-        # Export and upload
         buf = io.BytesIO()
         combined.export(buf, format="mp3", bitrate="192k")
         buf.seek(0)
@@ -298,10 +291,8 @@ class DayAssembleView(APIView):
         })
 
     def _compute_timestamps(self, day_items):
-        """Recompute timestamps from cached individual stage outputs."""
         timestamps = []
         offset = 0.0
-        mixin = AssemblyMixin()
         for item in day_items:
             stage = Stage.objects.filter(
                 meditation_id=item["meditation"], stage_id=item["stage_id"]
@@ -311,14 +302,10 @@ class DayAssembleView(APIView):
             merged_vars = dict(stage.variables or {})
             if item.get("variables"):
                 merged_vars.update(item["variables"])
-            h = mixin._content_hash(stage.script, merged_vars)
-            try:
-                output = AssembledOutput.objects.get(
-                    meditation_id=item["meditation"], stage=stage, script_hash=h
-                )
-                dur = output.duration
-            except AssembledOutput.DoesNotExist:
-                dur = 0
+            output = AssembledOutput.objects.filter(
+                meditation_id=item["meditation"], stage=stage,
+            ).order_by("-id").first()
+            dur = output.duration if output else 0
             timestamps.append({
                 "id": item.get("id", ""),
                 "start": offset,

@@ -6,10 +6,16 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
 
-def component_path(meditation_name: str, seg_id: str, stage_id: str = None) -> str:
+def clip_path(text_hash: str) -> str:
+    """Content-addressed path for an AudioClip. Immutable once written."""
+    return f"audio/clips/{text_hash}.mp3"
+
+
+def component_path(meditation_name: str, seg_id: str, stage_id: str = None, text_hash: str = None) -> str:
+    filename = f"{seg_id}_{text_hash}.mp3" if text_hash else f"{seg_id}.mp3"
     if stage_id:
-        return f"meditations/{meditation_name}/stages/{stage_id}/components/{seg_id}.mp3"
-    return f"meditations/{meditation_name}/components/{seg_id}.mp3"
+        return f"meditations/{meditation_name}/stages/{stage_id}/components/{filename}"
+    return f"meditations/{meditation_name}/components/{filename}"
 
 
 def output_path(meditation_name: str, filename: str, stage_id: str = None) -> str:

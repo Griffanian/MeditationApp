@@ -174,32 +174,117 @@ class Stage(models.Model):
         return f"{self.meditation_id}/{self.stage_id}"
 
 
-class Component(models.Model):
-    SOURCE_CHOICES = [
-        ("generated", "Generated"),
-        ("uploaded", "Uploaded"),
-    ]
+class Voice(models.Model):
+    """A registered ElevenLabs TTS voice."""
+    id = models.CharField(max_length=100, primary_key=True)
+    provider = models.CharField(max_length=50, default="elevenlabs")
+    display_name = models.CharField(max_length=100)
 
+    def __str__(self):
+        return self.display_name or self.id
+
+
+class GeneratedVoiceClip(models.Model):
+    """Content-addressed TTS audio. PK = md5(text + "|" + direction + "|" + voice_id)[:16].
+    Never deleted — multiple segments can share the same clip.
+    """
+    text_hash = models.CharField(max_length=16, primary_key=True)
+    voice = models.ForeignKey(Voice, on_delete=models.PROTECT, related_name="clips")
+    audio_file = models.FileField(upload_to="clips/", max_length=300)
+    timestamps = models.JSONField(default=list, blank=True)
+    duration = models.FloatField(default=0)
+
+    def __str__(self):
+        return self.text_hash
+
+
+class UserUploadedClip(models.Model):
+    """User-uploaded or user-recorded audio file."""
+    audio_file = models.FileField(upload_to="uploads/", max_length=300)
+    duration = models.FloatField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"upload_{self.pk}"
+
+
+class SpeechSegmentAudio(models.Model):
+    """Per-segment pointer to the active clip for a fixed speech segment.
+
+    Variable segments (text containing {varName} refs from stage.variables)
+    are handled entirely by VariableRecording — no SpeechSegmentAudio row
+    is created for them.
+    """
     meditation = models.ForeignKey(
-        Meditation, on_delete=models.CASCADE, related_name="components"
+        Meditation, on_delete=models.CASCADE, related_name="speech_segments"
     )
     stage = models.ForeignKey(
-        Stage, on_delete=models.CASCADE, related_name="components",
-        null=True, blank=True,
+        Stage, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="speech_segments",
     )
     seg_id = models.CharField(max_length=200)
-    text_hash = models.CharField(max_length=8, blank=True)
-    timestamps = models.JSONField(default=list, blank=True)
-    trim_meta = models.JSONField(default=dict, blank=True)
-    audio_file = models.FileField(upload_to="components/", max_length=300, blank=True)
-    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, blank=True)
-    variable_values = models.JSONField(default=dict, blank=True)
+    audio_clip = models.ForeignKey(
+        GeneratedVoiceClip, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="speech_segments",
+    )
+    user_clip = models.ForeignKey(
+        UserUploadedClip, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="speech_segments",
+    )
+    trim_start = models.FloatField(null=True, blank=True)
+    trim_end = models.FloatField(null=True, blank=True)
 
     class Meta:
         unique_together = ("meditation", "stage", "seg_id")
 
     def __str__(self):
         return f"{self.meditation_id}/{self.seg_id}"
+
+
+class VariableRecording(models.Model):
+    """One row per (segment, variable combination).
+
+    Each slot is filled by either a generated clip (voices tab) or a
+    user-uploaded clip (uploaded tab) — never both simultaneously.
+    Assembly looks up by (seg_id, variable_key) where variable_key is a
+    canonical sorted string e.g. "phaseDuration=4,rounds=5".
+    """
+    SOURCE_CHOICES = [
+        ("generated", "Generated"),
+        ("uploaded", "Uploaded"),
+    ]
+
+    meditation = models.ForeignKey(
+        Meditation, on_delete=models.CASCADE, related_name="variable_recordings"
+    )
+    stage = models.ForeignKey(
+        Stage, on_delete=models.CASCADE, related_name="variable_recordings",
+        null=True, blank=True,
+    )
+    seg_id = models.CharField(max_length=200)
+    variable_values = models.JSONField(default=dict)
+    variable_key = models.CharField(max_length=500)
+    voice = models.ForeignKey(
+        Voice, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="variable_recordings",
+    )
+    audio_clip = models.ForeignKey(
+        GeneratedVoiceClip, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="variable_recordings",
+    )
+    user_clip = models.ForeignKey(
+        UserUploadedClip, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="variable_recordings",
+    )
+    trim_start = models.FloatField(null=True, blank=True)
+    trim_end = models.FloatField(null=True, blank=True)
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, blank=True)
+
+    class Meta:
+        unique_together = ("meditation", "stage", "seg_id", "variable_key")
+
+    def __str__(self):
+        return f"{self.meditation_id}/{self.seg_id} [{self.variable_values}]"
 
 
 class Asset(models.Model):
@@ -238,15 +323,15 @@ class AssembledOutput(models.Model):
     stage = models.ForeignKey(
         Stage, on_delete=models.CASCADE, null=True, blank=True,
     )
-    script_hash = models.CharField(max_length=10)
+    content_hash = models.CharField(max_length=10)
     audio_file = models.FileField(upload_to="outputs/", max_length=300)
     duration = models.FloatField()
 
     class Meta:
-        unique_together = ("meditation", "stage", "script_hash")
+        unique_together = ("meditation", "stage", "content_hash")
 
     def __str__(self):
-        return f"{self.meditation_id}/output_{self.script_hash}"
+        return f"{self.meditation_id}/output_{self.content_hash}"
 
 
 class Thread(models.Model):

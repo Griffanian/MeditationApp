@@ -8,7 +8,6 @@ from django.core.management.base import BaseCommand
 from meditations.models import (
     Asset,
     AssembledOutput,
-    Component,
     Meditation,
     Stage,
 )
@@ -153,7 +152,7 @@ class Command(BaseCommand):
             AssembledOutput.objects.update_or_create(
                 meditation=meditation,
                 stage=stage,
-                script_hash=script_hash,
+                content_hash=script_hash,
                 defaults={
                     "audio_file": file_path,
                     "duration": len(audio) / 1000,
@@ -187,14 +186,18 @@ class Command(BaseCommand):
             trim_path = components_dir / f"{seg_id}_trim.json"
             trim_meta = json.loads(trim_path.read_text()) if trim_path.exists() else {}
 
-            Component.objects.update_or_create(
+            # Legacy import — create a UserUploadedClip and SpeechSegmentAudio
+            from meditations.models import SpeechSegmentAudio, UserUploadedClip
+            user_clip = UserUploadedClip.objects.create(audio_file=file_path, duration=0)
+            trim_start = trim_meta.get("start")
+            trim_end = trim_meta.get("end")
+            SpeechSegmentAudio.objects.update_or_create(
                 meditation=meditation,
                 stage=stage,
                 seg_id=seg_id,
                 defaults={
-                    "text_hash": text_hash,
-                    "timestamps": timestamps,
-                    "trim_meta": trim_meta,
-                    "audio_file": file_path,
+                    "user_clip": user_clip,
+                    "trim_start": trim_start,
+                    "trim_end": trim_end,
                 },
             )

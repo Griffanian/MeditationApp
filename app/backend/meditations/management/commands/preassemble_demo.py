@@ -5,28 +5,32 @@ phaseDuration × rounds combination (1-7 each = 49 total).
 All are stored in Supabase so users always hit the cache instantly.
 """
 
-import hashlib
 import io
-import json
 
 from django.core.management.base import BaseCommand
 
 from meditations.models import AssembledOutput, Meditation, Stage
 from meditations.services import storage
-from meditations.services.synthesize import assemble, generate_components
+from meditations.services.synthesize import (
+    _compute_content_hash,
+    assemble,
+    generate_components,
+)
 
 
 MED_NAME = "box-breathing"
 STAGE_ID = "box-breathing"
 
 
-def _content_hash(script, variables):
-    blob = json.dumps({"s": script, "v": variables or {}}, sort_keys=True)
-    return hashlib.md5(blob.encode()).hexdigest()[:10]
-
-
 class Command(BaseCommand):
     help = "Pre-assemble all box breathing variable combinations (49 total)"
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Delete all existing AssembledOutput records and regenerate from scratch.",
+        )
 
     def handle(self, *args, **options):
         try:
@@ -37,6 +41,12 @@ class Command(BaseCommand):
                 "Box breathing exercise not found. Run seed_box_breathing first."
             ))
             return
+
+        if options["force"]:
+            deleted, _ = AssembledOutput.objects.filter(
+                meditation=meditation, stage=stage,
+            ).delete()
+            self.stdout.write(f"  Cleared {deleted} existing AssembledOutput records.")
 
         script = stage.script
         base_vars = dict(stage.variables or {})
@@ -55,17 +65,20 @@ class Command(BaseCommand):
                 else:
                     extra_vars["rounds"] = rounds
 
-                h = _content_hash(script, extra_vars)
+                # Generate components first — required before hashing (clip hashes must exist)
+                generate_components(script, MED_NAME, STAGE_ID, extra_variables=extra_vars)
+
+                # Use the same hash function as the live assemble view
+                h = _compute_content_hash(script, extra_vars, MED_NAME, STAGE_ID, base_vars)
 
                 # Skip if already assembled
-                if AssembledOutput.objects.filter(meditation=meditation, stage=stage, script_hash=h).exists():
+                if AssembledOutput.objects.filter(meditation=meditation, stage=stage, content_hash=h).exists():
                     done += 1
                     self.stdout.write(f"  [{done}/{total}] cached dur={dur}s rounds={rounds}")
                     continue
 
                 self.stdout.write(f"  [{done + 1}/{total}] assembling dur={dur}s rounds={rounds}...")
 
-                generate_components(script, MED_NAME, STAGE_ID, extra_variables=extra_vars)
                 audio = assemble(script, MED_NAME, STAGE_ID, variables=extra_vars)
 
                 buf = io.BytesIO()
@@ -79,7 +92,7 @@ class Command(BaseCommand):
                 AssembledOutput.objects.get_or_create(
                     meditation=meditation,
                     stage=stage,
-                    script_hash=h,
+                    content_hash=h,
                     defaults={"audio_file": file_path, "duration": len(audio) / 1000},
                 )
 

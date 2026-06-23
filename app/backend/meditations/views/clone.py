@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import Component, Meditation, Practice, Stage
+from ..models import Meditation, Practice, SpeechSegmentAudio, Stage, VariableRecording
 from ..permissions import CanViewContent, IsContentCreator
 
 
@@ -16,11 +16,9 @@ class CloneMeditationView(APIView):
         if not CanViewContent().has_object_permission(request, None, source):
             return Response({"error": "Forbidden"}, status=403)
 
-        # Generate unique slug
         new_name = f"med-{uuid.uuid4().hex[:12]}"
         new_display = f"{source.display_name or source.name} (copy)"
 
-        # Clone meditation
         clone = Meditation.objects.create(
             name=new_name,
             display_name=new_display,
@@ -42,17 +40,35 @@ class CloneMeditationView(APIView):
             )
             stage_map[stage.pk] = new_stage
 
-        # Clone components — reuse same audio_file paths (no storage duplication)
-        for comp in source.components.all():
-            new_stage = stage_map.get(comp.stage_id) if comp.stage_id else None
-            Component.objects.create(
+        # Clone SpeechSegmentAudio — shares GeneratedVoiceClip FKs (no storage duplication)
+        for ssa in SpeechSegmentAudio.objects.filter(meditation=source).select_related("stage"):
+            new_stage = stage_map.get(ssa.stage_id) if ssa.stage_id else None
+            SpeechSegmentAudio.objects.create(
                 meditation=clone,
                 stage=new_stage,
-                seg_id=comp.seg_id,
-                text_hash=comp.text_hash,
-                timestamps=comp.timestamps,
-                trim_meta=comp.trim_meta,
-                audio_file=comp.audio_file,
+                seg_id=ssa.seg_id,
+                audio_clip=ssa.audio_clip,
+                user_clip=ssa.user_clip,
+                trim_start=ssa.trim_start,
+                trim_end=ssa.trim_end,
+            )
+
+        # Clone VariableRecording — shares GeneratedVoiceClip FKs
+        for vr in VariableRecording.objects.filter(meditation=source).select_related("stage"):
+            new_stage = stage_map.get(vr.stage_id) if vr.stage_id else None
+            VariableRecording.objects.create(
+                meditation=clone,
+                stage=new_stage,
+                seg_id=vr.seg_id,
+                variable_name=vr.variable_name,
+                variable_order=vr.variable_order,
+                variable_value=vr.variable_value,
+                voice=vr.voice,
+                audio_clip=vr.audio_clip,
+                user_clip=vr.user_clip,
+                trim_start=vr.trim_start,
+                trim_end=vr.trim_end,
+                source=vr.source,
             )
 
         return Response({
@@ -80,7 +96,7 @@ class ClonePracticeView(APIView):
         clone = Practice.objects.create(
             name=new_name,
             display_name=new_display,
-            items=source.items,  # JSON references to meditations by slug — stay valid
+            items=source.items,
             created_by=request.user,
             is_public=False,
         )

@@ -153,10 +153,32 @@ function clearWordHighlights() {
 
 let currentScript = null;
 let currentComponents = {};
+let currentVariables = {};
 
 export function setScriptAndComponents(script, components) {
   currentScript = script;
   currentComponents = components;
+}
+
+export function setPlaybackVariables(variables) {
+  currentVariables = variables;
+}
+
+function _varKeyForSeg(seg, variables) {
+  if (!seg.text || !/\{\w+\}/.test(seg.text)) return null;
+  const entries = [];
+  const seen = new Set();
+  for (const m of seg.text.matchAll(/\{(\w+)\}/g)) {
+    const name = m[1];
+    if (!seen.has(name) && variables[name] !== undefined) {
+      seen.add(name);
+      const v = variables[name];
+      entries.push([name, String(typeof v === 'object' ? v.value : v)]);
+    }
+  }
+  if (!entries.length) return null;
+  entries.sort(([a], [b]) => (a < b ? -1 : 1));
+  return entries.map(([k, v]) => `${k}=${v}`).join(',');
 }
 
 function debugLog(msg) {
@@ -196,7 +218,9 @@ export function playSeg(seg, onEnd, variables = {}, { script, components } = {})
     audio.onerror = null;
     audio.loop = false;
     audio.volume = 1;
-    audio.src = `${BASE}/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`;
+    const varKey = _varKeyForSeg(seg, variables || currentVariables);
+    const componentUrl = `${BASE}/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`;
+    audio.src = varKey ? `${componentUrl}?var_key=${encodeURIComponent(varKey)}` : componentUrl;
     currentAudio = audio;
     audio.onended = () => { debugLog(`speech "${segId}" — ended`); safeEnd(); };
     audio.onerror = (e) => { debugLog(`speech "${segId}" — ERROR: ${audio.error?.message || e?.type || 'unknown'}`); safeEnd(); };
@@ -290,7 +314,9 @@ export async function playSegFromWord(seg, wordIndex, onEnd) {
   const audio = getAudio();
   audio.onended = null;
   audio.onerror = null;
-  audio.src = `${BASE}/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`;
+  const varKey2 = _varKeyForSeg(seg, currentVariables);
+  const componentUrl2 = `${BASE}/audio/meditation/${currentMeditation}/stage/${currentStage}/component/${segId}.mp3`;
+  audio.src = varKey2 ? `${componentUrl2}?var_key=${encodeURIComponent(varKey2)}` : componentUrl2;
   currentAudio = audio;
   audio.currentTime = startTime;
   audio.onended = onEnd;

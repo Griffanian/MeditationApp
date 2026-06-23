@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DndContext, closestCenter, pointerWithin, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, assembleStage, generateAllAudio } from '../api';
-import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, computeMarkerDuration, registerExternalStop, unregisterExternalStop, unlockAudio } from '../playback';
+import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, setPlaybackVariables, computeMarkerDuration, registerExternalStop, unregisterExternalStop, unlockAudio } from '../playback';
 import { getClipboard, setClipboard } from '../clipboard';
 import { generateId, ensureIds, findById, findByIdWithContext, allIds, cloneWithNewIds, isDescendantOf } from '../segmentIds';
 import { SEGMENT_TYPES } from '../segmentDefs';
@@ -37,6 +37,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   useEffect(() => { setScriptAndComponents(script, components); }, [script, components]);
 
   const [variables, setVariables] = useState({});
+  useEffect(() => { setPlaybackVariables(variables); }, [variables]);
   const [loadingVars, setLoadingVars] = useState(true);
   const [loadingTimeline, setLoadingTimeline] = useState(true);
   const [loopCounters, setLoopCounters] = useState({});

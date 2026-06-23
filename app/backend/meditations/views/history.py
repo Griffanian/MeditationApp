@@ -1,6 +1,3 @@
-import hashlib
-import json
-
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -35,12 +32,13 @@ def _build_exercise_details(sessions):
     stages = {(s.meditation_id, s.stage_id): s for s in Stage.objects.filter(stage_q)}
 
     # Batch-load all assembled outputs for those stages
-    output_map = {}  # (meditation_id, stage_pk, script_hash) -> duration
+    # Most-recent assembled output per (meditation, stage) — keyed without hash
+    output_map = {}  # (meditation_id, stage_pk) -> duration
     outputs = AssembledOutput.objects.filter(
         stage__in=stages.values()
-    ).select_related("stage")
+    ).select_related("stage").order_by("id")
     for o in outputs:
-        output_map[(o.meditation_id, o.stage_id, o.script_hash)] = o.duration
+        output_map[(o.meditation_id, o.stage_id)] = o.duration
 
     return stages, output_map
 
@@ -52,12 +50,7 @@ def _get_exercise_duration(item, stages, output_map):
     stage = stages.get((med, sid))
     if not stage:
         return None
-    merged_vars = dict(stage.variables or {})
-    if item.get("variables"):
-        merged_vars.update(item["variables"])
-    blob = json.dumps({"s": stage.script or [], "v": merged_vars}, sort_keys=True)
-    h = hashlib.md5(blob.encode()).hexdigest()[:10]
-    return output_map.get((med, stage.pk, h))
+    return output_map.get((med, stage.pk))
 
 
 def _format_variables(item):

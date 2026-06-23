@@ -14,7 +14,7 @@ from pydub import AudioSegment
 from . import storage
 
 
-DEFAULT_VOICE = "UmQN7jS1Ee8B1czsUtQh"
+DEFAULT_VOICE_ID = "UmQN7jS1Ee8B1czsUtQh"
 
 # Match ElevenLabs mp3_44100_128 output to avoid costly resampling in PyDub
 _FRAME_RATE = 44100
@@ -84,7 +84,6 @@ def _substitute_variables(text: str, variables: dict) -> str:
         var_name = match.group(1)
         if var_name in variables:
             val = variables[var_name]
-            # Handle variable objects with value/unit/displayName
             if isinstance(val, dict):
                 raw = val.get("value", 0)
                 try:
@@ -113,26 +112,101 @@ def _collect_speech_segments(segments: list[dict]) -> dict:
     return speech
 
 
+def _make_variable_key(variable_values: dict) -> str:
+    return ",".join(f"{k}={v}" for k, v in sorted(variable_values.items()))
+
+
+def _get_stage_var_refs(text: str, stage_variables: dict) -> list[str]:
+    """Ordered list of variable names in text that are defined as stage variables."""
+    seen = set()
+    result = []
+    for m in re.finditer(r"\{(\w+)\}", text):
+        name = m.group(1)
+        if name in stage_variables and name not in seen:
+            seen.add(name)
+            result.append(name)
+    return result
+
+
+def _clip_duration(audio_clip, user_clip, trim_start, trim_end) -> float:
+    """Effective clip duration in seconds."""
+    clip = user_clip or audio_clip
+    if not clip:
+        return 0
+    if trim_start is not None and trim_end is not None:
+        return max(0.0, trim_end - trim_start)
+    return clip.duration if hasattr(clip, "duration") else 0
+
+
+def _tts_hash(text: str, direction: str, voice_id: str) -> str:
+    return hashlib.md5((text + "|" + direction + "|" + voice_id).encode()).hexdigest()[:16]
+
+
+def _generate_tts_clip(client, text: str, direction: str, voice_id: str) -> tuple:
+    """Call ElevenLabs and return (audio_bytes, words). Retries on rate limits."""
+    synth_text = text if text.rstrip().endswith((".", "!", "?")) else text.rstrip() + "."
+    tts_kwargs = dict(
+        text=synth_text,
+        voice_id=voice_id,
+        model_id="eleven_multilingual_v2",
+        output_format="mp3_44100_128",
+        language_code="en",
+    )
+    if direction:
+        tts_kwargs["previous_text"] = direction
+
+    for attempt in range(5):
+        try:
+            response = client.text_to_speech.convert_with_timestamps(**tts_kwargs)
+            break
+        except Exception as exc:
+            status = getattr(exc, "status_code", None) or getattr(
+                getattr(exc, "response", None), "status_code", None
+            )
+            if status in (429, 503) and attempt < 4:
+                wait = 2 ** attempt
+                print(f"    ElevenLabs {status}, retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
+
+    audio_bytes = base64.b64decode(response.audio_base_64)
+    words = _chars_to_words(response.alignment)
+    return audio_bytes, words
+
+
 def generate_components(
     script: list[dict],
     meditation_name: str,
     stage_id: str = None,
-    voice: str = DEFAULT_VOICE,
+    voice_id: str = DEFAULT_VOICE_ID,
     extra_variables: dict = None,
     only_seg_ids: set = None,
 ):
-    """Generate and cache speech components + word timestamps.
+    """Generate and cache speech components.
 
-    Stores audio in Supabase Storage and metadata in the Component model.
+    Fixed segments → SpeechSegmentAudio + GeneratedVoiceClip.
+    Variable segments → VariableRecording + GeneratedVoiceClip (one row per
+    variable position/value combination present in extra_variables).
     """
-    from meditations.models import Component, Meditation, Stage
+    from meditations.models import (
+        GeneratedVoiceClip, Meditation, SpeechSegmentAudio,
+        Stage, VariableRecording, Voice,
+    )
 
     client = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
 
     meditation = Meditation.objects.get(name=meditation_name)
     stage = None
+    stage_variables = {}
     if stage_id:
         stage = Stage.objects.get(meditation=meditation, stage_id=stage_id)
+        stage_variables = stage.variables or {}
+
+    voice_obj, _ = Voice.objects.get_or_create(
+        id=voice_id,
+        defaults={"provider": "elevenlabs", "display_name": voice_id},
+    )
 
     variables = _collect_variables(script)
     if extra_variables:
@@ -143,99 +217,132 @@ def generate_components(
     for i, (seg_id, seg_info) in enumerate(speech_segments.items()):
         if only_seg_ids is not None and seg_id not in only_seg_ids:
             continue
-        text = _substitute_variables(seg_info["text"], variables)
+
+        text_template = seg_info["text"]
         direction = seg_info["direction"]
-        text_hash = hashlib.md5((text + direction).encode()).hexdigest()[:8]
+        var_refs = _get_stage_var_refs(text_template, stage_variables)
 
-        component, _ = Component.objects.get_or_create(
-            meditation=meditation, stage=stage, seg_id=seg_id,
-        )
+        # Substitute all variables to get the final spoken text
+        text = _substitute_variables(text_template, variables)
+        text_hash = _tts_hash(text, direction, voice_id)
 
-        # Check if cached version matches current text
-        if component.audio_file and component.text_hash == text_hash:
+        if var_refs:
+            # Variable segment — create VariableRecording rows
+            _generate_variable_segment(
+                client, meditation, stage, seg_id, text, direction,
+                text_hash, voice_id, voice_obj, var_refs, variables,
+                i, total,
+            )
+        else:
+            # Fixed segment — create/update SpeechSegmentAudio
+            _generate_fixed_segment(
+                client, meditation, stage, seg_id, text, direction,
+                text_hash, voice_id, voice_obj, i, total,
+            )
+
+
+def _generate_fixed_segment(
+    client, meditation, stage, seg_id, text, direction,
+    text_hash, voice_id, voice_obj, i, total,
+):
+    from meditations.models import GeneratedVoiceClip, SpeechSegmentAudio
+
+    existing_clip = GeneratedVoiceClip.objects.filter(pk=text_hash).first()
+    ssa, _ = SpeechSegmentAudio.objects.get_or_create(
+        meditation=meditation, stage=stage, seg_id=seg_id,
+    )
+
+    if existing_clip:
+        if ssa.audio_clip_id != text_hash:
+            ssa.audio_clip = existing_clip
+            ssa.save(update_fields=["audio_clip"])
+            print(f"  [{i + 1}/{total}] linked existing clip: {seg_id}")
+        else:
             print(f"  [{i + 1}/{total}] cached: {seg_id}")
-            continue
+        return
 
-        # Before overwriting, preserve the old audio under a cache key
-        # so it stays findable by text_hash for future variable variations
-        if component.audio_file and component.text_hash and component.text_hash != text_hash:
-            cache_id = f"__cache__{component.text_hash}"
-            if not Component.objects.filter(meditation=meditation, stage=stage, seg_id=cache_id).exists():
-                Component.objects.create(
-                    meditation=meditation, stage=stage, seg_id=cache_id,
-                    text_hash=component.text_hash,
-                    timestamps=component.timestamps,
-                    audio_file=component.audio_file,
-                    source=component.source,
-                    variable_values=component.variable_values,
-                )
+    print(f'  [{i + 1}/{total}] generating (fixed): "{text[:50]}..."')
+    audio_bytes, words = _generate_tts_clip(client, text, direction, voice_id)
 
-        # Reuse audio from another component with the same text+direction
-        existing = Component.objects.filter(
-            meditation=meditation, text_hash=text_hash,
-        ).exclude(audio_file="").first()
-        if existing:
-            component.text_hash = text_hash
-            component.timestamps = existing.timestamps
-            component.audio_file = existing.audio_file
-            component.save()
-            print(f"  [{i + 1}/{total}] reused: {seg_id}")
-            continue
+    audio = AudioSegment.from_mp3(io.BytesIO(audio_bytes))
+    buf = io.BytesIO()
+    audio.export(buf, format="mp3", bitrate="192k")
+    buf.seek(0)
 
-        print(f'  [{i + 1}/{total}] generating: "{text[:50]}..."')
+    file_path = storage.clip_path(text_hash)
+    storage.upload_file(file_path, buf.read(), content_type="audio/mpeg")
 
-        # For very short texts, the multilingual model can misinterpret the
-        # language.  Ensure the text ends with a period to anchor pronunciation.
-        synth_text = text if text.rstrip().endswith((".", "!", "?")) else text.rstrip() + "."
+    clip = GeneratedVoiceClip.objects.create(
+        text_hash=text_hash,
+        voice=voice_obj,
+        audio_file=file_path,
+        timestamps=words,
+        duration=len(audio) / 1000,
+    )
+    ssa.audio_clip = clip
+    ssa.trim_start = 0.0
+    ssa.trim_end = clip.duration
+    ssa.save(update_fields=["audio_clip", "trim_start", "trim_end"])
 
-        # Use direction as previous_text to guide vocal tone/pacing
-        tts_kwargs = dict(
-            text=synth_text,
-            voice_id=voice,
-            model_id="eleven_multilingual_v2",
-            output_format="mp3_44100_128",
-            language_code="en",
-        )
-        if direction:
-            tts_kwargs["previous_text"] = direction
 
-        # Retry with exponential backoff on rate-limit / server errors
-        for attempt in range(5):
-            try:
-                response = client.text_to_speech.convert_with_timestamps(**tts_kwargs)
-                break
-            except Exception as exc:
-                status = getattr(exc, "status_code", None) or getattr(
-                    getattr(exc, "response", None), "status_code", None
-                )
-                if status in (429, 503) and attempt < 4:
-                    wait = 2 ** attempt  # 1, 2, 4, 8, 16 seconds
-                    print(f"    ElevenLabs {status}, retrying in {wait}s...")
-                    time.sleep(wait)
-                else:
-                    raise
+def _generate_variable_segment(
+    client, meditation, stage, seg_id, text, direction,
+    text_hash, voice_id, voice_obj, var_refs, variables,
+    i, total,
+):
+    from meditations.models import GeneratedVoiceClip, VariableRecording
 
-        # Re-encode audio at 192k bitrate
-        audio_bytes = base64.b64decode(response.audio_base_64)
+    existing_clip = GeneratedVoiceClip.objects.filter(pk=text_hash).first()
+
+    if not existing_clip:
+        print(f'  [{i + 1}/{total}] generating (variable): "{text[:50]}..."')
+        audio_bytes, words = _generate_tts_clip(client, text, direction, voice_id)
+
         audio = AudioSegment.from_mp3(io.BytesIO(audio_bytes))
         buf = io.BytesIO()
         audio.export(buf, format="mp3", bitrate="192k")
         buf.seek(0)
 
-        # Upload to Supabase Storage
-        file_path = storage.component_path(meditation_name, seg_id, stage_id)
+        file_path = storage.clip_path(text_hash)
         storage.upload_file(file_path, buf.read(), content_type="audio/mpeg")
 
-        # Build word-level timestamps
-        words = _chars_to_words(response.alignment)
+        existing_clip = GeneratedVoiceClip.objects.create(
+            text_hash=text_hash,
+            voice=voice_obj,
+            audio_file=file_path,
+            timestamps=words,
+            duration=len(audio) / 1000,
+        )
+    else:
+        print(f"  [{i + 1}/{total}] cached (variable): {seg_id}")
 
-        # Update component record
-        component.text_hash = text_hash
-        component.timestamps = words
-        component.audio_file = file_path
-        component.source = "generated"
-        component.variable_values = extra_variables or {}
-        component.save()
+    # Build var_vals dict for all var_refs at their current values
+    var_vals = {}
+    for var_name in var_refs:
+        raw = variables.get(var_name)
+        val = raw.get("value", None) if isinstance(raw, dict) else raw
+        if val is not None:
+            var_vals[var_name] = str(val)
+    if not var_vals:
+        return
+
+    variable_key = _make_variable_key(var_vals)
+
+    VariableRecording.objects.update_or_create(
+        meditation=meditation,
+        stage=stage,
+        seg_id=seg_id,
+        variable_key=variable_key,
+        defaults={
+            "variable_values": var_vals,
+            "voice": voice_obj,
+            "audio_clip": existing_clip,
+            "user_clip": None,
+            "source": "generated",
+            "trim_start": 0.0,
+            "trim_end": existing_clip.duration,
+        },
+    )
 
 
 def _chars_to_words(alignment) -> list[dict]:
@@ -268,14 +375,6 @@ def _chars_to_words(alignment) -> list[dict]:
     return words
 
 
-def _apply_trim(audio: AudioSegment, trim_meta: dict) -> AudioSegment:
-    if trim_meta and "start" in trim_meta and "end" in trim_meta:
-        start_ms = int(trim_meta["start"] * 1000)
-        end_ms = int(trim_meta["end"] * 1000)
-        return audio[start_ms:end_ms]
-    return audio
-
-
 def _count_markers(segments: list[dict], variables: dict) -> int:
     """Count effective split markers, accounting for loop repeats."""
     count = 0
@@ -299,11 +398,14 @@ def _assemble_segments(
     depth: int = 0,
     variables: dict = None,
     marker_duration: float = None,
+    stage_variables: dict = None,
 ) -> AudioSegment:
-    from meditations.models import Asset, Component
+    from meditations.models import Asset, SpeechSegmentAudio, VariableRecording
 
     if variables is None:
         variables = {}
+    if stage_variables is None:
+        stage_variables = {}
     combined = AudioSegment.empty()
     prev_type = None
 
@@ -314,15 +416,45 @@ def _assemble_segments(
         seg_type = seg["type"]
 
         if seg_type == "speech":
-            component = Component.objects.get(
-                meditation_id=meditation_name,
-                stage__stage_id=stage_id if stage_id else None,
-                seg_id=seg["id"],
-            )
-            audio_data = storage.download_file(component.audio_file.name)
-            audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
-            audio = _apply_trim(audio, component.trim_meta)
-            # Fade out when followed by silence (pause, split_marker, or end)
+            var_refs = _get_stage_var_refs(seg["text"], stage_variables)
+
+            if var_refs:
+                # Variable segment — look up VariableRecording by variable_key
+                var_vals = {}
+                for var_name in var_refs:
+                    raw = variables.get(var_name, "")
+                    val = raw.get("value", raw) if isinstance(raw, dict) else raw
+                    var_vals[var_name] = str(val)
+                variable_key = _make_variable_key(var_vals)
+                rec = VariableRecording.objects.select_related("audio_clip", "user_clip").get(
+                    meditation_id=meditation_name,
+                    stage__stage_id=stage_id if stage_id else None,
+                    seg_id=seg["id"],
+                    variable_key=variable_key,
+                )
+                clip = rec.user_clip or rec.audio_clip
+                if not clip:
+                    raise ValueError(f"No audio for variable segment '{seg['id']}' ({var_name}={val})")
+                audio_data = storage.download_file(clip.audio_file.name)
+                audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
+                if rec.trim_start is not None and rec.trim_end is not None:
+                    audio = audio[int(rec.trim_start * 1000):int(rec.trim_end * 1000)]
+            else:
+                # Fixed segment — look up SpeechSegmentAudio
+                ssa = SpeechSegmentAudio.objects.select_related("audio_clip", "user_clip").get(
+                    meditation_id=meditation_name,
+                    stage__stage_id=stage_id if stage_id else None,
+                    seg_id=seg["id"],
+                )
+                clip = ssa.user_clip or ssa.audio_clip
+                if not clip:
+                    raise ValueError(f"No audio for fixed segment '{seg['id']}'")
+                audio_data = storage.download_file(clip.audio_file.name)
+                audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
+                if ssa.trim_start is not None and ssa.trim_end is not None:
+                    audio = audio[int(ssa.trim_start * 1000):int(ssa.trim_end * 1000)]
+
+            # Fade out when followed by silence/end
             next_type = segments[i + 1]["type"] if i + 1 < len(segments) else None
             if next_type in (None, "pause", "split_marker"):
                 audio = audio.fade_out(_FADE_MS)
@@ -352,22 +484,21 @@ def _assemble_segments(
                 asset = Asset.objects.get(filename=seg["file"])
                 audio_data = storage.download_file(asset.audio_file.name)
                 audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
-                audio = _apply_trim(audio, asset.trim_meta)
+                if asset.trim_meta and "start" in asset.trim_meta and "end" in asset.trim_meta:
+                    s, e = int(asset.trim_meta["start"] * 1000), int(asset.trim_meta["end"] * 1000)
+                    audio = audio[s:e]
                 combined += audio
             except Asset.DoesNotExist:
-                # Fallback to local assets directory
                 from django.conf import settings
                 asset_path = settings.BASE_DIR / "assets" / seg["file"]
                 if asset_path.exists():
-                    audio = AudioSegment.from_mp3(asset_path)
-                    combined += audio
+                    combined += AudioSegment.from_mp3(asset_path)
 
         elif seg_type == "loop":
             target = seg.get("targetDuration")
             is_section = bool(seg.get("label"))
 
             if target is not None and is_section:
-                # Section with a target duration — two-pass split marker distribution
                 if isinstance(target, str):
                     match = re.match(r"^\{(\w+)\}$", target)
                     if match and match.group(1) in variables:
@@ -376,13 +507,12 @@ def _assemble_segments(
                 num_markers = _count_markers(seg["segments"], variables)
 
                 if num_markers > 0:
-                    # Pass 1: assemble with 0-duration markers to get fixed duration
                     fixed_audio = _assemble_segments(
                         seg["segments"], meditation_name, stage_id,
                         depth + 1, variables, marker_duration=0,
+                        stage_variables=stage_variables,
                     )
                     fixed_duration = len(fixed_audio) / 1000.0
-
                     remaining = target_seconds - fixed_duration
                     if remaining < 0:
                         label = seg.get("label", "section")
@@ -392,27 +522,24 @@ def _assemble_segments(
                             f"section \"{label}\""
                         )
                     per_marker = remaining / num_markers
-
-                    # Pass 2: assemble with computed marker durations
                     combined += _assemble_segments(
                         seg["segments"], meditation_name, stage_id,
                         depth + 1, variables, marker_duration=per_marker,
+                        stage_variables=stage_variables,
                     )
                 else:
-                    # No markers — assemble normally
                     combined += _assemble_segments(
                         seg["segments"], meditation_name, stage_id,
                         depth + 1, variables, marker_duration=marker_duration,
+                        stage_variables=stage_variables,
                     )
 
             elif target is not None and not is_section:
-                # Duration-based loop — repeat content to fill target duration
                 if isinstance(target, str):
                     match = re.match(r"^\{(\w+)\}$", target)
                     if match and match.group(1) in variables:
                         target = _resolve_var(variables[match.group(1)])
                 target_seconds = float(target)
-                # Apply unit multiplier (variable refs already resolve to seconds)
                 if not (isinstance(seg.get("targetDuration"), str)
                         and re.match(r"^\{\w+\}$", seg["targetDuration"])):
                     unit = seg.get("targetDurationUnit", "seconds")
@@ -421,17 +548,14 @@ def _assemble_segments(
                 iteration = _assemble_segments(
                     seg["segments"], meditation_name, stage_id,
                     depth + 1, variables, marker_duration=marker_duration,
+                    stage_variables=stage_variables,
                 )
                 iteration_duration = len(iteration) / 1000.0
-                if iteration_duration > 0:
-                    repeat = max(1, math.ceil(target_seconds / iteration_duration))
-                else:
-                    repeat = 1
+                repeat = max(1, math.ceil(target_seconds / iteration_duration)) if iteration_duration > 0 else 1
                 for _ in range(repeat):
                     combined += iteration
 
             else:
-                # Standard count-based loop
                 var_name = seg.get("variable")
                 if var_name and var_name in variables:
                     repeat = int(_resolve_var(variables[var_name]))
@@ -440,6 +564,7 @@ def _assemble_segments(
                 iteration = _assemble_segments(
                     seg["segments"], meditation_name, stage_id,
                     depth + 1, variables, marker_duration=marker_duration,
+                    stage_variables=stage_variables,
                 )
                 for _ in range(repeat):
                     combined += iteration
@@ -449,33 +574,63 @@ def _assemble_segments(
     return combined
 
 
-def _preload_component_durations(meditation_name, stage_id):
-    """Bulk-load all component durations for a stage into a dict keyed by seg_id."""
-    from meditations.models import Component
+def _preload_segment_durations(meditation_name, stage_id, variables=None, stage_variables=None):
+    """Bulk-load effective durations for all segments in a stage."""
+    from meditations.models import SpeechSegmentAudio, Stage, VariableRecording
+
+    if stage_variables is None and stage_id:
+        s = Stage.objects.filter(meditation_id=meditation_name, stage_id=stage_id).first()
+        stage_variables = s.variables if s else {}
+
     cache = {}
-    qs = Component.objects.filter(
+
+    # Fixed segments
+    for ssa in SpeechSegmentAudio.objects.filter(
         meditation_id=meditation_name,
         stage__stage_id=stage_id if stage_id else None,
-    )
-    for c in qs:
-        ts = c.timestamps or []
-        dur = ts[-1]["end"] if ts else 0
-        if c.trim_meta and "start" in c.trim_meta and "end" in c.trim_meta:
-            dur = c.trim_meta["end"] - c.trim_meta["start"]
-        cache[c.seg_id] = dur
+    ).select_related("audio_clip", "user_clip"):
+        cache[ssa.seg_id] = _clip_duration(ssa.audio_clip, ssa.user_clip, ssa.trim_start, ssa.trim_end)
+
+    # Variable segments — override with current values
+    if variables and stage_variables:
+        for rec in VariableRecording.objects.filter(
+            meditation_id=meditation_name,
+            stage__stage_id=stage_id if stage_id else None,
+        ).select_related("audio_clip", "user_clip"):
+            # Check if all entries in rec.variable_values match current variables
+            if all(
+                str(
+                    variables.get(k, {}).get("value", variables.get(k))
+                    if isinstance(variables.get(k), dict)
+                    else variables.get(k)
+                ) == v
+                for k, v in rec.variable_values.items()
+            ):
+                cache[rec.seg_id] = _clip_duration(
+                    rec.audio_clip, rec.user_clip, rec.trim_start, rec.trim_end,
+                )
+
     return cache
+
+
+# Keep old name as alias for callers that haven't been updated yet
+def _preload_component_durations(meditation_name, stage_id):
+    return _preload_segment_durations(meditation_name, stage_id)
 
 
 def _preload_asset_durations(segments):
     """Bulk-load asset durations for all asset segments in a script."""
     from meditations.models import Asset
+
     filenames = set()
+
     def _collect(segs):
         for seg in segs:
             if seg["type"] == "asset":
                 filenames.add(seg["file"])
             elif seg["type"] == "loop":
                 _collect(seg.get("segments", []))
+
     _collect(segments)
     if not filenames:
         return {}
@@ -558,12 +713,68 @@ def _compute_duration(
                 else:
                     repeat = seg.get("repeat", 1)
                 iteration_dur = _compute_duration(
-                    seg["segments"], variables, marker_duration,
-                    comp_cache, asset_cache,
+                    seg["segments"], variables, marker_duration, comp_cache, asset_cache,
                 )
                 total += repeat * iteration_dur
 
     return total
+
+
+def _compute_content_hash(
+    script: list[dict],
+    variables: dict,
+    meditation_name: str,
+    stage_id: str = None,
+    stage_variables: dict = None,
+) -> str:
+    """Hash that includes clip text_hashes so voice changes invalidate the cache."""
+    from meditations.models import SpeechSegmentAudio, Stage, VariableRecording
+
+    if stage_variables is None and stage_id:
+        s = Stage.objects.filter(meditation_id=meditation_name, stage_id=stage_id).first()
+        stage_variables = s.variables if s else {}
+    if stage_variables is None:
+        stage_variables = {}
+
+    speech = _collect_speech_segments(script)
+    clip_hashes = []
+
+    for seg_id, seg_info in speech.items():
+        var_refs = _get_stage_var_refs(seg_info["text"], stage_variables)
+
+        if var_refs:
+            var_vals = {}
+            for var_name in var_refs:
+                raw = variables.get(var_name)
+                val = raw.get("value", None) if isinstance(raw, dict) else raw
+                if val is not None:
+                    var_vals[var_name] = str(val)
+            variable_key = _make_variable_key(var_vals)
+            rec = VariableRecording.objects.filter(
+                meditation_id=meditation_name,
+                stage__stage_id=stage_id if stage_id else None,
+                seg_id=seg_id,
+                variable_key=variable_key,
+            ).select_related("audio_clip", "user_clip").first()
+            if rec:
+                if rec.user_clip:
+                    clip_hashes.append(f"upload_{rec.user_clip.id}")
+                elif rec.audio_clip:
+                    clip_hashes.append(rec.audio_clip.text_hash)
+        else:
+            ssa = SpeechSegmentAudio.objects.filter(
+                meditation_id=meditation_name,
+                stage__stage_id=stage_id if stage_id else None,
+                seg_id=seg_id,
+            ).select_related("audio_clip", "user_clip").first()
+            if ssa:
+                if ssa.user_clip:
+                    clip_hashes.append(f"upload_{ssa.user_clip.id}")
+                elif ssa.audio_clip:
+                    clip_hashes.append(ssa.audio_clip.text_hash)
+
+    blob = json.dumps({"s": script, "v": variables, "c": sorted(clip_hashes)}, sort_keys=True)
+    return hashlib.md5(blob.encode()).hexdigest()[:10]
 
 
 def compute_stage_duration(
@@ -575,16 +786,21 @@ def compute_stage_duration(
 ) -> float:
     """Compute expected duration for a stage with the given variables."""
     from meditations.models import Stage
+
     try:
         stage = Stage.objects.get(meditation_id=meditation_name, stage_id=stage_id)
     except Stage.DoesNotExist:
         return 0
     script = stage.script or []
+    stage_variables = stage.variables or {}
     merged_vars = _collect_variables(script)
     if variables:
         merged_vars.update(variables)
     if comp_cache is None:
-        comp_cache = _preload_component_durations(meditation_name, stage_id)
+        comp_cache = _preload_segment_durations(
+            meditation_name, stage_id,
+            variables=merged_vars, stage_variables=stage_variables,
+        )
     if asset_cache is None:
         asset_cache = _preload_asset_durations(script)
     return _compute_duration(script, merged_vars, comp_cache=comp_cache, asset_cache=asset_cache)
@@ -596,6 +812,18 @@ def assemble(
     stage_id: str = None,
     variables: dict = None,
 ) -> AudioSegment:
+    from meditations.models import Stage
+
     if variables is None:
         variables = _collect_variables(script)
-    return _assemble_segments(script, meditation_name, stage_id, variables=variables)
+
+    stage_variables = {}
+    if stage_id:
+        s = Stage.objects.filter(meditation_id=meditation_name, stage_id=stage_id).first()
+        if s:
+            stage_variables = s.variables or {}
+
+    return _assemble_segments(
+        script, meditation_name, stage_id,
+        variables=variables, stage_variables=stage_variables,
+    )

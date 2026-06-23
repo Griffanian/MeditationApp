@@ -260,7 +260,9 @@ function BoxBreathingDemo({ onNext, demoData }) {
       setStatus('assembling');
       try {
         const { assembleStage } = await import('../api');
+        console.log('[demo] assembling with variables:', JSON.stringify(variables));
         const data = await assembleStage(DEMO_MED, stageId, variables);
+        console.log('[demo] assembly response:', JSON.stringify(data));
         audioUrlRef.current = `${BASE}/audio/meditation/${DEMO_MED}/stage/${stageId}/output/${data.filename}?t=${Date.now()}`;
       } catch (err) {
         setStatus('ready');
