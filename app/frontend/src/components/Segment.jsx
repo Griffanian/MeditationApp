@@ -22,10 +22,12 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
     if (editing && inputRef.current) inputRef.current.select();
   }, [editing]);
 
+  const countdownRef = useRef(null);
+
   // Restore countdown text when this segment stops playing
   useEffect(() => {
     if (playingId === seg.id) return;
-    const el = document.querySelector(`.countdown[data-seg-id="${seg.id}"]`);
+    const el = countdownRef.current;
     if (!el) return;
     if (seg.type === 'pause') {
       const strVal = String(seg.duration_seconds);
@@ -149,12 +151,12 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
       const rawVal = varObj?.value ?? varObj;
       const unit = varObj?.unit;
       if (unit === 'minutes') {
-        duration = <span className="countdown" data-seg-id={seg.id}>{rawVal} min</span>;
+        duration = <span ref={countdownRef} className="countdown" data-seg-id={seg.id}>{rawVal} min</span>;
       } else {
-        duration = <span className="countdown" data-seg-id={seg.id}>{rawVal}</span>;
+        duration = <span ref={countdownRef} className="countdown" data-seg-id={seg.id}>{rawVal}</span>;
       }
     } else {
-      duration = <span className="countdown" data-seg-id={seg.id}>{strVal}</span>;
+      duration = <span ref={countdownRef} className="countdown" data-seg-id={seg.id}>{strVal}</span>;
     }
   } else if (seg.type === 'asset') {
     icon = '🔊';
@@ -189,9 +191,9 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
     if (totalDur != null) {
       if (totalDur >= 60) {
         const mins = (totalDur / 60).toFixed(1).replace(/\.0$/, '');
-        duration = <span className="countdown" data-seg-id={seg.id}>{mins} min</span>;
+        duration = <span ref={countdownRef} className="countdown" data-seg-id={seg.id}>{mins} min</span>;
       } else {
-        duration = <span className="countdown" data-seg-id={seg.id}>{Math.round(totalDur)}</span>;
+        duration = <span ref={countdownRef} className="countdown" data-seg-id={seg.id}>{Math.round(totalDur)}</span>;
       }
     } else {
       duration = <span className="split-auto-label">--</span>;
