@@ -12,6 +12,7 @@ from ..services.agent import run_agent_stream
 
 class AgentChatView(APIView):
     """Streaming agentic chat endpoint. Returns SSE."""
+    throttle_scope = "ai-chat"
 
     def post(self, request):
         message = request.data.get("message", "")

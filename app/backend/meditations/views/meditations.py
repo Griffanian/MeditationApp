@@ -300,6 +300,8 @@ class LoopsView(APIView):
 
 
 class ExtractInstructionsView(APIView):
+    throttle_scope = "ai-generation"
+
     def post(self, request, name):
         _, err = _check_meditation_perm(request, name, write=True)
         if err:
@@ -499,6 +501,7 @@ def _diff_practice_items(old_weeks, new_weeks):
 
 class ChatView(APIView):
     """General context-aware chat endpoint."""
+    throttle_scope = "ai-chat"
     def post(self, request):
         message = request.data.get("message", "")
         history = request.data.get("history", [])

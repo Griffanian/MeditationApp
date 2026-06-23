@@ -1,7 +1,7 @@
 from django.urls import path
 
 from .views import (
-    assembly, assets, assistant, auth, clone, components,
+    assembly, assets, assistant, auth, clone, components, feedback,
     history, invites, meditations, practices, scripts, sharing, stages, trim, users,
 )
 
@@ -32,6 +32,9 @@ urlpatterns = [
     path("api/my-viewers/<int:user_id>", users.MyViewerDetailView.as_view()),
     path("api/my-viewers/<int:user_id>/content", users.MyViewerContentView.as_view()),
     path("api/my-viewers/<int:user_id>/history", users.MyViewerHistoryView.as_view()),
+
+    # Feedback
+    path("api/feedback", feedback.FeedbackView.as_view()),
 
     # History
     path("api/history", history.HistoryListView.as_view()),

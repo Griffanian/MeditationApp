@@ -39,6 +39,8 @@ class VariablesView(APIView):
 
 
 class GenerateStageScriptView(APIView):
+    throttle_scope = "ai-generation"
+
     def post(self, request, name, stage_id):
         m, err = _check_med_perm(request, name, write=True)
         if err:

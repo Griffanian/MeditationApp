@@ -182,17 +182,22 @@ class ComputeDurationsView(APIView):
 
 
 class RootAssembleView(AssemblyMixin, APIView):
+    throttle_scope = "assembly"
+
     def post(self, request, name):
         return self._assemble(request, name)
 
 
 class StageAssembleView(AssemblyMixin, APIView):
+    throttle_scope = "assembly"
+
     def post(self, request, name, stage_id):
         return self._assemble(request, name, stage_id)
 
 
 class DayAssembleView(APIView):
     """Assemble all stages for a programme day into one continuous MP3."""
+    throttle_scope = "assembly"
 
     def post(self, request, name):
         practice = get_object_or_404(Practice, name=name)

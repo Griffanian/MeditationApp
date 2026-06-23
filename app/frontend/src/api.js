@@ -710,6 +710,19 @@ export async function unshareCategory(name, userId) {
   });
 }
 
+// --- Feedback ---
+
+export async function submitFeedback(message, page = '', sessionId = '') {
+  const res = await apiFetch(`${BASE}/api/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, page, session_id: sessionId }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to submit feedback');
+  return data;
+}
+
 // --- History ---
 
 export async function fetchHistory() {

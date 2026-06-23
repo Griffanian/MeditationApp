@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, BASE } from '../api';
+import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, assembleStage, BASE } from '../api';
 import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration, unlockAudio } from '../playback';
 
 function formatTime(seconds) {
@@ -81,26 +81,20 @@ export default function ExercisePlayer() {
   const [displayName, setDisplayName] = useState(location.state?.displayName || '');
   const [stageName, setStageName] = useState(location.state?.stageName || '');
 
-  const [status, setStatus] = useState('loading'); // loading, ready, playing, paused, error
+  const [status, setStatus] = useState('loading'); // loading, ready, assembling, playing, paused, error
   const [elapsed, setElapsed] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState(null);
 
-  // Script display state
   const [activeEntry, setActiveEntry] = useState(null);
   const [activeWordIdx, setActiveWordIdx] = useState(-1);
   const [countdown, setCountdown] = useState('');
 
-  // Refs for segment-by-segment playback
-  const audioRef = useRef(null);          // current Audio element (speech/asset)
-  const tickRef = useRef(null);           // display update interval
-  const segTimerRef = useRef(null);       // setTimeout for pause/split segments
-  const pauseStartRef = useRef(null);     // Date.now() when pause segment started
-  const pauseRemainingRef = useRef(0);    // remaining ms when user pauses during a timed segment
-  const segIdxRef = useRef(-1);           // current segment index
-  const stoppedRef = useRef(false);
+  const audioRef = useRef(null);
+  const tickRef = useRef(null);
   const timelineRef = useRef([]);
   const wordTimestampsRef = useRef({});
+  const audioUrlRef = useRef(null);
 
   // Load script, components, variables on mount
   useEffect(() => {
@@ -158,41 +152,30 @@ export default function ExercisePlayer() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stoppedRef.current = true;
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       if (tickRef.current) clearInterval(tickRef.current);
-      if (segTimerRef.current) clearTimeout(segTimerRef.current);
     };
   }, []);
 
   // --- Display updates ---
 
-  function computeGlobalElapsed(idx, localElapsed) {
+  function updateScriptDisplay(time) {
     const tl = timelineRef.current;
-    if (idx < 0 || idx >= tl.length) return 0;
-    return tl[idx].start + localElapsed;
-  }
-
-  function updateDisplay(idx, localElapsed) {
-    const tl = timelineRef.current;
-    const entry = tl[idx];
-    if (!entry) return;
-
-    const global = computeGlobalElapsed(idx, localElapsed);
-    setElapsed(global);
+    let entry = null;
+    for (let i = tl.length - 1; i >= 0; i--) {
+      if (time >= tl[i].start) { entry = tl[i]; break; }
+    }
     setActiveEntry(entry);
-
+    if (!entry) { setActiveWordIdx(-1); setCountdown(''); return; }
     if (entry.type === 'speech') {
+      const segTime = time - entry.start;
       const ts = wordTimestampsRef.current[entry.segId] || [];
-      let wordIdx = -1;
-      for (let i = ts.length - 1; i >= 0; i--) {
-        if (localElapsed >= ts[i].start) { wordIdx = i; break; }
-      }
-      setActiveWordIdx(wordIdx);
+      let wi = -1;
+      for (let i = ts.length - 1; i >= 0; i--) { if (segTime >= ts[i].start) { wi = i; break; } }
+      setActiveWordIdx(wi);
       setCountdown('');
     } else if (entry.type === 'pause' || entry.type === 'split_marker') {
-      const remaining = Math.max(0, Math.ceil(entry.dur - localElapsed));
-      setCountdown(formatDuration(remaining));
+      setCountdown(formatDuration(Math.max(0, Math.ceil(entry.end - time))));
       setActiveWordIdx(-1);
     } else {
       setActiveWordIdx(-1);
@@ -200,22 +183,13 @@ export default function ExercisePlayer() {
     }
   }
 
-  function startTick(idx) {
+  function startTick() {
     if (tickRef.current) clearInterval(tickRef.current);
     tickRef.current = setInterval(() => {
-      const entry = timelineRef.current[idx];
-      if (!entry) return;
-
-      if (entry.type === 'speech' || entry.type === 'asset') {
-        if (audioRef.current) {
-          updateDisplay(idx, audioRef.current.currentTime);
-        }
-      } else {
-        // pause / split_marker
-        if (pauseStartRef.current != null) {
-          const localElapsed = (Date.now() - pauseStartRef.current) / 1000;
-          updateDisplay(idx, localElapsed);
-        }
+      if (audioRef.current && !audioRef.current.paused) {
+        const t = audioRef.current.currentTime;
+        setElapsed(t);
+        updateScriptDisplay(t);
       }
     }, 100);
   }
@@ -224,138 +198,80 @@ export default function ExercisePlayer() {
     if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
   }
 
-  // --- Segment-by-segment playback ---
+  function handleStop() {
+    if (audioRef.current) { audioRef.current.pause(); }
+    stopTick();
+    setStatus('ready');
+    setElapsed(0);
+    setActiveEntry(null);
+    setActiveWordIdx(-1);
+    setCountdown('');
+  }
 
-  const playSegment = useCallback((idx) => {
-    const tl = timelineRef.current;
-    if (stoppedRef.current || idx >= tl.length) {
-      // Finished
-      stoppedRef.current = true;
-      stopTick();
-      setStatus('ready');
-      setElapsed(0);
-      setActiveEntry(null);
-      setActiveWordIdx(-1);
-      setCountdown('');
-      segIdxRef.current = -1;
-      return;
-    }
-
-    const entry = tl[idx];
-    segIdxRef.current = idx;
-    updateDisplay(idx, 0);
-
-    if (entry.type === 'speech' || entry.type === 'asset') {
-      const url = entry.type === 'speech'
-        ? `${BASE}/audio/meditation/${name}/stage/${stageId}/component/${entry.segId}.mp3`
-        : `${BASE}/audio/asset/${entry.file}`;
-      // Reuse a single Audio element created in handlePlay (user gesture context)
-      // so it stays unlocked for iOS playback from timer callbacks
-      if (!audioRef.current) audioRef.current = new Audio();
-      const audio = audioRef.current;
-      let ended = false;
-      const advance = () => {
-        if (ended) return;
-        ended = true;
-        playSegment(idx + 1);
-      };
-      audio.onended = null;
-      audio.onerror = null;
-      audio.src = url;
-      audio.onended = advance;
-      audio.onerror = advance;
-      startTick(idx);
-      audio.play().catch(advance);
-    } else {
-      // pause / split_marker — play ambient to keep Audio element active on mobile
-      if (!audioRef.current) audioRef.current = new Audio();
-      const audio = audioRef.current;
-      audio.onended = null;
-      audio.onerror = null;
-      audio.loop = true;
-      audio.volume = 0;
-      audio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-      audio.play().catch(() => {});
-
-      pauseStartRef.current = Date.now();
-      pauseRemainingRef.current = entry.dur * 1000;
-      startTick(idx);
-      segTimerRef.current = setTimeout(() => {
-        segTimerRef.current = null;
-        pauseStartRef.current = null;
-        audio.loop = false;
-        audio.pause();
-        playSegment(idx + 1);
-      }, entry.dur * 1000);
-    }
-  }, [name, stageId]);
-
-  // --- Controls ---
-
-  function handlePlay() {
+  async function handlePlay() {
     unlockAudio();
-    if (status === 'paused') {
-      setStatus('playing');
-      const idx = segIdxRef.current;
-      const entry = timelineRef.current[idx];
 
-      if (entry && (entry.type === 'speech' || entry.type === 'asset') && audioRef.current) {
-        audioRef.current.play();
-        startTick(idx);
-      } else if (entry && (entry.type === 'pause' || entry.type === 'split_marker')) {
-        // Resume the timed segment with remaining time
-        const remaining = pauseRemainingRef.current;
-        pauseStartRef.current = Date.now();
-        startTick(idx);
-        segTimerRef.current = setTimeout(() => {
-          segTimerRef.current = null;
-          pauseStartRef.current = null;
-          playSegment(idx + 1);
-        }, remaining);
-      }
+    if (status === 'paused' && audioRef.current) {
+      audioRef.current.play();
+      setStatus('playing');
+      startTick();
       return;
     }
 
-    // Fresh play from start — create Audio element here (user gesture context)
-    // so it's unlocked for iOS and can play from timer callbacks later
-    stoppedRef.current = false;
-    setError(null);
-    if (!audioRef.current) audioRef.current = new Audio();
-    setStatus('playing');
-    playSegment(0);
+    handleStop();
+
+    // Assemble if we don't have a URL yet
+    if (!audioUrlRef.current) {
+      setStatus('assembling');
+      try {
+        const data = await assembleStage(name, stageId);
+        audioUrlRef.current = `${BASE}/audio/meditation/${name}/stage/${stageId}/output/${data.filename}?t=${Date.now()}`;
+      } catch (err) {
+        setStatus('error');
+        setError(err.message);
+        return;
+      }
+    }
+
+    const audio = audioRef.current || new Audio();
+    audioRef.current = audio;
+    audio.src = audioUrlRef.current;
+    audio.onloadedmetadata = () => setDuration(audio.duration || 0);
+    audio.onended = () => handleStop();
+    audio.onerror = () => { setStatus('error'); setError('Audio playback failed'); };
+    try {
+      await audio.play();
+      setStatus('playing');
+      startTick();
+    } catch {
+      setStatus('error');
+      setError('Playback failed — try tapping play again');
+    }
   }
 
   function handlePause() {
     if (status !== 'playing') return;
+    if (audioRef.current) audioRef.current.pause();
     setStatus('paused');
     stopTick();
+  }
 
-    const idx = segIdxRef.current;
-    const entry = timelineRef.current[idx];
-
-    if (entry && (entry.type === 'speech' || entry.type === 'asset') && audioRef.current) {
-      audioRef.current.pause();
-    } else if (entry && (entry.type === 'pause' || entry.type === 'split_marker')) {
-      // Save remaining time
-      if (segTimerRef.current) { clearTimeout(segTimerRef.current); segTimerRef.current = null; }
-      if (pauseStartRef.current != null) {
-        const elapsedMs = Date.now() - pauseStartRef.current;
-        pauseRemainingRef.current = Math.max(0, pauseRemainingRef.current - elapsedMs);
-        pauseStartRef.current = null;
-      }
+  function handleSeek(time) {
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+      setElapsed(time);
+      updateScriptDisplay(time);
     }
   }
 
   function handleBack() {
-    stoppedRef.current = true;
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    if (segTimerRef.current) { clearTimeout(segTimerRef.current); segTimerRef.current = null; }
     stopTick();
     navigate(-1);
   }
 
   const progress = duration > 0 ? (elapsed / duration) * 100 : 0;
-  const isActive = status === 'playing' || status === 'paused';
+  const isActive = status === 'playing' || status === 'paused' || status === 'assembling';
 
   // Build context label
   let contextLabel = '';
@@ -380,6 +296,11 @@ export default function ExercisePlayer() {
 
         <div className="ep-controls">
           {status === 'loading' && (
+            <button className="ep-play-btn ep-play-btn-disabled" disabled>
+              <span className="ep-play-icon ep-spin">&#x25CC;</span>
+            </button>
+          )}
+          {status === 'assembling' && (
             <button className="ep-play-btn ep-play-btn-disabled" disabled>
               <span className="ep-play-icon ep-spin">&#x25CC;</span>
             </button>
@@ -430,15 +351,19 @@ export default function ExercisePlayer() {
           </div>
         )}
 
-        <div className="ep-time">
-          <span>{formatTime(elapsed)}</span>
-          <span>{status === 'loading' ? '...' : formatTime(duration)}</span>
-        </div>
-
-        <div className="ep-progress-wrap">
-          <div className="ep-progress-bar">
-            <div className="ep-progress-fill" style={{ width: `${progress}%` }} />
-          </div>
+        <div className="ep-seek-bar">
+          <span className="ep-seek-time">{formatTime(elapsed)}</span>
+          <input
+            type="range"
+            className="ep-seek"
+            min="0"
+            max={duration || 1}
+            step="0.1"
+            value={elapsed}
+            style={{ '--progress': `${progress}%` }}
+            onChange={e => handleSeek(parseFloat(e.target.value))}
+          />
+          <span className="ep-seek-time">{status === 'loading' ? '...' : formatTime(duration)}</span>
         </div>
       </div>
     </div>

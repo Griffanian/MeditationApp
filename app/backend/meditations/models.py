@@ -367,6 +367,23 @@ class Message(models.Model):
         return f"{self.thread_id}/{self.role}"
 
 
+class Feedback(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    user = models.ForeignKey(
+        "auth.User", on_delete=models.CASCADE, related_name="feedback"
+    )
+    message = models.TextField()
+    page = models.CharField(max_length=200, blank=True)
+    session_id = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.username}: {self.message[:50]}"
+
+
 class PracticeSession(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4)
     user = models.ForeignKey(

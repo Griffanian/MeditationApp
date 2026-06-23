@@ -210,6 +210,8 @@ class ComponentMixin:
 # --- Stage-level views ---
 
 class StageGenerateAllView(ComponentMixin, APIView):
+    throttle_scope = "tts"
+
     def post(self, request, name, stage_id):
         err = _check_med_perm(request, name, write=True)
         if err:
@@ -242,6 +244,8 @@ class StageTimestampsView(ComponentMixin, APIView):
 
 
 class StageGenerateAudioView(ComponentMixin, APIView):
+    throttle_scope = "tts"
+
     def post(self, request, name, stage_id, seg_id):
         err = _check_med_perm(request, name, write=True)
         if err:
@@ -363,6 +367,7 @@ class VariableRecordingsView(ComponentMixin, APIView):
 
 class GenerateVariableAudioView(ComponentMixin, APIView):
     """Generate TTS audio for a segment with specific variable overrides."""
+    throttle_scope = "tts"
 
     def post(self, request, name, stage_id, seg_id):
         err = _check_med_perm(request, name, write=True)
@@ -506,6 +511,8 @@ class RootTimestampsView(ComponentMixin, APIView):
 
 
 class RootGenerateAudioView(ComponentMixin, APIView):
+    throttle_scope = "tts"
+
     def post(self, request, name, seg_id):
         err = _check_med_perm(request, name, write=True)
         if err:

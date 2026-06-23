@@ -411,6 +411,12 @@ class JoinSignupView(APIView):
                 if new_role == "viewer":
                     ViewerAccess.objects.create(viewer=user, builder=owner)
 
+                # Rotate the signup token so the old link is immediately dead
+                if new_role == "builder":
+                    import secrets
+                    owner_profile.signup_token = secrets.token_urlsafe(32)
+                    owner_profile.save(update_fields=["signup_token"])
+
         except IntegrityError:
             return Response({"error": "Signup failed, please try again"}, status=400)
         except Exception:

@@ -16,6 +16,7 @@ import Home from './pages/Home';
 import Preview from './pages/Preview';
 import Join from './pages/Join';
 import AssistantSidebar from './components/AssistantSidebar';
+import FeedbackModal from './components/FeedbackModal';
 import { AuthProvider, buildAuth } from './AuthContext';
 import { checkAuth, logoutUser } from './api';
 import { initPostHog, identifyUser, resetUser } from './posthog';
@@ -95,6 +96,7 @@ function useThemeEffect() {
 export default function App() {
   const [auth, setAuth] = useState(null); // null = loading, false = logged out, object = logged in
   const [sidebarOpen, setSidebarOpen] = useLocalState('sidebarOpen', false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   useThemeEffect();
 
   useEffect(() => {
@@ -171,8 +173,10 @@ export default function App() {
             <AssistantSidebar />
           </div>
           <footer className="app-footer">
-            © {new Date().getFullYear()} Miles Bloom. All rights reserved.
+            <span>© {new Date().getFullYear()} Miles Bloom. All rights reserved.</span>
+            <button className="feedback-link" onClick={() => setFeedbackOpen(true)}>Send feedback</button>
           </footer>
+          {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} />}
         </div>
       </BrowserRouter>
     </AuthProvider>
