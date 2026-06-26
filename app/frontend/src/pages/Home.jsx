@@ -784,10 +784,34 @@ export default function Home() {
       ) : (
         <>
           <div className="home-greeting">
-            <h1 className="home-greeting-title">{getGreeting()}, {name}</h1>
-            <p className="home-greeting-sub">{getMotivationalMessage(streak, totalSessions, sessions)}</p>
-            {streak > 0 && <span className="home-streak-badge">{streak} day streak</span>}
+            <h1 className="home-greeting-title">{getGreeting()},<br />{name}</h1>
           </div>
+
+          <div className="home-streak-card">
+            <div className="home-streak-top">
+              <span className="home-streak-flame"><i className="fa-solid fa-fire"></i></span>
+              <div className="home-streak-count">
+                <span className="home-streak-number">{streak}</span>
+                <span className="home-streak-label">day streak</span>
+              </div>
+            </div>
+            <div className="home-streak-week">
+              {getWeekDays(sessions).map((d, i) => (
+                <div key={i} className={`home-streak-day${d.done ? ' done' : ''}${d.isToday ? ' today' : ''}${!d.isPast ? ' future' : ''}`}>
+                  <div className="home-streak-dot">
+                    {d.done ? '✓' : ''}
+                  </div>
+                  <span className="home-streak-day-label">{d.label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="home-streak-stats">
+              <span>{totalSessions} session{totalSessions !== 1 ? 's' : ''}</span>
+              <span className="home-streak-stats-sep">·</span>
+              <span>{formatHours(totalSeconds)} total</span>
+            </div>
+          </div>
+
           {currentProgramme && nextDay && (
             <div className="home-section">
               <div className="home-programme-card">
