@@ -812,30 +812,59 @@ export default function Home() {
             </div>
           </div>
 
-          {currentProgramme && nextDay && (
-            <div className="home-section">
-              <div className="home-programme-card">
-                <div className="home-programme-name">{currentProgramme.practice.display_name}</div>
-                <div className="home-programme-meta">
-                  {currentProgramme.practice.items?.[nextDay.week]?.label} — {currentProgramme.practice.items?.[nextDay.week]?.days?.[nextDay.day]?.label}
-                </div>
-                {currentProgramme.progress && (
-                  <div className="prog-card-progress">
-                    <div className="prog-card-progress-bar">
-                      <div className="prog-card-progress-fill" style={{ width: `${currentProgramme.progress.pct}%` }} />
+          {currentProgramme && nextDay && (() => {
+            const dayData = currentProgramme.practice.items?.[nextDay.week]?.days?.[nextDay.day];
+            const dayItems = dayData?.items || [];
+            const dayLabel = dayData?.label || `Day ${nextDay.day + 1}`;
+            const totalMins = dayItems.reduce((sum, item) => {
+              for (const v of Object.values(item.variables || {})) {
+                if (typeof v === 'object' && v.unit === 'minutes' && v.value != null) return sum + Number(v.value);
+              }
+              return sum;
+            }, 0);
+            const today = new Date();
+            const monthShort = today.toLocaleString('default', { month: 'short' }).toUpperCase();
+            const dayNum = today.getDate();
+
+            return (
+              <div className="home-next-session">
+                <div className="home-next-header">
+                  <div className="home-next-date">
+                    <span className="home-next-date-month">{monthShort}</span>
+                    <span className="home-next-date-day">{dayNum}</span>
+                  </div>
+                  <div className="home-next-info">
+                    <div className="home-next-name">{currentProgramme.practice.display_name}</div>
+                    <div className="home-next-meta">
+                      {dayLabel} · {dayItems.length} meditation{dayItems.length !== 1 ? 's' : ''}{totalMins > 0 ? ` · ${totalMins} min` : ''}
                     </div>
-                    <span className="prog-card-progress-label">{currentProgramme.progress.done}/{currentProgramme.progress.total} days</span>
+                  </div>
+                  <Link to={`/play/${currentProgramme.practice.name}?week=${nextDay.week}&day=${nextDay.day}`} className="home-next-play">
+                    <span>▶</span>
+                  </Link>
+                </div>
+                {dayItems.length > 0 && (
+                  <div className="home-next-stages">
+                    {dayItems.map((item, idx) => {
+                      const varMins = (() => {
+                        for (const v of Object.values(item.variables || {})) {
+                          if (typeof v === 'object' && v.unit === 'minutes' && v.value != null) return Number(v.value);
+                        }
+                        return null;
+                      })();
+                      return (
+                        <div key={item.id} className="home-next-stage">
+                          <span className="home-next-stage-num">{idx + 1}</span>
+                          <span className="home-next-stage-name">{item.meditation_display}</span>
+                          {varMins != null && <span className="home-next-stage-dur">{varMins} min</span>}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
-                <div className="home-programme-actions">
-                  <Link to={`/play/${currentProgramme.practice.name}?week=${nextDay.week}&day=${nextDay.day}`} className="home-programme-btn home-programme-btn-primary">
-                    {currentProgramme.progress ? '▶ Continue Practice' : '▶ Start Practice'}
-                  </Link>
-                  <Link to="/exercises" className="home-programme-btn home-programme-btn-secondary">Browse Exercises</Link>
-                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {recentSessions.length > 0 && (
             <div className="home-section">
