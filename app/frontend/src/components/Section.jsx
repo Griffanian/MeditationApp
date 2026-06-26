@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSortable } from '@dnd-kit/sortable';
+import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
+import { attachInstruction, extractInstruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item';
+import { DropIndicator } from '@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/tree-item';
 import { useLocalState } from '../utils';
-import { resolveRepeat, computeFixedDuration, formatDuration } from '../playback';
+import { resolveRepeat, computeFixedDuration, formatDuration, computeMarkerDuration } from '../playback';
+import { isDescendantOf } from '../segmentIds';
 import DragHandle from './DragHandle';
 import KebabMenu from './KebabMenu';
 import Timeline from './Timeline';
 import AddZone from './AddZone';
 
-
-
-export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, components, meditationName, stageId, onRefreshComponents, playingParentId, variables = {}, loopCounters = {}, onUpdateVariable, selectedIds = new Set(), onSelect, onContextMenu, fullScript, readOnly, onFlushSave }) {
+export default function Section({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, components, meditationName, stageId, onRefreshComponents, playingParentId, variables = {}, loopCounters = {}, onUpdateVariable, selectedIds = new Set(), toggleSelection, toggleSelectionInGroup, multiSelectTo, onContextMenu, fullScript, readOnly, onFlushSave, activeDragIds }) {
   const [collapsed, setCollapsed] = useLocalState(`collapse:loop:${seg.id}`, false);
   const [editLabel, setEditLabel] = useState(seg.label || '');
   const [editRepeat, setEditRepeat] = useState(seg.variable ? `{${seg.variable}}` : seg.repeat);
@@ -24,7 +26,6 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
   useEffect(() => { setEditTargetDuration(seg.targetDuration ?? ''); }, [seg.targetDuration]);
 
   const lc = loopCounters[seg.id];
-  const isDurationLoop = seg.targetDuration != null && !seg.label;
   const isLoopPlaying = lc && lc.iterDuration != null;
 
   // Tick every second while a loop is playing
@@ -36,7 +37,63 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
     if (tickRef.current) clearInterval(tickRef.current);
   }, [isLoopPlaying]);
 
-  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: seg.id });
+  // --- Pragmatic DnD ---
+  const elementRef = useRef(null);
+  const handleRef = useRef(null);
+  const [instruction, setInstruction] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el || readOnly) return;
+
+    return combine(
+      draggable({
+        element: el,
+        dragHandle: handleRef.current ?? undefined,
+        getInitialData: () => ({ type: 'timeline-segment', id: seg.id }),
+        onDragStart: () => setIsDragging(true),
+        onDrop: () => setIsDragging(false),
+      }),
+      dropTargetForElements({
+        element: el,
+        canDrop: ({ source }) => {
+          if (source.data.type !== 'timeline-segment') return false;
+          if (source.data.id === seg.id) return false;
+          // Prevent dropping a parent into its own descendant
+          if (isDescendantOf(fullScript, source.data.id, seg.id)) return false;
+          return true;
+        },
+        getData: ({ input, element }) => {
+          return attachInstruction({ type: 'section', id: seg.id }, {
+            element,
+            input,
+            currentLevel: 0,
+            indentPerLevel: 24,
+            mode: collapsed ? 'standard' : 'expanded',
+            block: ['make-child'],
+          });
+        },
+        onDragEnter: ({ self, location }) => {
+          const [innermost] = location.current.dropTargets;
+          if (innermost?.element !== self.element) { setInstruction(null); return; }
+          const inst = extractInstruction(self.data);
+          setInstruction(inst?.type === 'instruction-blocked' ? null : inst);
+        },
+        onDrag: ({ self, location }) => {
+          const [innermost] = location.current.dropTargets;
+          if (innermost?.element !== self.element) { setInstruction(null); return; }
+          const inst = extractInstruction(self.data);
+          setInstruction(inst?.type === 'instruction-blocked' ? null : inst);
+        },
+        onDragLeave: () => setInstruction(null),
+        onDrop: () => setInstruction(null),
+      }),
+    );
+  }, [seg.id, readOnly, collapsed, fullScript]);
+
+  const isBeingDragged = isDragging || (activeDragIds && activeDragIds.has(seg.id));
+  const instructionType = instruction?.type;
 
   const isPlayingParent = playingParentId === seg.id;
   const isSection = !!seg.label;
@@ -45,16 +102,17 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
   const colorKey = seg.color || defaultColor;
 
   const style = {
-    opacity: isDragging ? 0.3 : 1,
+    opacity: isBeingDragged ? 0.3 : 1,
     '--loop-bg': `var(--loop-${colorKey}-bg)`,
     '--loop-hover': `var(--loop-${colorKey}-hover)`,
     '--loop-accent': `var(--loop-${colorKey}-accent)`,
   };
 
   return (
-    <div ref={setNodeRef} style={style} className={isSection ? 'section-container' : 'loop-container'}>
+    <div ref={elementRef} style={style} className={isSection ? 'section-container' : 'loop-container'}>
+      {instruction && <DropIndicator instruction={instruction} />}
       <div className={isSection ? 'section-header' : 'loop-header'}>
-        {!readOnly && <DragHandle listeners={listeners} attributes={attributes} />}
+        {!readOnly && <DragHandle ref={handleRef} />}
         <span
           className={`chevron ${collapsed ? 'collapsed' : ''}`}
           onClick={() => setCollapsed(!collapsed)}
@@ -237,7 +295,22 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
               })()}
             </span>
           )}
-          <button onClick={e => { e.stopPropagation(); onPlay(seg.id, true); }}>
+          <button onClick={e => {
+            e.stopPropagation();
+            // Check for mismatch in any split marker in this section
+            const hasMismatch = (function checkMarkers(segs) {
+              for (const s of segs) {
+                if (s.type === 'split_marker' && fullScript && computeMarkerDuration(fullScript, s.id, variables, components) < 0) return true;
+                if (s.type === 'loop' && s.segments && checkMarkers(s.segments)) return true;
+              }
+              return false;
+            })(seg.segments || []);
+            if (hasMismatch) {
+              alert('Cannot play — variable mismatch. The fixed content in this section exceeds the target duration. Increase the variable or remove segments.');
+              return;
+            }
+            onPlay(seg.id, true);
+          }}>
             {(isPlayingParent || isLoopPlaying) && !isPaused ? '⏸' : '▶'}
           </button>
           {!readOnly && <KebabMenu
@@ -274,12 +347,15 @@ export default function Loop({ seg, playingId, isPaused, onPlay, onWordClick, on
               loopCounters={loopCounters}
               onUpdateVariable={onUpdateVariable}
               selectedIds={selectedIds}
-              onSelect={onSelect}
+              toggleSelection={toggleSelection}
+              toggleSelectionInGroup={toggleSelectionInGroup}
+              multiSelectTo={multiSelectTo}
               onContextMenu={onContextMenu}
               fullScript={fullScript}
               readOnly={readOnly}
               containerId={seg.id}
               onFlushSave={onFlushSave}
+              activeDragIds={activeDragIds}
             />
           )}
         </div>

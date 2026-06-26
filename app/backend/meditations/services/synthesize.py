@@ -64,6 +64,40 @@ def _resolve_var(val):
         return 0
 
 
+def _evaluate_condition(condition, variables: dict, stage_conditions: dict = None) -> bool:
+    """Evaluate a segment condition against current variables.
+    Condition can be a dict with variable/operator/value, or a string referencing
+    a named condition from stage_conditions. Returns True if included."""
+    if not condition:
+        return True
+    # String reference to a named condition
+    if isinstance(condition, str):
+        if not stage_conditions or condition not in stage_conditions:
+            return True
+        condition = stage_conditions[condition]
+    var_name = condition.get("variable")
+    operator = condition.get("operator")
+    threshold = condition.get("value")
+    if not var_name or not operator or threshold is None:
+        return True
+    val = variables.get(var_name)
+    if val is None:
+        return True
+    resolved = _resolve_var(val)
+    threshold = float(threshold)
+    if operator == "between":
+        threshold2 = condition.get("value2")
+        if threshold2 is None: return True
+        return threshold <= resolved <= float(threshold2)
+    if operator == ">": return resolved > threshold
+    if operator == "<": return resolved < threshold
+    if operator == ">=": return resolved >= threshold
+    if operator == "<=": return resolved <= threshold
+    if operator == "==": return resolved == threshold
+    if operator == "!=": return resolved != threshold
+    return True
+
+
 def _collect_variables(segments: list[dict]) -> dict:
     variables = {}
     for seg in segments:
@@ -376,9 +410,11 @@ def _chars_to_words(alignment) -> list[dict]:
 
 
 def _count_markers(segments: list[dict], variables: dict) -> int:
-    """Count effective split markers, accounting for loop repeats."""
+    """Count effective split markers, accounting for loop repeats and conditions."""
     count = 0
     for seg in segments:
+        if not _evaluate_condition(seg.get("condition"), variables, variables.get("_conditions")):
+            continue
         if seg["type"] == "split_marker":
             count += seg.get("multiplier", 1)
         elif seg["type"] == "loop":
@@ -413,6 +449,10 @@ def _assemble_segments(
     _CROSSFADE_MS = 150
 
     for i, seg in enumerate(segments):
+        # Conditional inclusion — skip segment if condition evaluates to false
+        if not _evaluate_condition(seg.get("condition"), variables, variables.get("_conditions")):
+            continue
+
         seg_type = seg["type"]
 
         if seg_type == "speech":
@@ -560,7 +600,7 @@ def _assemble_segments(
                 if var_name and var_name in variables:
                     repeat = int(_resolve_var(variables[var_name]))
                 else:
-                    repeat = seg.get("repeat", 1)
+                    repeat = int(seg.get("repeat", 1))
                 iteration = _assemble_segments(
                     seg["segments"], meditation_name, stage_id,
                     depth + 1, variables, marker_duration=marker_duration,
@@ -660,6 +700,9 @@ def _compute_duration(
     total = 0.0
 
     for seg in segments:
+        if not _evaluate_condition(seg.get("condition"), variables, variables.get("_conditions")):
+            continue
+
         seg_type = seg["type"]
 
         if seg_type == "speech":
@@ -711,7 +754,7 @@ def _compute_duration(
                 if var_name and var_name in variables:
                     repeat = int(_resolve_var(variables[var_name]))
                 else:
-                    repeat = seg.get("repeat", 1)
+                    repeat = int(seg.get("repeat", 1))
                 iteration_dur = _compute_duration(
                     seg["segments"], variables, marker_duration, comp_cache, asset_cache,
                 )
@@ -796,6 +839,8 @@ def compute_stage_duration(
     merged_vars = _collect_variables(script)
     if variables:
         merged_vars.update(variables)
+    if stage_variables.get("_conditions"):
+        merged_vars["_conditions"] = stage_variables["_conditions"]
     if comp_cache is None:
         comp_cache = _preload_segment_durations(
             meditation_name, stage_id,
@@ -804,6 +849,102 @@ def compute_stage_duration(
     if asset_cache is None:
         asset_cache = _preload_asset_durations(script)
     return _compute_duration(script, merged_vars, comp_cache=comp_cache, asset_cache=asset_cache)
+
+
+def compute_variable_mins(meditation_name: str, stage_id: str) -> dict:
+    """Compute minimum allowable values for variables used as section targetDuration.
+
+    Returns a dict like:
+        { "Duration": { "min_seconds": 312.5, "min_value": 5.21, "min_value_ceiled": 6,
+                         "unit": "minutes", "incomplete": False } }
+    """
+    import math
+    from meditations.models import Stage
+
+    try:
+        stage = Stage.objects.get(meditation_id=meditation_name, stage_id=stage_id)
+    except Stage.DoesNotExist:
+        return {}
+
+    script = stage.script or []
+    stage_variables = stage.variables or {}
+    merged_vars = _collect_variables(script)
+    merged_vars.update(stage_variables)
+    if stage_variables.get("_conditions"):
+        merged_vars["_conditions"] = stage_variables["_conditions"]
+
+    comp_cache = _preload_segment_durations(
+        meditation_name, stage_id,
+        variables=merged_vars, stage_variables=stage_variables,
+    )
+    asset_cache = _preload_asset_durations(script)
+
+    # Collect fixed durations per variable, tracking which section drives the constraint
+    mins = {}  # var_name -> min_seconds
+    section_labels = {}  # var_name -> section label that sets the highest min
+    fixed_durations = {}  # var_name -> fixed duration in friendly format
+    missing = {}  # var_name -> True if any speech segment has no cached duration
+
+    def _walk(segments):
+        for seg in segments:
+            if seg.get("type") != "loop":
+                continue
+            is_section = bool(seg.get("label"))
+            target = seg.get("targetDuration")
+
+            if target is not None and is_section and isinstance(target, str):
+                match = re.match(r"^\{(\w+)\}$", target)
+                if match and match.group(1) in stage_variables:
+                    var_name = match.group(1)
+                    fixed = _compute_duration(
+                        seg["segments"], merged_vars,
+                        marker_duration=0,
+                        comp_cache=comp_cache, asset_cache=asset_cache,
+                    )
+                    if fixed > mins.get(var_name, 0):
+                        mins[var_name] = fixed
+                        section_labels[var_name] = seg.get("label", "section")
+                        fixed_durations[var_name] = fixed
+                    # Check for missing audio
+                    if not missing.get(var_name):
+                        missing[var_name] = _has_missing_audio(seg["segments"], comp_cache)
+
+            _walk(seg.get("segments", []))
+
+    _walk(script)
+
+    result = {}
+    for var_name, min_secs in mins.items():
+        var_data = stage_variables.get(var_name, {})
+        unit = var_data.get("unit", "seconds") if isinstance(var_data, dict) else "seconds"
+        multiplier = UNIT_MULTIPLIERS.get(unit, 1)
+        min_value = min_secs / multiplier if multiplier else min_secs
+        min_value_ceiled = math.ceil(min_value)
+        fixed_secs = fixed_durations.get(var_name, min_secs)
+        fixed_in_unit = math.ceil(fixed_secs / multiplier) if multiplier else math.ceil(fixed_secs)
+        unit_label = {"seconds": "sec", "minutes": "min", "hours": "hr"}.get(unit, "")
+        fixed_display = f"{fixed_in_unit} {unit_label}".strip()
+        result[var_name] = {
+            "min_seconds": round(min_secs, 1),
+            "min_value": round(min_value, 2),
+            "min_value_ceiled": min_value_ceiled,
+            "unit": unit,
+            "incomplete": bool(missing.get(var_name)),
+            "section_label": section_labels.get(var_name, "section"),
+            "fixed_duration": fixed_display,
+        }
+    return result
+
+
+def _has_missing_audio(segments, comp_cache):
+    """Check if any speech segment in segments has no cached duration."""
+    for seg in segments:
+        if seg["type"] == "speech" and comp_cache.get(seg["id"], 0) == 0:
+            return True
+        if seg["type"] == "loop":
+            if _has_missing_audio(seg.get("segments", []), comp_cache):
+                return True
+    return False
 
 
 def assemble(
@@ -822,6 +963,10 @@ def assemble(
         s = Stage.objects.filter(meditation_id=meditation_name, stage_id=stage_id).first()
         if s:
             stage_variables = s.variables or {}
+
+    # Inject named conditions into variables for _evaluate_condition
+    if stage_variables.get("_conditions"):
+        variables["_conditions"] = stage_variables["_conditions"]
 
     return _assemble_segments(
         script, meditation_name, stage_id,

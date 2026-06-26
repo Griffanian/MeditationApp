@@ -5,18 +5,30 @@ import { useAuth, canEdit } from '../AuthContext';
 import { useLocalState } from '../utils';
 import ViewerManager from '../components/ViewerManager';
 
-function getProgress(pracName, weeks) {
-  try {
-    const stored = localStorage.getItem(`player:${pracName}:completed`);
-    if (!stored) return null;
-    const completed = JSON.parse(stored);
-    const completedCount = Object.keys(completed).filter(k => completed[k]).length;
-    if (completedCount === 0) return null;
-    const hasWeeks = weeks.length > 0 && weeks[0]?.days;
-    const totalDays = hasWeeks ? weeks.reduce((sum, w) => sum + (w.days?.length || 0), 0) : weeks.length;
-    if (totalDays === 0) return null;
-    return { done: completedCount, total: totalDays, pct: Math.round((completedCount / totalDays) * 100) };
-  } catch { return null; }
+function getProgress(prac) {
+  const completed = prac.progress?.completed_days;
+  if (!completed) return null;
+  const completedCount = Object.keys(completed).filter(k => completed[k]).length;
+  if (completedCount === 0) return null;
+  const weeks = prac.items || [];
+  const hasWeeks = weeks.length > 0 && weeks[0]?.days;
+  const totalDays = hasWeeks ? weeks.reduce((sum, w) => sum + (w.days?.length || 0), 0) : weeks.length;
+  if (totalDays === 0) return null;
+  return { done: completedCount, total: totalDays, pct: Math.round((completedCount / totalDays) * 100) };
+}
+
+function getNextDay(prac) {
+  const completed = prac.progress?.completed_days || {};
+  const weeks = prac.items || [];
+  const hasWeeks = weeks.length > 0 && weeks[0]?.days;
+  if (!hasWeeks) return { week: 0, day: 0 };
+  for (let wi = 0; wi < weeks.length; wi++) {
+    const days = weeks[wi]?.days || [];
+    for (let di = 0; di < days.length; di++) {
+      if (!completed[`${wi}-${di}`]) return { week: wi, day: di };
+    }
+  }
+  return { week: 0, day: 0 };
 }
 
 export default function Practices() {
@@ -161,7 +173,7 @@ export default function Practices() {
           return (
             <div key={prac.name} className="med-card">
               <div className="med-card-top">
-                <Link to={editable ? `/practice/${prac.name}` : `/play/${prac.name}`} className="med-card-link">
+                <Link to={editable ? `/practice/${prac.name}?week=${getNextDay(prac).week}` : `/play/${prac.name}`} className="med-card-link">
                   <span className="med-card-name">{prac.display_name}</span>
                 </Link>
                 {(editable || auth.canCreate) && (
@@ -172,8 +184,8 @@ export default function Practices() {
                     >&#x22EE;</button>
                     {openMenu === prac.name && (
                       <div className="med-kebab-menu" onClick={e => e.stopPropagation()}>
-                        {editable && <button onClick={() => { setOpenMenu(null); navigate(`/practice/${prac.name}`); }}>Edit</button>}
-                        <button onClick={() => { setOpenMenu(null); navigate(`/play/${prac.name}`); }}>Play</button>
+                        {editable && <button onClick={() => { setOpenMenu(null); navigate(`/practice/${prac.name}?week=${getNextDay(prac).week}`); }}>Edit</button>}
+                        <button onClick={() => { setOpenMenu(null); navigate(`/play/${prac.name}?autoplay=1`); }}>Play</button>
                         {auth.canCreate && (
                           <button onClick={() => { setOpenMenu(null); handleClone(prac); }}>
                             {editable ? 'Duplicate' : 'Make your own copy'}
@@ -218,7 +230,7 @@ export default function Practices() {
                 )}
               </div>
               {(() => {
-                const progress = getProgress(prac.name, weeks);
+                const progress = getProgress(prac);
                 if (!progress) return null;
                 return (
                   <div className="prog-card-progress">
@@ -230,11 +242,14 @@ export default function Practices() {
                 );
               })()}
               <div className="prog-card-actions">
-                <Link to={`/play/${prac.name}`} className="prog-card-play-btn">&#x25B6; {(() => {
-                  const progress = getProgress(prac.name, weeks);
-                  return progress ? 'Continue' : 'Start';
-                })()}</Link>
-                {editable && <Link to={`/practice/${prac.name}`} className="prog-card-edit-btn">Edit</Link>}
+                {(() => {
+                  const progress = getProgress(prac);
+                  const next = getNextDay(prac);
+                  return <Link to={`/play/${prac.name}?week=${next.week}&day=${next.day}`} className="prog-card-play-btn">
+                    &#x25B6; {progress ? 'Continue' : 'Start'}
+                  </Link>;
+                })()}
+                <Link to={editable ? `/practice/${prac.name}?week=${getNextDay(prac).week}` : `/play/${prac.name}`} className="prog-card-edit-btn">{editable ? 'Edit' : 'View'}</Link>
               </div>
             </div>
           );

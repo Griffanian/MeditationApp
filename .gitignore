@@ -4,3 +4,4 @@
 .playwright-mcp/
 venv/
 scripts/sync_granola.log
+captured-pages/

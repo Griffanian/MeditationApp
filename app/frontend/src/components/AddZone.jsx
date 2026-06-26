@@ -1,12 +1,27 @@
 import { useState, useRef, useEffect } from 'react';
-import { useDroppable } from '@dnd-kit/core';
+import { dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { generateId } from '../segmentIds';
 import { SEGMENT_TYPES } from '../segmentDefs';
 
 export default function AddZone({ onAdd, containerId }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  const { setNodeRef, isOver } = useDroppable({ id: `dropzone:${containerId}`, disabled: !containerId });
+  const [isDraggedOver, setIsDraggedOver] = useState(false);
+
+  // Register as drop target
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    return dropTargetForElements({
+      element: el,
+      canDrop: ({ source }) => source.data.type === 'timeline-segment',
+      getData: () => ({ type: 'add-zone', containerId: containerId ?? 'root' }),
+      onDragEnter: () => setIsDraggedOver(true),
+      onDragLeave: () => setIsDraggedOver(false),
+      onDrop: () => setIsDraggedOver(false),
+    });
+  }, [containerId]);
 
   useEffect(() => {
     if (!open) return;
@@ -25,8 +40,8 @@ export default function AddZone({ onAdd, containerId }) {
   }
 
   return (
-    <div className="add-zone" ref={el => { ref.current = el; setNodeRef(el); }}>
-      <div className={`add-zone-bar${isOver ? ' drop-over' : ''}`} onClick={() => setOpen(!open)}>+</div>
+    <div className="add-zone" ref={ref}>
+      <div className={`add-zone-bar${isDraggedOver ? ' drop-over' : ''}`} onClick={() => setOpen(!open)}>+</div>
       {open && (
         <div className="add-zone-menu">
           {SEGMENT_TYPES.map(t => (

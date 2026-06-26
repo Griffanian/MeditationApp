@@ -56,10 +56,51 @@ function getProgress(pracName, weeks) {
   } catch { return null; }
 }
 
-function getMotivationalMessage(streak, totalSessions) {
+function hasSessionThisWeek(sessions) {
+  if (sessions.length === 0) return false;
+  const now = new Date();
+  const weekAgo = new Date(now);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  return sessions.some(s => new Date(s.completed_at) >= weekAgo);
+}
+
+function getWeekDays(sessions) {
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0=Sun
+  // Monday = index 0
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + mondayOffset);
+  monday.setHours(0, 0, 0, 0);
+
+  const sessionDays = new Set();
+  for (const s of sessions) {
+    const d = new Date(s.completed_at);
+    d.setHours(0, 0, 0, 0);
+    sessionDays.add(d.getTime());
+  }
+
+  const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const isPast = d <= today;
+    const isToday = d.getTime() === new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    days.push({
+      label: labels[i],
+      done: sessionDays.has(d.getTime()),
+      isPast,
+      isToday,
+    });
+  }
+  return days;
+}
+
+function getMotivationalMessage(streak, totalSessions, sessions) {
   if (totalSessions === 0) return 'Welcome to Meditation Pro. Start your first session today.';
-  if (streak > 1) return `${streak} day streak — keep it going!`;
-  if (streak === 1) return 'You practised today. Nice work.';
+  if (streak >= 1) return 'Welcome back. Pick up where you left off.';
+  if (hasSessionThisWeek(sessions)) return 'Welcome back. Pick up where you left off.';
   return 'Ready to get back on track?';
 }
 
@@ -582,33 +623,47 @@ export default function Home() {
     .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))
     .slice(0, auth.canCreate ? 5 : 3);
 
-  // Find the viewer's current programme (in-progress, or most recently played)
+  // Find the current programme to continue (works for both builders and viewers)
   const currentProgramme = (() => {
-    if (auth.canCreate) return null;
+    // Most recent session's programme (if it has remaining days)
+    if (recentSessions.length > 0) {
+      const recentPrac = practices.find(p => p.name === recentSessions[0].practice);
+      if (recentPrac) {
+        const prog = getProgress(recentPrac.name, recentPrac.items || []);
+        if (!prog || prog.pct < 100) return { practice: recentPrac, progress: prog };
+      }
+    }
+    // Fallback: programme with highest (but incomplete) progress
     let best = null;
     let bestScore = -1;
     for (const p of practices) {
       const weeks = p.items || [];
       const prog = getProgress(p.name, weeks);
-      if (prog && prog.pct < 100) {
-        // Prefer higher progress
-        if (prog.pct > bestScore) { best = { practice: p, progress: prog }; bestScore = prog.pct; }
+      if (prog && prog.pct < 100 && prog.pct > bestScore) {
+        best = { practice: p, progress: prog };
+        bestScore = prog.pct;
       }
     }
-    // Fallback: most recent session's programme
-    if (!best && recentSessions.length > 0) {
-      const recentPrac = practices.find(p => p.name === recentSessions[0].practice);
-      if (recentPrac) {
-        const prog = getProgress(recentPrac.name, recentPrac.items || []);
-        best = { practice: recentPrac, progress: prog };
-      }
-    }
+    if (best) return best;
     // Fallback: first available programme
-    if (!best && practices.length > 0) {
-      best = { practice: practices[0], progress: null };
-    }
-    return best;
+    if (practices.length > 0) return { practice: practices[0], progress: null };
+    return null;
   })();
+
+  // Compute next day for the current programme
+  const nextDay = currentProgramme ? (() => {
+    const completed = currentProgramme.practice.progress?.completed_days || {};
+    const weeks = currentProgramme.practice.items || [];
+    const hasWeeks = weeks.length > 0 && weeks[0]?.days;
+    if (!hasWeeks) return { week: 0, day: 0 };
+    for (let wi = 0; wi < weeks.length; wi++) {
+      const days = weeks[wi]?.days || [];
+      for (let di = 0; di < days.length; di++) {
+        if (!completed[`${wi}-${di}`] && (days[di]?.items?.length > 0)) return { week: wi, day: di };
+      }
+    }
+    return { week: 0, day: 0 };
+  })() : null;
 
   return (
     <div className="home-page">
@@ -619,23 +674,85 @@ export default function Home() {
         <>
           <div className="home-greeting">
             <h1 className="home-greeting-title">{getGreeting()}, {name}</h1>
-            <p className="home-greeting-sub">{getMotivationalMessage(streak, totalSessions)}</p>
-            {streak > 0 && <span className="home-streak-badge">{streak} day streak</span>}
           </div>
-          <div className="home-stats">
-            <div className="home-stat-card">
-              <div className="home-stat-value">{totalSessions}</div>
-              <div className="home-stat-label">Sessions</div>
+          <div className="home-streak-card">
+            <div className="home-streak-top">
+              <span className="home-streak-flame"><i className="fa-solid fa-fire"></i></span>
+              <div className="home-streak-count">
+                <span className="home-streak-number">{streak}</span>
+                <span className="home-streak-label">day streak</span>
+              </div>
             </div>
-            <div className="home-stat-card">
-              <div className="home-stat-value">{streak}</div>
-              <div className="home-stat-label">Day Streak</div>
+            <div className="home-streak-week">
+              {getWeekDays(sessions).map((d, i) => (
+                <div key={i} className={`home-streak-day${d.done ? ' done' : ''}${d.isToday ? ' today' : ''}${!d.isPast ? ' future' : ''}`}>
+                  <div className="home-streak-dot">
+                    {d.done ? '✓' : ''}
+                  </div>
+                  <span className="home-streak-day-label">{d.label}</span>
+                </div>
+              ))}
             </div>
-            <div className="home-stat-card">
-              <div className="home-stat-value">{formatHours(totalSeconds)}</div>
-              <div className="home-stat-label">Total Time</div>
+            <div className="home-streak-stats">
+              <span>{totalSessions} session{totalSessions !== 1 ? 's' : ''}</span>
+              <span className="home-streak-stats-sep">·</span>
+              <span>{formatHours(totalSeconds)} total</span>
             </div>
           </div>
+
+          {currentProgramme && nextDay && (() => {
+            const dayData = currentProgramme.practice.items?.[nextDay.week]?.days?.[nextDay.day];
+            const dayItems = dayData?.items || [];
+            const dayLabel = dayData?.label || `Day ${nextDay.day + 1}`;
+            const totalMins = dayItems.reduce((sum, item) => {
+              for (const v of Object.values(item.variables || {})) {
+                if (typeof v === 'object' && v.unit === 'minutes' && v.value != null) return sum + Number(v.value);
+              }
+              return sum;
+            }, 0);
+            const today = new Date();
+            const monthShort = today.toLocaleString('default', { month: 'short' }).toUpperCase();
+            const dayNum = today.getDate();
+
+            return (
+              <div className="home-next-session">
+                <div className="home-next-header">
+                  <div className="home-next-date">
+                    <span className="home-next-date-month">{monthShort}</span>
+                    <span className="home-next-date-day">{dayNum}</span>
+                  </div>
+                  <div className="home-next-info">
+                    <div className="home-next-name">{currentProgramme.practice.display_name}</div>
+                    <div className="home-next-meta">
+                      {dayLabel} · {dayItems.length} meditation{dayItems.length !== 1 ? 's' : ''}{totalMins > 0 ? ` · ${totalMins} min` : ''}
+                    </div>
+                  </div>
+                  <Link to={`/play/${currentProgramme.practice.name}?week=${nextDay.week}&day=${nextDay.day}`} className="home-next-play">
+                    <span>▶</span>
+                  </Link>
+                </div>
+                {dayItems.length > 0 && (
+                  <div className="home-next-stages">
+                    {dayItems.map((item, idx) => {
+                      const varMins = (() => {
+                        for (const v of Object.values(item.variables || {})) {
+                          if (typeof v === 'object' && v.unit === 'minutes' && v.value != null) return Number(v.value);
+                        }
+                        return null;
+                      })();
+                      return (
+                        <div key={item.id} className="home-next-stage">
+                          <span className="home-next-stage-num">{idx + 1}</span>
+                          <span className="home-next-stage-name">{item.meditation_display}</span>
+                          {varMins != null && <span className="home-next-stage-dur">{varMins} min</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {recentSessions.length > 0 && (
             <div className="home-section">
@@ -668,13 +785,16 @@ export default function Home() {
         <>
           <div className="home-greeting">
             <h1 className="home-greeting-title">{getGreeting()}, {name}</h1>
-            <p className="home-greeting-sub">{getMotivationalMessage(streak, totalSessions)}</p>
+            <p className="home-greeting-sub">{getMotivationalMessage(streak, totalSessions, sessions)}</p>
             {streak > 0 && <span className="home-streak-badge">{streak} day streak</span>}
           </div>
-          {currentProgramme && (
+          {currentProgramme && nextDay && (
             <div className="home-section">
               <div className="home-programme-card">
                 <div className="home-programme-name">{currentProgramme.practice.display_name}</div>
+                <div className="home-programme-meta">
+                  {currentProgramme.practice.items?.[nextDay.week]?.label} — {currentProgramme.practice.items?.[nextDay.week]?.days?.[nextDay.day]?.label}
+                </div>
                 {currentProgramme.progress && (
                   <div className="prog-card-progress">
                     <div className="prog-card-progress-bar">
@@ -684,7 +804,9 @@ export default function Home() {
                   </div>
                 )}
                 <div className="home-programme-actions">
-                  <Link to={`/play/${currentProgramme.practice.name}`} className="home-programme-btn home-programme-btn-primary">Continue Practice</Link>
+                  <Link to={`/play/${currentProgramme.practice.name}?week=${nextDay.week}&day=${nextDay.day}`} className="home-programme-btn home-programme-btn-primary">
+                    {currentProgramme.progress ? '▶ Continue Practice' : '▶ Start Practice'}
+                  </Link>
                   <Link to="/exercises" className="home-programme-btn home-programme-btn-secondary">Browse Exercises</Link>
                 </div>
               </div>

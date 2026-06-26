@@ -22,9 +22,22 @@ class VariablesView(APIView):
             return err
         try:
             stage = Stage.objects.get(meditation_id=name, stage_id=stage_id)
-            return Response(stage.variables or {})
+            variables = stage.variables or {}
         except Stage.DoesNotExist:
             return Response({})
+        # Enrich with computed minimums for variable mismatch detection
+        try:
+            from meditations.services.synthesize import compute_variable_mins
+            mins = compute_variable_mins(name, stage_id)
+            enriched = {}
+            for var_name, var_data in variables.items():
+                entry = dict(var_data) if isinstance(var_data, dict) else {"value": var_data}
+                if var_name in mins:
+                    entry["computed_min"] = mins[var_name]
+                enriched[var_name] = entry
+            return Response(enriched)
+        except Exception:
+            return Response(variables)
 
     def put(self, request, name, stage_id):
         m, err = _check_med_perm(request, name, write=True)
@@ -33,7 +46,14 @@ class VariablesView(APIView):
         stage, _ = Stage.objects.get_or_create(
             meditation=m, stage_id=stage_id,
         )
-        stage.variables = request.data
+        # Strip computed_min before saving — it's a read-only enrichment
+        cleaned = {}
+        for var_name, var_data in request.data.items():
+            if isinstance(var_data, dict):
+                cleaned[var_name] = {k: v for k, v in var_data.items() if k != 'computed_min'}
+            else:
+                cleaned[var_name] = var_data
+        stage.variables = cleaned
         stage.save()
         return Response({"status": "ok"})
 

@@ -25,6 +25,8 @@ def visible_qs(queryset, user):
         return queryset.filter(Q(is_public=True) | Q(created_by=user))
 
     # viewer: public + directly shared + in shared category/group
+    from .models import Practice
+
     q = Q(is_public=True) | Q(shared_with=user)
 
     # Check if this is a Meditation queryset (has 'category' field)
@@ -37,6 +39,17 @@ def visible_qs(queryset, user):
             group__shared_with=user
         ).values_list("name", flat=True)
         q = q | Q(category__in=shared_cat_names) | Q(category__in=shared_group_cat_names)
+
+        # Include exercises that belong to a shared programme
+        shared_med_names = set()
+        for items in Practice.objects.filter(
+            shared_with=user
+        ).values_list("items", flat=True):
+            for item in (items or []):
+                if "meditation" in item:
+                    shared_med_names.add(item["meditation"])
+        if shared_med_names:
+            q = q | Q(name__in=shared_med_names)
 
     return queryset.filter(q).distinct()
 
@@ -78,7 +91,7 @@ class CanViewContent(BasePermission):
         return bool(request.user and request.user.is_authenticated)
 
     def has_object_permission(self, request, view, obj):
-        from .models import Category, Group
+        from .models import Category, Group, Practice
 
         role = get_role(request.user)
         if role in ("admin", "editor"):
@@ -98,6 +111,12 @@ class CanViewContent(BasePermission):
                     return True
                 if cat.group and cat.group.shared_with.filter(pk=request.user.pk).exists():
                     return True
+        # Check if exercise belongs to a shared programme
+        if hasattr(obj, 'category'):
+            for practice in Practice.objects.filter(shared_with=request.user):
+                for item in (practice.items or []):
+                    if item.get("meditation") == obj.name:
+                        return True
         return False
 
 

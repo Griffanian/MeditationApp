@@ -119,6 +119,7 @@ urlpatterns = [
     path("api/practices/stages", practices.PracticeStagesView.as_view()),
     path("api/practices/<str:name>", practices.PracticeDetailView.as_view()),
     path("api/practices/<str:name>/assemble-day", assembly.DayAssembleView.as_view()),
+    path("api/practices/<str:name>/progress", practices.PracticeProgressView.as_view()),
     path("api/practices/<str:name>/clone", clone.ClonePracticeView.as_view()),
     path("api/practices/<str:name>/share", sharing.PracticeShareView.as_view()),
 

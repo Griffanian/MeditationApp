@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DndContext, closestCenter, pointerWithin, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
+import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import { extractInstruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item';
 import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, assembleStage, generateAllAudio } from '../api';
 import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, setPlaybackVariables, computeMarkerDuration, registerExternalStop, unregisterExternalStop, unlockAudio } from '../playback';
 import { getClipboard, setClipboard } from '../clipboard';
@@ -9,7 +11,6 @@ import { useLocalState } from '../utils';
 import Timeline from './Timeline';
 import AddMenu from './AddMenu';
 import ContextMenu from './ContextMenu';
-import DragOverlayContent from './DragOverlayContent';
 import TimelineGuide from './TimelineGuide';
 
 export default function StageEditor({ stageName, stageId, meditationName, readOnly }) {
@@ -37,43 +38,77 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   useEffect(() => { setScriptAndComponents(script, components); }, [script, components]);
 
   const [variables, setVariables] = useState({});
+  const [varRevision, setVarRevision] = useState(0);
   useEffect(() => { setPlaybackVariables(variables); }, [variables]);
+
+  // Variable error detection — derived from variables state
+  const UNIT_MULTS = { seconds: 1, minutes: 60, hours: 3600 };
+  const varErrors = {}; // { varName: { minBelowFloor, valueBelowFloor, valueBelowMin, computed_min, messages[] } }
+  for (const [varName, varData] of Object.entries(variables)) {
+    if (!varData || typeof varData !== 'object') continue;
+    const mult = UNIT_MULTS[varData.unit] || 1;
+    const val = Number(varData.value);
+    const userMin = varData.min != null ? Number(varData.min) : null;
+    const errors = { minBelowFloor: false, valueBelowFloor: false, valueBelowMin: false, computed_min: varData.computed_min, messages: [] };
+
+    // Check user-set min against computed floor
+    if (varData.computed_min && userMin != null && userMin * mult < varData.computed_min.min_seconds) {
+      errors.minBelowFloor = true;
+      const unitLabel = varData.unit === 'seconds' ? 'sec' : varData.unit === 'minutes' ? 'min' : varData.unit === 'hours' ? 'hr' : '';
+      const cm = varData.computed_min;
+      errors.messages.push(`Minimum (${userMin} ${unitLabel}) is below the target set by "${cm.section_label}" — fixed content is ${cm.fixed_duration}, needs at least ${cm.min_value_ceiled} ${unitLabel}`);
+    }
+    // Check current value against computed floor
+    if (varData.computed_min && !isNaN(val) && val * mult < varData.computed_min.min_seconds) {
+      errors.valueBelowFloor = true;
+      const unitLabel = varData.unit === 'seconds' ? 'sec' : varData.unit === 'minutes' ? 'min' : varData.unit === 'hours' ? 'hr' : '';
+      const cm = varData.computed_min;
+      errors.messages.push(`Current value (${val} ${unitLabel}) is below the target set by "${cm.section_label}" — fixed content is ${cm.fixed_duration}, needs at least ${cm.min_value_ceiled} ${unitLabel}`);
+    }
+
+    if (errors.messages.length > 0) varErrors[varName] = errors;
+  }
+  const hasErrors = Object.keys(varErrors).length > 0;
+
   const [loadingVars, setLoadingVars] = useState(true);
   const [loadingTimeline, setLoadingTimeline] = useState(true);
   const [loopCounters, setLoopCounters] = useState({});
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showGuide, setShowGuide] = useState(null);
-  const selectionAnchor = useRef(null);
 
-  function handleSelect(id, shiftKey) {
-    if (!shiftKey) {
-      setSelectedIds(new Set());
-      return;
-    }
+  // Selection functions aligned with Atlassian's multi-drag pattern
+  function toggleSelection(id) {
     setSelectedIds(prev => {
-      if (prev.has(id)) {
-        const next = new Set(prev);
-        next.delete(id);
-        if (selectionAnchor.current === id) selectionAnchor.current = null;
-        return next;
-      }
-      if (selectionAnchor.current !== null) {
-        const flat = allIds(scriptRef.current);
-        const anchorIdx = flat.indexOf(selectionAnchor.current);
-        const currentIdx = flat.indexOf(id);
-        if (anchorIdx !== -1 && currentIdx !== -1) {
-          const from = Math.min(anchorIdx, currentIdx);
-          const to = Math.max(anchorIdx, currentIdx);
-          const next = new Set(prev);
-          for (const p of flat.slice(from, to + 1)) next.add(p);
-          return next;
-        }
-      }
-      selectionAnchor.current = id;
+      if (!prev.has(id)) return new Set([id]);
+      if (prev.size > 1) return new Set([id]);
+      return new Set();
+    });
+  }
+
+  function toggleSelectionInGroup(id) {
+    setSelectedIds(prev => {
       const next = new Set(prev);
-      next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
+  }
+
+  function multiSelectTo(id) {
+    if (selectedIds.size === 0) {
+      setSelectedIds(new Set([id]));
+      return;
+    }
+    const flat = allIds(scriptRef.current);
+    const lastSelected = [...selectedIds].pop();
+    const anchorIdx = flat.indexOf(lastSelected);
+    const currentIdx = flat.indexOf(id);
+    if (anchorIdx === -1 || currentIdx === -1) return;
+    const from = Math.min(anchorIdx, currentIdx);
+    const to = Math.max(anchorIdx, currentIdx);
+    const next = new Set(selectedIds);
+    for (const p of flat.slice(from, to + 1)) next.add(p);
+    setSelectedIds(next);
   }
 
   const [contextMenu, setContextMenu] = useState(null);
@@ -150,72 +185,94 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   }
 
   // --- Drag and drop ---
-  const [activeDragSeg, setActiveDragSeg] = useState(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const [activeDragIds, setActiveDragIds] = useState(null);
 
-  // Prefer inner/smaller droppables over their parent containers
-  function collisionDetection(args) {
-    const pw = pointerWithin(args);
-    if (pw.length > 0) return pw;
-    return closestCenter(args);
-  }
+  useEffect(() => {
+    if (readOnly) return;
 
-  function handleDragStart(event) {
-    const seg = findById(scriptRef.current, event.active.id);
-    setActiveDragSeg(seg);
-  }
+    return monitorForElements({
+      canMonitor: ({ source }) => source.data.type === 'timeline-segment',
+      onDragStart: ({ source }) => {
+        const dragId = source.data.id;
+        if (!selectedIds.has(dragId)) {
+          // Dragging an unselected item — clear selection, drag just this one
+          setSelectedIds(new Set());
+          setActiveDragIds(new Set([dragId]));
+        } else {
+          // Dragging a selected item — drag all selected
+          setActiveDragIds(new Set(selectedIds));
+        }
+      },
+      onDrop: ({ source, location }) => {
+        const dragIds = activeDragIds || new Set([source.data.id]);
+        setActiveDragIds(null);
 
-  function handleDragEnd(event) {
-    setActiveDragSeg(null);
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const fromId = String(active.id);
-    const overId = String(over.id);
+        const target = location.current.dropTargets[0];
+        if (!target) return;
 
-    const newScript = JSON.parse(JSON.stringify(scriptRef.current));
+        const targetData = target.data;
+        const targetId = targetData.id;
 
-    // Normalize prefixed IDs to the target segment ID
-    const targetId = overId.replace(/^(dropzone|after|before|above|below):/, '');
-    if (targetId === fromId || isDescendantOf(newScript, fromId, targetId)) return;
+        // Determine insertion mode from target type
+        let insertMode; // 'before' | 'after' | 'inside' | 'append'
+        if (targetData.type === 'add-zone') {
+          insertMode = 'append';
+        } else if (targetData.type === 'section') {
+          const instruction = extractInstruction(targetData);
+          if (!instruction) return;
+          if (instruction.type === 'reorder-above') insertMode = 'before';
+          else if (instruction.type === 'reorder-below') insertMode = 'after';
+          else if (instruction.type === 'make-child') insertMode = 'inside';
+          else return;
+        } else {
+          // Segment — use closest edge
+          const edge = extractClosestEdge(targetData);
+          if (!edge) return;
+          insertMode = edge === 'top' ? 'before' : 'after';
+        }
 
-    const fromCtx = findByIdWithContext(newScript, fromId);
-    if (!fromCtx) return;
+        const newScript = JSON.parse(JSON.stringify(scriptRef.current));
 
-    if (overId.startsWith('before:') || overId.startsWith('above:')) {
-      const beforeId = overId.slice('before:'.length);
-      const beforeCtx = findByIdWithContext(newScript, beforeId);
-      if (!beforeCtx) return;
-      fromCtx.parent.splice(fromCtx.index, 1);
-      const updatedCtx = findByIdWithContext(newScript, beforeId);
-      if (!updatedCtx) return;
-      updatedCtx.parent.splice(updatedCtx.index, 0, fromCtx.seg);
-    } else if (overId.startsWith('after:') || overId.startsWith('below:')) {
-      const afterId = overId.slice('after:'.length);
-      const afterCtx = findByIdWithContext(newScript, afterId);
-      if (!afterCtx) return;
-      fromCtx.parent.splice(fromCtx.index, 1);
-      const updatedCtx = findByIdWithContext(newScript, afterId);
-      if (!updatedCtx) return;
-      updatedCtx.parent.splice(updatedCtx.index + 1, 0, fromCtx.seg);
-    } else if (overId.startsWith('dropzone:')) {
-      const containerId = overId.slice('dropzone:'.length);
-      const container = findById(newScript, containerId);
-      if (!container) return;
-      fromCtx.parent.splice(fromCtx.index, 1);
-      container.segments.push(fromCtx.seg);
-    } else {
-      const toCtx = findByIdWithContext(newScript, overId);
-      if (!toCtx) return;
-      fromCtx.parent.splice(fromCtx.index, 1);
-      if (toCtx.seg.type === 'loop' && toCtx.seg.segments) {
-        // Dropping onto a section/loop: insert into it
-        toCtx.seg.segments.push(fromCtx.seg);
-      } else {
-        toCtx.parent.splice(toCtx.index, 0, fromCtx.seg);
-      }
-    }
-    save(newScript);
-  }
+        // Remove all dragged segments (in reverse document order for index stability)
+        const flat = allIds(newScript);
+        const sortedDragIds = [...dragIds].sort((a, b) => flat.indexOf(b) - flat.indexOf(a));
+        const collected = [];
+        for (const id of sortedDragIds) {
+          const ctx = findByIdWithContext(newScript, id);
+          if (!ctx) return;
+          ctx.parent.splice(ctx.index, 1);
+          collected.unshift(ctx.seg);
+        }
+
+        // Insert collected segments at the target
+        if (insertMode === 'before') {
+          const ctx = findByIdWithContext(newScript, targetId);
+          if (!ctx) return;
+          ctx.parent.splice(ctx.index, 0, ...collected);
+        } else if (insertMode === 'after') {
+          const ctx = findByIdWithContext(newScript, targetId);
+          if (!ctx) return;
+          ctx.parent.splice(ctx.index + 1, 0, ...collected);
+        } else if (insertMode === 'inside') {
+          const container = findById(newScript, targetId);
+          if (!container || !container.segments) return;
+          container.segments.push(...collected);
+        } else if (insertMode === 'append') {
+          const containerId = targetData.containerId;
+          if (containerId === 'root') {
+            newScript.push(...collected);
+          } else {
+            const container = findById(newScript, containerId);
+            if (!container) return;
+            container.segments.push(...collected);
+          }
+        }
+
+        save(newScript);
+        setSelectedIds(new Set());
+      },
+    });
+  }, [readOnly, selectedIds, activeDragIds]);
 
   // Register callbacks so external audio sources (RecordingModal, etc.) can
   // stop the assembled output and reset timeline playback state.
@@ -291,26 +348,31 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
         redo();
       }
     }
-    function handleKeyUp(e) {
-      if (e.key === 'Shift') selectionAnchor.current = null;
-    }
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
     };
   }, [meditationName, stageId]);
 
   // --- Variables ---
   function saveVars(updated) {
     setVariables(updated);
-    saveStageVariables(meditationName, stageId, updated);
+    setVarRevision(r => r + 1);
+    return saveStageVariables(meditationName, stageId, updated);
   }
 
-  function updateVariable(varName, newValue) {
+  async function updateVariable(varName, newValue) {
+    const varData = variables[varName];
+    if (varData && typeof varData === 'object' && varData.min != null) {
+      if (Number(newValue) < Number(varData.min)) {
+        alert(`Value cannot be less than the minimum (${varData.min}).`);
+        return;
+      }
+    }
     const updated = { ...variables, [varName]: { ...variables[varName], value: newValue } };
-    saveVars(updated);
+    await saveVars(updated);
+    // Re-fetch to get fresh computed_min (conditions may have changed which segments are included)
+    fetchStageVariables(meditationName, stageId).then(setVariables);
   }
 
   function updateDisplayName(varName, newDisplayName) {
@@ -318,8 +380,26 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
     saveVars(updated);
   }
 
-  function updateUnit(varName, unit) {
+  async function updateUnit(varName, unit) {
     const updated = { ...variables, [varName]: { ...variables[varName], unit: unit || undefined } };
+    await saveVars(updated);
+    // Re-fetch to get fresh computed_min for the new unit
+    fetchStageVariables(meditationName, stageId).then(setVariables);
+  }
+
+  function updateVarMin(varName, val) {
+    const updated = { ...variables, [varName]: { ...variables[varName], min: val === '' ? undefined : Number(val) } };
+    saveVars(updated);
+  }
+
+  function updateVarMax(varName, val) {
+    const varData = variables[varName];
+    let v = val === '' ? undefined : Number(val);
+    if (v != null && varData && typeof varData === 'object' && varData.min != null && v < Number(varData.min)) {
+      alert(`The maximum cannot be less than the minimum, which is ${varData.min}.`);
+      v = Number(varData.min);
+    }
+    const updated = { ...variables, [varName]: { ...variables[varName], max: v } };
     saveVars(updated);
   }
 
@@ -351,6 +431,31 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
     if (!confirm(`Delete variable "${varName}"?`)) return;
     const updated = { ...variables };
     delete updated[varName];
+    saveVars(updated);
+  }
+
+  // --- Conditions ---
+  const conditions = variables._conditions || {};
+  const varNames = Object.keys(variables).filter(k => k !== '_conditions' && k !== 'computed_min');
+
+  function addCondition() {
+    let name = 'condition1';
+    let i = 2;
+    while (name in conditions) name = `condition${i++}`;
+    const updated = { ...variables, _conditions: { ...conditions, [name]: { variable: varNames[0] || '', operator: '>=', value: 1 } } };
+    saveVars(updated);
+  }
+
+  function updateCondition(condName, field, val) {
+    const updated = { ...variables, _conditions: { ...conditions, [condName]: { ...conditions[condName], [field]: val } } };
+    saveVars(updated);
+  }
+
+  function deleteCondition(condName) {
+    if (!confirm(`Delete condition "${conditions[condName]?.displayName || condName}"?`)) return;
+    const newConds = { ...conditions };
+    delete newConds[condName];
+    const updated = { ...variables, _conditions: newConds };
     saveVars(updated);
   }
 
@@ -551,11 +656,13 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
         </div>
         {!varsCollapsed && (loadingVars ? (
           <div className="loading-page" style={{ minHeight: 40 }}><div className="loading-spinner" /><span>Loading variables...</span></div>
-        ) : Object.keys(variables).length > 0 ? (
+        ) : varNames.length > 0 ? (<>
           <table className="variables-table">
             <thead>
               <tr>
-                <th>Value</th>
+                <th>Min</th>
+                <th>Current</th>
+                <th>Max</th>
                 <th>Unit</th>
                 <th>Variable Name</th>
                 <th>Display Name</th>
@@ -563,70 +670,172 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
               </tr>
             </thead>
             <tbody>
-              {Object.entries(variables).map(([varName, { value, displayName, unit }]) => (
-                <tr key={varName}>
-                  <td>
-                    <input
-                      className={`variable-input${value === '' || isNaN(Number(value)) ? ' variable-input-error' : ''}`}
-                      type="text"
-                      value={value}
-                      readOnly={readOnly}
-                      onChange={readOnly ? undefined : e => updateVariable(varName, e.target.value)}
-                    />
-                  </td>
+              {Object.entries(variables).filter(([k]) => k !== '_conditions').map(([varName, { value, displayName, unit, min, max, computed_min }]) => {
+                const numVal = Number(value) || 1;
+                const err = varErrors[varName];
+                const hasErr = !!err;
+                return (
+                  <tr key={varName} className={hasErr ? 'variable-mismatch' : ''}>
+                    <td>
+                      <input className={`variable-input${err?.minBelowFloor ? ' variable-input-error' : ''}`}
+                        type="number" key={`min-${varName}-${varRevision}`} defaultValue={min != null ? min : ''}
+                        placeholder="—" readOnly={readOnly}
+                        onBlur={e => {
+                          const v = e.target.value === '' ? undefined : Number(e.target.value);
+                          updateVarMin(varName, v != null ? v : '');
+                          if (v != null && numVal < v) updateVariable(varName, v);
+                        }}
+                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
+                    </td>
+                    <td>
+                      <input className={`variable-input${err?.valueBelowFloor ? ' variable-input-error' : ''}`}
+                        type="number" step="1" value={value}
+                        readOnly={readOnly}
+                        onChange={readOnly ? undefined : e => updateVariable(varName, e.target.value)} />
+                    </td>
+                    <td>
+                      <input className="variable-input" type="number"
+                        key={`max-${varName}-${varRevision}`} defaultValue={max != null ? max : ''}
+                        placeholder="—" readOnly={readOnly}
+                        onBlur={e => {
+                          const v = e.target.value === '' ? undefined : Number(e.target.value);
+                          updateVarMax(varName, v != null ? v : '');
+                        }}
+                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
+                    </td>
+                    <td>
+                      {readOnly ? (
+                        <span className="variable-unit-select" style={{ border: 'none' }}>{unit === 'seconds' ? 'sec' : unit === 'minutes' ? 'min' : unit === 'hours' ? 'hr' : 'times'}</span>
+                      ) : (
+                        <select className="variable-unit-select" value={unit || ''} onChange={e => updateUnit(varName, e.target.value)}>
+                          <option value="">times</option>
+                          <option value="seconds">sec</option>
+                          <option value="minutes">min</option>
+                          <option value="hours">hr</option>
+                        </select>
+                      )}
+                    </td>
+                    <td>
+                      {readOnly ? (
+                        <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{varName}</span>
+                      ) : (
+                        <input className="variable-name-input" type="text" defaultValue={varName}
+                          onBlur={e => renameVariable(varName, e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
+                      )}
+                    </td>
+                    <td>
+                      {readOnly ? (
+                        <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{displayName || varName}</span>
+                      ) : (
+                        <input className="variable-name-input" type="text" defaultValue={displayName || varName}
+                          onBlur={e => updateDisplayName(varName, e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
+                      )}
+                    </td>
+                    {!readOnly && <td className="var-delete-cell">
+                      <button className="var-delete-btn" onClick={() => deleteVariable(varName)}>✕</button>
+                    </td>}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {hasErrors && (
+            <div className="variable-mismatch-banner">
+              {Object.entries(varErrors).map(([varName, err]) => (
+                err.messages.map((msg, i) => (
+                  <div key={`${varName}-${i}`} className="variable-mismatch-msg">
+                    <strong>{variables[varName]?.displayName || varName}:</strong> {msg}
+                  </div>
+                ))
+              ))}
+            </div>
+          )}
+        </>) : (
+          <p className="empty-hint">No variables yet. {!readOnly && <><span className="empty-hint-link" onClick={addVariable}>Add one</span> or </>}<span className="empty-hint-link" onClick={() => setShowGuide(4)}>see our guide</span>.</p>
+        ))}
+      </div>
+
+      {varNames.length > 0 && (
+      <div className="stage-subsection">
+        <div className="section-header-row">
+          <div className="editor-section-label">Conditions</div>
+          {!readOnly && <button className="btn-add" onClick={addCondition}>+ Add</button>}
+        </div>
+        {Object.keys(conditions).length > 0 ? (
+          <table className="variables-table">
+            <thead>
+              <tr>
+                <th>Include if</th>
+                <th></th>
+                <th></th>
+                {!readOnly && <th></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(conditions).map(([condName, cond]) => (
+                <tr key={condName}>
                   <td>
                     {readOnly ? (
-                      <span className="variable-unit-select" style={{ border: 'none' }}>{unit === 'seconds' ? 'sec' : unit === 'minutes' ? 'min' : unit === 'hours' ? 'hr' : 'times'}</span>
+                      <span>{variables[cond.variable]?.displayName || cond.variable}</span>
                     ) : (
-                      <select
-                        className="variable-unit-select"
-                        value={unit || ''}
-                        onChange={e => updateUnit(varName, e.target.value)}
-                      >
-                        <option value="">times</option>
-                        <option value="seconds">sec</option>
-                        <option value="minutes">min</option>
-                        <option value="hours">hr</option>
+                      <select className="variable-unit-select" value={cond.variable || ''}
+                        onChange={e => updateCondition(condName, 'variable', e.target.value)}>
+                        <option value="">—</option>
+                        {varNames.map(v => <option key={v} value={v}>{variables[v]?.displayName || v}</option>)}
+                      </select>
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    {readOnly ? (
+                      <span>{cond.operator}</span>
+                    ) : (
+                      <select className="variable-unit-select" value={cond.operator || '>='}
+                        onChange={e => updateCondition(condName, 'operator', e.target.value)}>
+                        <option value=">">&gt;</option>
+                        <option value="<">&lt;</option>
+                        <option value=">=">{'\u2265'}</option>
+                        <option value="<=">{'\u2264'}</option>
+                        <option value="==">=</option>
+                        <option value="!=">{'\u2260'}</option>
+                        <option value="between">between</option>
                       </select>
                     )}
                   </td>
                   <td>
                     {readOnly ? (
-                      <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{varName}</span>
+                      <span>{cond.value}{cond.operator === 'between' && ` – ${cond.value2}`}</span>
                     ) : (
-                      <input
-                        className="variable-name-input"
-                        type="text"
-                        defaultValue={varName}
-                        onBlur={e => renameVariable(varName, e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-                      />
-                    )}
-                  </td>
-                  <td>
-                    {readOnly ? (
-                      <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{displayName || varName}</span>
-                    ) : (
-                      <input
-                        className="variable-name-input"
-                        type="text"
-                        defaultValue={displayName || varName}
-                        onBlur={e => updateDisplayName(varName, e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-                      />
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input className="variable-input" type="number"
+                          key={`cond-val-${condName}-${varRevision}`}
+                          defaultValue={cond.value}
+                          onBlur={e => updateCondition(condName, 'value', Number(e.target.value))}
+                          onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
+                        {cond.operator === 'between' && <>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>–</span>
+                          <input className="variable-input" type="number"
+                            key={`cond-val2-${condName}-${varRevision}`}
+                            defaultValue={cond.value2}
+                            onBlur={e => updateCondition(condName, 'value2', Number(e.target.value))}
+                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
+                        </>}
+                      </span>
                     )}
                   </td>
                   {!readOnly && <td className="var-delete-cell">
-                    <button className="var-delete-btn" onClick={() => deleteVariable(varName)}>✕</button>
+                    <button className="var-delete-btn" onClick={() => deleteCondition(condName)}>✕</button>
                   </td>}
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <p className="empty-hint">No variables yet. {!readOnly && <><span className="empty-hint-link" onClick={addVariable}>Add one</span> or </>}<span className="empty-hint-link" onClick={() => setShowGuide(4)}>see our guide</span>.</p>
-        ))}
+          <p className="empty-hint">No conditions yet. {!readOnly && <span className="empty-hint-link" onClick={addCondition}>Add one</span>} to conditionally include segments.</p>
+        )}
       </div>
+      )}
 
       <div className="stage-subsection">
         <div className="section-header-row">
@@ -650,61 +859,37 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
           {script.length === 0 && (
             <p className="empty-hint">No segments yet. Use the + to add segments, or <span className="empty-hint-link" onClick={() => setShowGuide(0)}>see our guide to timelines</span>.</p>
           )}
-          {readOnly ? (
-            <Timeline
-              segments={script}
-              playingId={playingId}
-              isPaused={isPaused}
-              onPlay={handlePlay}
-              onWordClick={handleWordClick}
-              onDelete={() => { }}
-              onUpdate={() => { }}
-              onInsert={() => { }}
-              components={components}
-              meditationName={meditationName}
-              stageId={stageId}
-              onRefreshComponents={() => { }}
-              playingParentId={playingParentId}
-              variables={variables}
-              loopCounters={loopCounters}
-              onUpdateVariable={() => { }}
-              selectedIds={selectedIds}
-              onSelect={() => { }}
-              onContextMenu={() => { }}
-              fullScript={script}
-              readOnly
-            />
-          ) : (
-            <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-              <Timeline
-                segments={script}
-                playingId={playingId}
-                isPaused={isPaused}
-                onPlay={handlePlay}
-                onWordClick={handleWordClick}
-                onDelete={deleteById}
-                onUpdate={updateById}
-                onInsert={insertNear}
-                components={components}
-                meditationName={meditationName}
-                stageId={stageId}
-                onRefreshComponents={() => fetchStageComponents(meditationName, stageId).then(setComponents)}
-                onFlushSave={() => savePromiseRef.current}
-                playingParentId={playingParentId}
-                variables={variables}
-                loopCounters={loopCounters}
-                onUpdateVariable={updateVariable}
-                selectedIds={selectedIds}
-                onSelect={handleSelect}
-                containerId={null}
-                onContextMenu={handleContextMenu}
-                fullScript={script}
-              />
-              <DragOverlay dropAnimation={null}>
-                {activeDragSeg ? <DragOverlayContent seg={activeDragSeg} /> : null}
-              </DragOverlay>
-            </DndContext>
-          )}
+          <Timeline
+            segments={script}
+            playingId={playingId}
+            isPaused={isPaused}
+            onPlay={readOnly ? handlePlay : handlePlay}
+            onWordClick={readOnly ? handleWordClick : handleWordClick}
+            onDelete={readOnly ? () => { } : deleteById}
+            onUpdate={readOnly ? () => { } : updateById}
+            onInsert={readOnly ? () => { } : insertNear}
+            components={components}
+            meditationName={meditationName}
+            stageId={stageId}
+            onRefreshComponents={readOnly ? () => { } : () => {
+              fetchStageComponents(meditationName, stageId).then(setComponents);
+              fetchStageVariables(meditationName, stageId).then(setVariables);
+            }}
+            onFlushSave={readOnly ? undefined : () => savePromiseRef.current}
+            playingParentId={playingParentId}
+            variables={variables}
+            loopCounters={loopCounters}
+            onUpdateVariable={readOnly ? () => { } : updateVariable}
+            selectedIds={selectedIds}
+            toggleSelection={readOnly ? () => { } : toggleSelection}
+            toggleSelectionInGroup={readOnly ? () => { } : toggleSelectionInGroup}
+            multiSelectTo={readOnly ? () => { } : multiSelectTo}
+            containerId={null}
+            onContextMenu={readOnly ? () => { } : handleContextMenu}
+            fullScript={script}
+            readOnly={readOnly}
+            activeDragIds={activeDragIds}
+          />
         </>)}
       </div>
       {!readOnly && contextMenu && (

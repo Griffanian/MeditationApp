@@ -1,12 +1,15 @@
-export default function DragHandle({ listeners, attributes }) {
+import { forwardRef } from 'react';
+
+const DragHandle = forwardRef(function DragHandle(props, ref) {
   return (
     <span
+      ref={ref}
       className="drag-handle"
-      {...listeners}
-      {...attributes}
       style={{ touchAction: 'none' }}
     >
       ⁞⁞
     </span>
   );
-}
+});
+
+export default DragHandle;

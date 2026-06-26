@@ -6,6 +6,42 @@ const UNIT_MULTIPLIERS = { seconds: 1, minutes: 60, hours: 3600 };
  * Resolve a variable reference to a numeric value, applying unit conversion.
  * Returns the value in seconds (or unitless for rounds etc).
  */
+/**
+ * Evaluate a segment condition against current variables.
+ * Returns true if the segment should be included.
+ */
+/**
+ * Evaluate a segment condition against current variables.
+ * Condition can be an object {variable, operator, value} or a string
+ * referencing a named condition from variables._conditions.
+ */
+export function evaluateCondition(condition, variables) {
+  if (!condition) return true;
+  // String reference to a named condition
+  if (typeof condition === 'string') {
+    const named = variables._conditions?.[condition];
+    if (!named) return true;
+    condition = named;
+  }
+  const { variable, operator, value } = condition;
+  if (!variable || !operator || value == null) return true;
+  const resolved = resolveVar(variables[variable]);
+  if (resolved == null) return true;
+  const threshold = Number(value);
+  if (operator === 'between') {
+    const t2 = Number(condition.value2);
+    if (isNaN(t2)) return true;
+    return resolved >= threshold && resolved <= t2;
+  }
+  if (operator === '>') return resolved > threshold;
+  if (operator === '<') return resolved < threshold;
+  if (operator === '>=') return resolved >= threshold;
+  if (operator === '<=') return resolved <= threshold;
+  if (operator === '==') return resolved === threshold;
+  if (operator === '!=') return resolved !== threshold;
+  return true;
+}
+
 export function resolveVar(varObj) {
   if (varObj == null) return null;
   const raw = Number(typeof varObj === 'object' ? varObj.value : varObj) || 0;
@@ -350,6 +386,7 @@ export function resumeCurrentAudio(seg) {
 export function computeFixedDuration(segments, variables, components) {
   let total = 0;
   for (const seg of segments) {
+    if (!evaluateCondition(seg.condition, variables)) continue;
     if (seg.type === 'speech') {
       const comp = components[seg.id];
       if (comp && comp.duration != null) total += comp.duration;
@@ -376,6 +413,7 @@ export function computeFixedDuration(segments, variables, components) {
 function countMarkers(segments, variables, components = {}) {
   let count = 0;
   for (const seg of segments) {
+    if (!evaluateCondition(seg.condition, variables)) continue;
     if (seg.type === 'split_marker') {
       count += seg.multiplier || 1;
     } else if (seg.type === 'loop') {
@@ -413,7 +451,8 @@ export function computeMarkerDuration(script, markerId, variables, components) {
   const markers = countMarkers(section.segments, variables, components);
   if (markers === 0) return null;
   const remaining = target - fixed;
-  return remaining > 0 ? remaining / markers : 0;
+  if (remaining < 0) return -1; // variable mismatch — fixed content exceeds target
+  return remaining / markers;
 }
 
 /**
@@ -446,6 +485,7 @@ export function computeDurationRepeat(seg, variables, components) {
 export function flattenScript(segments, variables = {}, components = {}) {
   const flat = [];
   for (const seg of segments) {
+    if (!evaluateCondition(seg.condition, variables)) continue;
     if (seg.type === 'loop') {
       const repeat = resolveRepeat(seg, variables, components);
       const iterDuration = computeFixedDuration(seg.segments, variables, components);

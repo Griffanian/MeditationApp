@@ -373,6 +373,14 @@ export async function fetchAvailableStages() {
   return res.json();
 }
 
+export async function savePracticeProgress(name, data) {
+  await apiFetch(`${BASE}/api/practices/${name}/progress`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
 // --- Assistant (agentic chat) ---
 
 export async function fetchThreads() {

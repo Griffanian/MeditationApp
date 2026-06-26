@@ -384,6 +384,25 @@ class Feedback(models.Model):
         return f"{self.user.username}: {self.message[:50]}"
 
 
+class PracticeProgress(models.Model):
+    user = models.ForeignKey(
+        "auth.User", on_delete=models.CASCADE, related_name="practice_progress"
+    )
+    practice = models.ForeignKey(
+        Practice, on_delete=models.CASCADE, related_name="progress"
+    )
+    completed_days = models.JSONField(default=dict, blank=True)
+    current_week = models.IntegerField(default=0)
+    current_day = models.IntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "practice")
+
+    def __str__(self):
+        return f"{self.user.username}: {self.practice_id} W{self.current_week+1}D{self.current_day+1}"
+
+
 class PracticeSession(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4)
     user = models.ForeignKey(

@@ -103,21 +103,28 @@ const STEPS = [
   },
   {
     title: 'Variables',
-    body: 'Variables are at the heart of how we build programmes. They allow you to adjust the difficulty and create progressive meditations in a structured way. This allows us to use same script for weeks or months of guided progression. There are two types: durations and numbers.',
+    body: 'Variables are at the heart of how we build programmes. They let you control things like duration and repetitions. Each variable has a minimum, a current value, and a maximum. The current value is what plays by default. The min and max define the range that this exercise can take.',
     example: (
       <div className="guide-example">
-        <div className="guide-var-table">
-          <div className="guide-var-row">
-            <span className="guide-var-name">holdTime</span>
-            <span className="guide-var-val">30</span>
-            <span className="guide-var-unit">Secs</span>
-          </div>
-          <div className="guide-var-row">
-            <span className="guide-var-name">rounds</span>
-            <span className="guide-var-val">5</span>
-            <span className="guide-var-unit">Times</span>
-          </div>
-        </div>
+        <table className="guide-var-grid">
+          <thead>
+            <tr>
+              <th>Min</th>
+              <th>Current</th>
+              <th>Max</th>
+              <th>Unit</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>3</td>
+              <td><strong>5</strong></td>
+              <td>20</td>
+              <td>min</td>
+            </tr>
+          </tbody>
+        </table>
+        <div className="guide-arrow">If a section's fixed content takes 3 minutes, the minimum can't be set below 3. Setting it lower causes a <strong>variable mismatch error</strong>.</div>
       </div>
     ),
   },

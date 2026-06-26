@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { fetchPractice, saveStageVariables, assembleStage, computeDurations, BASE } from '../api';
-import { useLocalState } from '../utils';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { fetchPractice, saveStageVariables, assembleStage, computeDurations, savePracticeProgress, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, BASE } from '../api';
+import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration, unlockAudio } from '../playback';
 
 function migrateToWeeks(items) {
   if (!items || items.length === 0) return [];
@@ -23,37 +23,137 @@ function itemDurationMinutes(item) {
   return null;
 }
 
+function collectLoops(segments, map = {}) {
+  for (const seg of segments) {
+    if (seg.type === 'loop') {
+      map[seg.id] = seg;
+      collectLoops(seg.segments, map);
+    }
+  }
+  return map;
+}
+
+function resolveWordVars(word, variables) {
+  return word.replace(/\{(\w+)\}/g, (_, varName) => {
+    const v = variables[varName];
+    if (v == null) return `{${varName}}`;
+    return typeof v === 'object' ? (v.value ?? `{${varName}}`) : v;
+  });
+}
+
+function buildTimeline(script, variables, components) {
+  const flat = flattenScript(script, variables, components);
+  const loops = collectLoops(script);
+  const timeline = [];
+  let cursor = 0;
+
+  for (const item of flat) {
+    const { seg } = item;
+    let dur = 0;
+
+    if (seg.type === 'speech') {
+      const comp = components[seg.id];
+      dur = comp?.duration || 0;
+    } else if (seg.type === 'pause') {
+      dur = resolvePauseDuration(seg.duration_seconds, variables);
+    } else if (seg.type === 'asset') {
+      const comp = components[seg.id];
+      dur = comp?.duration || 1;
+    } else if (seg.type === 'split_marker') {
+      const markerDur = computeMarkerDuration(script, seg.id, variables, components);
+      dur = markerDur != null ? markerDur * (seg.multiplier || 1) : 1;
+    }
+
+    if (dur > 0) {
+      const loopSeg = item.loopId ? loops[item.loopId] : null;
+      const rawWords = seg.type === 'speech' ? (seg.text || '').split(' ') : [];
+      timeline.push({
+        start: cursor,
+        end: cursor + dur,
+        dur,
+        type: seg.type,
+        segId: seg.id,
+        file: seg.file,
+        words: rawWords.map(w => resolveWordVars(w, variables)),
+        loopLabel: loopSeg?.label || '',
+        loopIteration: item.loopIteration || null,
+        loopTotal: item.loopTotal || null,
+      });
+      cursor += dur;
+    }
+  }
+
+  return timeline;
+}
+
 export default function Player() {
   const { name } = useParams();
+  const navigate = useNavigate();
   const [practice, setPractice] = useState(null);
-  const [currentWeek, setCurrentWeek] = useLocalState(`player:${name}:week`, 0);
-  const [currentDay, setCurrentDay] = useLocalState(`player:${name}:day`, 0);
-  const [completedDays, setCompletedDays] = useLocalState(`player:${name}:completed`, {});
+  const [currentWeek, setCurrentWeek] = useState(0);
+  const [currentDay, setCurrentDay] = useState(0);
+  const [completedDays, setCompletedDays] = useState({});
 
   // Playback state
   const [playIdx, setPlayIdx] = useState(-1);
-  const [status, setStatus] = useState('idle'); // idle, assembling, playing, paused
+  const [status, setStatus] = useState('idle'); // idle, assembling, playing, paused, between
   const [elapsed, setElapsed] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState(null);
   const [itemDurations, setItemDurations] = useState({});
   const [singleMode, setSingleMode] = useState(false);
-  const [prepareStatus, setPrepareStatus] = useState('idle'); // idle, preparing, ready
-  const [bgVolume, setBgVolume] = useLocalState(`player:bgVolume`, 0.3);
-  const [bgMuted, setBgMuted] = useState(false);
+  const [prepareStatus, setPrepareStatus] = useState('idle');
+
+  // Script display state (ExercisePlayer-style)
+  const [activeEntry, setActiveEntry] = useState(null);
+  const [activeWordIdx, setActiveWordIdx] = useState(-1);
+  const [countdown, setCountdown] = useState('');
+
   const audioRef = useRef(null);
-  const bgAudioRef = useRef(null); // looping background ambient
-  const nextAudioRef = useRef(null); // preloaded next stage
+  const droneRef = useRef(null);
+  const nextAudioRef = useRef(null);
   const timerRef = useRef(null);
   const stopRef = useRef(false);
   const gapTimerRef = useRef(null);
   const playIdxRef = useRef(-1);
-  const preparedUrls = useRef({}); // idx -> audio URL
+  const preparedUrls = useRef({});
+  const autoplayPending = useRef(false);
+  const handlePlayRef = useRef(null);
+
+  // Per-stage timeline and word timestamps for script display
+  const timelineRef = useRef(null); // { idx, timeline }
+  const wordTimestampsRef = useRef({});
+
+  // Capture URL params before they're cleared
+  const urlParamsRef = useRef(null);
+  if (urlParamsRef.current === null) {
+    const p = new URLSearchParams(window.location.search);
+    urlParamsRef.current = {
+      week: p.get('week'),
+      day: p.get('day'),
+      autoplay: p.get('autoplay') === '1',
+      stage: p.get('stage'),
+      from: p.get('from'),
+    };
+    if (urlParamsRef.current.autoplay) autoplayPending.current = true;
+    window.history.replaceState({}, '', window.location.pathname);
+  }
 
   useEffect(() => {
+    const hasUrlPos = urlParamsRef.current.week !== null || urlParamsRef.current.day !== null;
     fetchPractice(name).then(p => {
       p.items = migrateToWeeks(p.items);
       setPractice(p);
+      if (hasUrlPos) {
+        if (urlParamsRef.current.week !== null) setCurrentWeek(parseInt(urlParamsRef.current.week, 10));
+        if (urlParamsRef.current.day !== null) setCurrentDay(parseInt(urlParamsRef.current.day, 10));
+      } else if (p.progress) {
+        setCurrentWeek(p.progress.current_week);
+        setCurrentDay(p.progress.current_day);
+      }
+      if (p.progress?.completed_days) {
+        setCompletedDays(p.progress.completed_days);
+      }
       const allItems = [];
       for (const week of (p.items || [])) {
         for (const day of (week.days || [])) {
@@ -78,13 +178,14 @@ export default function Player() {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       if (timerRef.current) clearInterval(timerRef.current);
       if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
+      if (droneRef.current) { droneRef.current.stop(); droneRef.current = null; }
     };
   }, []);
 
-  // Stop playback and clear cache when switching week/day
+  // Stop playback when switching week/day
   useEffect(() => {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    if (bgAudioRef.current) { bgAudioRef.current.pause(); bgAudioRef.current = null; }
+    if (droneRef.current) { droneRef.current.stop(); droneRef.current = null; }
     if (nextAudioRef.current) { nextAudioRef.current = null; }
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
@@ -98,21 +199,30 @@ export default function Player() {
     setError(null);
     preparedUrls.current = {};
     setPrepareStatus('idle');
+    timelineRef.current = null;
+    setActiveEntry(null);
+    setActiveWordIdx(-1);
+    setCountdown('');
   }, [currentWeek, currentDay]);
 
-  // Keep bg volume/mute in sync — stop audio entirely when volume is 0
+  // Autoplay (optionally from a specific stage index)
+  const autoplayStageRef = useRef(urlParamsRef.current.stage != null ? parseInt(urlParamsRef.current.stage, 10) : null);
+  const autoplayFromRef = useRef(urlParamsRef.current.from != null ? parseInt(urlParamsRef.current.from, 10) : null);
+  const handlePlaySingleRef = useRef(null);
+  const handlePlayFromRef = useRef(null);
   useEffect(() => {
-    if (bgVolume === 0 || bgMuted) {
-      if (bgAudioRef.current) {
-        bgAudioRef.current.pause();
-        bgAudioRef.current = null;
-      }
-    } else if (bgAudioRef.current) {
-      bgAudioRef.current.volume = bgVolume;
-    } else if (status === 'playing') {
-      startBgAudio();
+    if (!practice || !autoplayPending.current) return;
+    autoplayPending.current = false;
+    if (autoplayFromRef.current != null && handlePlayFromRef.current) {
+      handlePlayFromRef.current(autoplayFromRef.current);
+      autoplayFromRef.current = null;
+    } else if (autoplayStageRef.current != null && handlePlaySingleRef.current) {
+      handlePlaySingleRef.current(autoplayStageRef.current);
+      autoplayStageRef.current = null;
+    } else if (handlePlayRef.current) {
+      handlePlayRef.current();
     }
-  }, [bgVolume, bgMuted, status]);
+  }, [practice]);
 
   if (!practice) return <div className="loading-page"><div className="loading-spinner" />Loading player...</div>;
 
@@ -126,9 +236,14 @@ export default function Player() {
   const dayKey = `${currentWeek}-${currentDay}`;
   const isDayCompleted = !!completedDays[dayKey];
 
+  function savePosition(w, d, completed) {
+    savePracticeProgress(name, { current_week: w, current_day: d, completed_days: completed });
+  }
+
   function markDayCompleted() {
-    setCompletedDays(prev => ({ ...prev, [dayKey]: true }));
-    // Log to backend
+    const newCompleted = { ...completedDays, [dayKey]: true };
+    setCompletedDays(newCompleted);
+    savePosition(currentWeek, currentDay, newCompleted);
     import('../api').then(({ logSession }) => {
       logSession({
         practice: name,
@@ -141,38 +256,148 @@ export default function Player() {
     });
   }
 
+  // --- Script display ---
+
+  function updateScriptDisplay(time) {
+    const tl = timelineRef.current;
+    if (!tl) { setActiveEntry(null); setActiveWordIdx(-1); setCountdown(''); return; }
+    let entry = null;
+    for (let i = tl.timeline.length - 1; i >= 0; i--) {
+      if (time >= tl.timeline[i].start) { entry = tl.timeline[i]; break; }
+    }
+    setActiveEntry(entry);
+    if (!entry) { setActiveWordIdx(-1); setCountdown(''); return; }
+    if (entry.type === 'speech') {
+      const segTime = time - entry.start;
+      const ts = wordTimestampsRef.current[entry.segId] || [];
+      let wi = -1;
+      for (let i = ts.length - 1; i >= 0; i--) { if (segTime >= ts[i].start) { wi = i; break; } }
+      setActiveWordIdx(wi);
+      setCountdown('');
+    } else if (entry.type === 'pause' || entry.type === 'split_marker') {
+      setCountdown(formatDuration(Math.max(0, Math.ceil(entry.end - time))));
+      setActiveWordIdx(-1);
+    } else {
+      setActiveWordIdx(-1);
+      setCountdown('');
+    }
+  }
+
+  async function loadStageTimeline(idx) {
+    const item = items[idx];
+    if (!item) return;
+    // Don't reload if already loaded for this idx
+    if (timelineRef.current && timelineRef.current.idx === idx) return;
+
+    try {
+      const [script, components, variables] = await Promise.all([
+        fetchStageScript(item.meditation, item.stage_id),
+        fetchStageComponents(item.meditation, item.stage_id),
+        fetchStageVariables(item.meditation, item.stage_id),
+      ]);
+
+      const tl = buildTimeline(script, variables, components);
+      timelineRef.current = { idx, timeline: tl };
+
+      // Fetch word timestamps for speech segments
+      const speechIds = [...new Set(tl.filter(e => e.type === 'speech').map(e => e.segId))];
+      const tsResults = await Promise.all(
+        speechIds.map(segId =>
+          fetchStageTimestamps(item.meditation, item.stage_id, segId)
+            .then(ts => ({ segId, ts }))
+            .catch(() => ({ segId, ts: [] }))
+        )
+      );
+      wordTimestampsRef.current = {};
+      for (const { segId, ts } of tsResults) {
+        wordTimestampsRef.current[segId] = ts;
+      }
+    } catch {
+      timelineRef.current = null;
+    }
+  }
+
+  // --- Timer ---
+
   function startTimer() {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       if (audioRef.current && !audioRef.current.paused) {
-        setElapsed(audioRef.current.currentTime);
+        const t = audioRef.current.currentTime;
+        setElapsed(t);
         setDuration(audioRef.current.duration || 0);
+        updateScriptDisplay(t);
       }
-    }, 250);
+    }, 100);
   }
 
   function stopTimer() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }
 
-  function startBgAudio() {
-    if (bgAudioRef.current) return;
-    if (bgVolume === 0) return;
-    const bg = new Audio(`${BASE}/audio/asset/ambient_default.mp3`);
-    bg.loop = true;
-    bg.volume = bgMuted ? 0 : bgVolume;
-    bg.play().catch(() => {});
-    bgAudioRef.current = bg;
+  // --- Background drone (barely perceptible "still playing" signal) ---
+
+  function startDrone() {
+    if (droneRef.current) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const master = ctx.createGain();
+      master.gain.value = 0;
+      master.connect(ctx.destination);
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 120;
+      filter.connect(master);
+
+      const osc1 = ctx.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.value = 55;
+      osc1.connect(filter);
+      osc1.start();
+
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.value = 83;
+      const osc2Gain = ctx.createGain();
+      osc2Gain.gain.value = 0.5;
+      osc2.connect(osc2Gain);
+      osc2Gain.connect(filter);
+      osc2.start();
+
+      // Fade in over 2 seconds
+      master.gain.setValueAtTime(0, ctx.currentTime);
+      master.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 2);
+
+      droneRef.current = {
+        ctx, master,
+        resume() {
+          if (ctx.state === 'suspended') ctx.resume();
+          master.gain.cancelScheduledValues(ctx.currentTime);
+          master.gain.setValueAtTime(master.gain.value, ctx.currentTime);
+          master.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 1);
+        },
+        pause() {
+          master.gain.cancelScheduledValues(ctx.currentTime);
+          master.gain.setValueAtTime(master.gain.value, ctx.currentTime);
+          master.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+        },
+        stop() {
+          try { osc1.stop(); osc2.stop(); ctx.close(); } catch {}
+        },
+      };
+    } catch {}
   }
 
-  function stopBgAudio() {
-    if (bgAudioRef.current) {
-      bgAudioRef.current.pause();
-      bgAudioRef.current = null;
+  function stopDrone() {
+    if (droneRef.current) {
+      droneRef.current.stop();
+      droneRef.current = null;
     }
   }
 
-  // Assemble a single stage and cache its URL
+  // --- Prepare / play ---
+
   async function prepareOne(idx) {
     if (preparedUrls.current[idx]) return preparedUrls.current[idx];
     const item = items[idx];
@@ -185,7 +410,6 @@ export default function Player() {
     return url;
   }
 
-  // Pre-assemble ALL stages for this day in background
   async function prepareAll() {
     setPrepareStatus('preparing');
     for (let i = 0; i < items.length; i++) {
@@ -195,7 +419,6 @@ export default function Player() {
     setPrepareStatus('ready');
   }
 
-  // Preload an Audio element for the next stage so it's buffered and ready
   function preloadNext(idx) {
     const nextIdx = idx + 1;
     if (nextIdx >= items.length) return;
@@ -207,7 +430,6 @@ export default function Player() {
     nextAudioRef.current = { idx: nextIdx, audio: next };
   }
 
-  // Play stage at idx — use preloaded audio if available
   function playFromUrl(idx, single = false) {
     if (idx >= items.length || (single && idx !== playIdxRef.current)) {
       if (!single) markDayCompleted();
@@ -215,7 +437,11 @@ export default function Player() {
       setPlayIdx(-1);
       setSingleMode(false);
       stopTimer();
-      stopBgAudio();
+      stopDrone();
+      timelineRef.current = null;
+      setActiveEntry(null);
+      setActiveWordIdx(-1);
+      setCountdown('');
       return;
     }
     if (stopRef.current) return;
@@ -225,9 +451,11 @@ export default function Player() {
     setElapsed(0);
     setDuration(0);
     setStatus('playing');
-    startBgAudio();
+    startDrone();
 
-    // Use preloaded audio if we have it for this idx
+    // Load script timeline for this stage
+    loadStageTimeline(idx);
+
     let audio;
     if (nextAudioRef.current && nextAudioRef.current.idx === idx) {
       audio = nextAudioRef.current.audio;
@@ -238,8 +466,6 @@ export default function Player() {
 
     audioRef.current = audio;
     startTimer();
-
-    // Preload the one after this
     preloadNext(idx);
 
     const onFinish = () => {
@@ -250,9 +476,10 @@ export default function Player() {
           setPlayIdx(-1);
           setSingleMode(false);
           stopTimer();
-          stopBgAudio();
+          stopDrone();
+          timelineRef.current = null;
+          setActiveEntry(null);
         } else {
-          // Brief pause between stages so transitions aren't jarring
           setStatus('between');
           stopTimer();
           gapTimerRef.current = setTimeout(() => {
@@ -272,7 +499,7 @@ export default function Player() {
   async function handlePlay() {
     if (status === 'paused' && audioRef.current) {
       audioRef.current.play();
-      if (bgAudioRef.current) bgAudioRef.current.play();
+      if (droneRef.current) droneRef.current.resume();
       setStatus('playing');
       startTimer();
       return;
@@ -280,8 +507,8 @@ export default function Player() {
     handleStop();
     stopRef.current = false;
     setSingleMode(false);
+    unlockAudio();
 
-    // Prepare first stage, start playing, then prepare rest in background
     setStatus('assembling');
     setPlayIdx(0);
     try {
@@ -295,10 +522,32 @@ export default function Player() {
     if (stopRef.current) return;
 
     playFromUrl(0);
-
-    // Prepare all remaining stages in background
     prepareAll();
   }
+  handlePlayRef.current = handlePlay;
+
+  async function handlePlayFrom(startIdx) {
+    handleStop();
+    stopRef.current = false;
+    setSingleMode(false);
+    unlockAudio();
+
+    setStatus('assembling');
+    setPlayIdx(startIdx);
+    try {
+      await prepareOne(startIdx);
+    } catch (err) {
+      setError({ idx: startIdx, message: err.message });
+      setStatus('idle');
+      setPlayIdx(-1);
+      return;
+    }
+    if (stopRef.current) return;
+
+    playFromUrl(startIdx);
+    prepareAll();
+  }
+  handlePlayFromRef.current = handlePlayFrom;
 
   async function handlePlaySingle(idx) {
     if (playIdx === idx && (status === 'playing' || status === 'assembling' || status === 'paused')) {
@@ -310,6 +559,7 @@ export default function Player() {
     setSingleMode(true);
     playIdxRef.current = idx;
     setPlayIdx(idx);
+    unlockAudio();
 
     let url = preparedUrls.current[idx];
     if (!url) {
@@ -326,11 +576,12 @@ export default function Player() {
     if (stopRef.current) return;
     playFromUrl(idx, true);
   }
+  handlePlaySingleRef.current = handlePlaySingle;
 
   function handlePause() {
     if (audioRef.current && status === 'playing') {
       audioRef.current.pause();
-      if (bgAudioRef.current) bgAudioRef.current.pause();
+      if (droneRef.current) droneRef.current.pause();
       setStatus('paused');
       stopTimer();
     }
@@ -341,7 +592,7 @@ export default function Player() {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     if (nextAudioRef.current) { nextAudioRef.current = null; }
     if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
-    stopBgAudio();
+    stopDrone();
     stopTimer();
     setStatus('idle');
     setPlayIdx(-1);
@@ -350,6 +601,10 @@ export default function Player() {
     setElapsed(0);
     setDuration(0);
     setError(null);
+    timelineRef.current = null;
+    setActiveEntry(null);
+    setActiveWordIdx(-1);
+    setCountdown('');
   }
 
   function handleSkip() {
@@ -368,12 +623,29 @@ export default function Player() {
   const progress = duration > 0 ? (elapsed / duration) * 100 : 0;
   const isActive = status !== 'idle' && status !== 'error';
 
+  // Build context label
+  let contextLabel = '';
+  if (activeEntry) {
+    const stageItem = playIdx >= 0 ? items[playIdx] : null;
+    const stageLabel = stageItem ? stageItem.meditation_display : '';
+    if (activeEntry.loopLabel) {
+      contextLabel = activeEntry.loopLabel;
+      if (activeEntry.loopTotal > 1) {
+        contextLabel += ` — Round ${activeEntry.loopIteration} of ${activeEntry.loopTotal}`;
+      }
+    } else if (activeEntry.loopTotal > 1) {
+      contextLabel = `Round ${activeEntry.loopIteration} of ${activeEntry.loopTotal}`;
+    }
+    if (stageLabel && contextLabel) contextLabel = `${stageLabel} · ${contextLabel}`;
+    else if (stageLabel) contextLabel = stageLabel;
+  }
+
   return (
     <div className="player">
       <nav className="breadcrumb">
         <Link to="/practices" className="breadcrumb-link">Programmes</Link>
         <span className="breadcrumb-sep">/</span>
-        <span className="breadcrumb-current">{practice.display_name}</span>
+        <Link to={`/practice/${name}`} className="breadcrumb-link">{practice.display_name}</Link>
       </nav>
 
       <div className="player-card">
@@ -382,37 +654,6 @@ export default function Player() {
           {isDayCompleted && <span className="player-completed-tick" title="Completed">✓</span>}
         </div>
 
-        {/* Week/Day selector */}
-        <div className="player-nav">
-          <div className="player-nav-labels">
-            <span className="player-nav-label">Week</span>
-          </div>
-          <div className="player-week-nav">
-            <button className="player-nav-arrow" onClick={() => { setCurrentWeek(Math.max(0, currentWeek - 1)); setCurrentDay(0); }} disabled={currentWeek === 0}>‹</button>
-            <div className="player-week-dots">
-              {weeks.map((w, i) => (
-                <button
-                  key={i}
-                  className={`player-week-dot${i === currentWeek ? ' active' : ''}`}
-                  onClick={() => { setCurrentWeek(i); setCurrentDay(0); }}
-                  title={w.label}
-                >{i + 1}</button>
-              ))}
-            </div>
-            <button className="player-nav-arrow" onClick={() => { setCurrentWeek(Math.min(weeks.length - 1, currentWeek + 1)); setCurrentDay(0); }} disabled={currentWeek === weeks.length - 1}>›</button>
-          </div>
-          <div className="player-day-nav">
-            {days.map((d, i) => (
-              <button
-                key={i}
-                className={`player-day-btn${i === currentDay ? ' active' : ''}`}
-                onClick={() => setCurrentDay(i)}
-              >{d.label}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* Day info */}
         <div className="player-meta">
           <span className="player-meta-day">{week?.label} — {day?.label}</span>
           <span className="player-meta-sep">·</span>
@@ -425,104 +666,110 @@ export default function Player() {
               {totalSecs > 0 && <><span className="player-meta-sep">·</span><span className="player-meta-actual-duration">{formatTime(totalSecs)} actual</span></>}
             </>;
           })()}
-          {prepareStatus === 'preparing' && <span className="player-meta-sep">·</span>}
-          {prepareStatus === 'preparing' && <span className="player-meta-preparing">Caching...</span>}
         </div>
 
-        {/* Play bar */}
-        <div className={`player-bar${error ? ' player-bar-has-error' : ''}`}>
-          <div className="player-bar-controls">
-            {status === 'idle' && (
-              <button className="player-bar-main player-bar-play" onClick={handlePlay} disabled={items.length === 0}>▶ Start</button>
-            )}
-            {status === 'playing' && (
-              <button className="player-bar-main player-bar-pause" onClick={handlePause}>⏸ Pause</button>
-            )}
-            {status === 'paused' && (
-              <button className="player-bar-main player-bar-play" onClick={handlePlay}>▶ Resume</button>
-            )}
-            {status === 'assembling' && (
-              <button className="player-bar-main player-bar-assembling" disabled>Preparing...</button>
-            )}
-            {status === 'between' && (
-              <button className="player-bar-main player-bar-assembling" disabled>Next stage...</button>
-            )}
+        {/* ExercisePlayer-style controls */}
+        <div className="ep-controls">
+          {status === 'idle' && (
+            <button className="ep-play-btn" onClick={handlePlay} disabled={items.length === 0}>
+              <span className="ep-play-icon">&#x25B6;</span>
+            </button>
+          )}
+          {status === 'assembling' && (
+            <button className="ep-play-btn ep-play-btn-disabled" disabled>
+              <span className="ep-play-icon ep-spin">&#x25CC;</span>
+            </button>
+          )}
+          {status === 'playing' && (
+            <button className="ep-play-btn" onClick={handlePause}>
+              <span className="ep-play-icon ep-pause-icon" />
+            </button>
+          )}
+          {status === 'paused' && (
+            <button className="ep-play-btn" onClick={handlePlay}>
+              <span className="ep-play-icon">&#x25B6;</span>
+            </button>
+          )}
+          {status === 'between' && (
+            <button className="ep-play-btn ep-play-btn-disabled" disabled>
+              <span className="ep-play-icon ep-spin">&#x25CC;</span>
+            </button>
+          )}
+        </div>
 
-            {isActive && (
-              <div className="player-bar-secondary">
-                <button className="player-bar-sm" onClick={handleSkip} title="Next stage">⏭</button>
-                <button className="player-bar-sm" onClick={handleStop} title="Stop">■</button>
-              </div>
-            )}
+
+
+        {error && (
+          <div className="player-bar-error">
+            <span className="player-bar-error-msg">{items[error.idx]?.meditation_display}: {error.message}</span>
+            <div className="player-bar-error-actions">
+              <button className="player-bar-error-btn" onClick={() => setError(null)}>Dismiss</button>
+            </div>
           </div>
+        )}
 
-          {error && (
-            <div className="player-bar-error">
-              <span className="player-bar-error-msg">{items[error.idx]?.meditation_display}: {error.message}</span>
-              <div className="player-bar-error-actions">
-                <button className="player-bar-error-btn" onClick={() => setError(null)}>Dismiss</button>
-              </div>
-            </div>
-          )}
+        {/* Script display — always visible */}
+        <div className="ep-script-box">
+          {isActive && activeEntry ? (
+            <>
+              {contextLabel && <div className="ep-script-context">{contextLabel}</div>}
 
-          {(status === 'playing' || status === 'paused') && playIdx >= 0 && (
-            <div className="player-bar-now">
-              <span className="player-bar-now-label">{items[playIdx]?.meditation_display}</span>
-              <span className="player-bar-now-time">{formatTime(elapsed)} / {formatTime(duration)}</span>
-            </div>
-          )}
+              {activeEntry.type === 'speech' && (
+                <div className="ep-script-words">
+                  {activeEntry.words.map((w, i) => (
+                    <span key={i} className={`ep-word${i === activeWordIdx ? ' active' : ''}`}>{w} </span>
+                  ))}
+                </div>
+              )}
 
-          {isActive && (
-            <div className="player-bar-progress-wrap">
-              <input
-                type="range"
-                className="player-bar-seek"
-                min="0"
-                max={duration || 1}
-                step="0.1"
-                value={elapsed}
-                style={{ '--progress': `${progress}%` }}
-                onChange={e => {
-                  const t = parseFloat(e.target.value);
-                  if (audioRef.current) {
-                    audioRef.current.currentTime = t;
-                    setElapsed(t);
-                  }
-                }}
-              />
-            </div>
+              {(activeEntry.type === 'pause' || activeEntry.type === 'split_marker') && (
+                <div className="ep-script-pause">
+                  <span className="ep-script-pause-label">Pause</span>
+                  <span className="ep-script-countdown">{countdown}</span>
+                </div>
+              )}
+
+              {activeEntry.type === 'asset' && (
+                <div className="ep-script-pause">
+                  <span className="ep-script-pause-label">&#x266B;</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="ep-script-idle">Press play to begin</div>
           )}
         </div>
 
-        {/* Background audio control */}
-        <div className="player-bg-control">
-          <button
-            className={`player-bg-toggle${bgMuted ? ' muted' : ''}`}
-            onClick={() => setBgMuted(!bgMuted)}
-            title={bgMuted ? 'Unmute background' : 'Mute background'}
-          >{bgMuted ? '🔇' : '🔊'}</button>
-          <span className="player-bg-label">Background</span>
-          <input
-            type="range"
-            className="player-bg-volume"
-            min="0"
-            max="1"
-            step="0.05"
-            value={bgMuted ? 0 : bgVolume}
-            onChange={e => {
-              const v = parseFloat(e.target.value);
-              setBgVolume(v);
-              if (v > 0 && bgMuted) setBgMuted(false);
-            }}
-          />
-        </div>
+        {/* Seek bar */}
+        {isActive && (
+          <div className="ep-seek-bar">
+            <span className="ep-seek-time">{formatTime(elapsed)}</span>
+            <input
+              type="range"
+              className="ep-seek"
+              min="0"
+              max={duration || 1}
+              step="0.1"
+              value={elapsed}
+              style={{ '--progress': `${progress}%` }}
+              onChange={e => {
+                const t = parseFloat(e.target.value);
+                if (audioRef.current) {
+                  audioRef.current.currentTime = t;
+                  setElapsed(t);
+                  updateScriptDisplay(t);
+                }
+              }}
+            />
+            <span className="ep-seek-time">{formatTime(duration)}</span>
+          </div>
+        )}
 
         {/* Stage list */}
         <div className="player-stages">
           {items.map((item, idx) => {
             const isCurrent = idx === playIdx;
             const isDone = playIdx >= 0 && idx < playIdx;
-            const isPrepared = !!preparedUrls.current[idx];
             return (
               <div
                 key={item.id || idx}

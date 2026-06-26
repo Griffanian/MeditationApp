@@ -1,13 +1,25 @@
 import { useState, useRef, useEffect } from 'react';
-import { useDroppable } from '@dnd-kit/core';
-import { useSortable } from '@dnd-kit/sortable';
+import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
+import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import { DropIndicator } from '@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box';
 import DragHandle from './DragHandle';
 import KebabMenu from './KebabMenu';
 import RecordingModal from './RecordingModal';
 import VariableRecordingsModal from './VariableRecordingsModal';
-import { clearTimestampCache, computeMarkerDuration } from '../playback';
+import { clearTimestampCache, computeMarkerDuration, evaluateCondition } from '../playback';
 
-export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, audioStatus = 'missing', meditationName, stageId, onRefreshComponents, insidePlayingParent, variables = {}, onUpdateVariable, selected, onSelect, onContextMenu, fullScript, components = {}, readOnly, disableDropAbove, disableDropBelow, onFlushSave }) {
+const OP_SYMBOLS = { '>': '>', '<': '<', '>=': '\u2265', '<=': '\u2264', '==': '=', '!=': '\u2260' };
+
+function conditionLabel(condName, conditions, variables) {
+  const c = conditions?.[condName];
+  if (!c) return condName;
+  const varLabel = variables[c.variable]?.displayName || c.variable || '?';
+  if (c.operator === 'between') return `${c.value ?? '?'} \u2264 ${varLabel} \u2264 ${c.value2 ?? '?'}`;
+  return `${varLabel} ${OP_SYMBOLS[c.operator] || c.operator || '?'} ${c.value ?? '?'}`;
+}
+
+export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick, onDelete, onInsert, onUpdate, audioStatus = 'missing', meditationName, stageId, onRefreshComponents, insidePlayingParent, variables = {}, onUpdateVariable, selected, toggleSelection, toggleSelectionInGroup, multiSelectTo, onContextMenu, fullScript, components = {}, readOnly, onFlushSave, activeDragIds }) {
   const hasAudio = audioStatus === 'current';
   const isStale = audioStatus === 'stale';
   const [editing, setEditing] = useState(seg.type === 'speech' && seg.text === 'New spoken segment.');
@@ -54,14 +66,46 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
     }
   }, [playingId]);
 
-  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: seg.id });
-  const { setNodeRef: aboveRef, isOver: aboveOver } = useDroppable({ id: `above:${seg.id}`, disabled: isDragging || readOnly || disableDropAbove });
-  const { setNodeRef: belowRef, isOver: belowOver } = useDroppable({ id: `below:${seg.id}`, disabled: isDragging || readOnly || disableDropBelow });
+  // --- Pragmatic DnD ---
+  const elementRef = useRef(null);
+  const handleRef = useRef(null);
+  const [closestEdge, setClosestEdge] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el || readOnly) return;
+
+    return combine(
+      draggable({
+        element: el,
+        dragHandle: selected ? undefined : (handleRef.current ?? undefined),
+        getInitialData: () => ({ type: 'timeline-segment', id: seg.id }),
+        onDragStart: () => setIsDragging(true),
+        onDrop: () => setIsDragging(false),
+      }),
+      dropTargetForElements({
+        element: el,
+        canDrop: ({ source }) => source.data.type === 'timeline-segment' && source.data.id !== seg.id,
+        getData: ({ input, element }) => {
+          return attachClosestEdge({ type: 'segment', id: seg.id }, {
+            element,
+            input,
+            allowedEdges: ['top', 'bottom'],
+          });
+        },
+        onDragEnter: ({ self }) => setClosestEdge(extractClosestEdge(self.data)),
+        onDrag: ({ self }) => setClosestEdge(extractClosestEdge(self.data)),
+        onDragLeave: () => setClosestEdge(null),
+        onDrop: () => setClosestEdge(null),
+      }),
+    );
+  }, [seg.id, readOnly, selected]);
+
+  const isBeingDragged = isDragging || (activeDragIds && activeDragIds.has(seg.id));
 
   const style = {
-    opacity: isDragging ? 0.3 : 1,
-    marginTop: aboveOver ? 48 : undefined,
-    marginBottom: belowOver ? 48 : undefined,
+    opacity: isBeingDragged ? 0.3 : 1,
   };
 
   const isPlaying = seg.id === playingId && !isPaused;
@@ -95,7 +139,7 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
             className={`word ${isVar ? 'var-ref' : ''}`}
             data-seg-id={seg.id}
             data-word={wi}
-            onClick={e => { e.stopPropagation(); if (e.shiftKey) { onSelect(seg.id, true); return; } onWordClick(seg.id, wi); }}
+            onClick={e => { e.stopPropagation(); if (e.shiftKey) { multiSelectTo(seg.id); return; } if (e.metaKey || e.ctrlKey) { toggleSelectionInGroup(seg.id); return; } onWordClick(seg.id, wi); }}
             style={{ cursor: 'pointer' }}
           >{parts.length > 1 ? parts.map((p, pi) => <span key={pi}>{pi > 0 && <br />}{p}</span>) : w}{' '}</span>
         );
@@ -188,7 +232,9 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
     );
     const perMarker = fullScript ? computeMarkerDuration(fullScript, seg.id, variables, components) : null;
     const totalDur = perMarker != null ? perMarker * mult : null;
-    if (totalDur != null) {
+    if (perMarker != null && perMarker < 0) {
+      duration = <span className="split-marker-error">mismatch</span>;
+    } else if (totalDur != null) {
       if (totalDur >= 60) {
         const mins = (totalDur / 60).toFixed(1).replace(/\.0$/, '');
         duration = <span ref={countdownRef} className="countdown" data-seg-id={seg.id}>{mins} min</span>;
@@ -222,33 +268,48 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
 
   return (
     <div
-      ref={setNodeRef}
+      ref={elementRef}
       style={style}
-      className={`segment ${seg.type.replace('_', '-')}${isPlaying ? ' playing' : ''}${selected ? ' selected' : ''}${seg.type === 'speech' && !hasAudio ? ' no-audio' : ''}${isStale ? ' stale' : ''}${seg.type === 'speech' && /\{\w+\}/.test(seg.text) ? ' has-variables' : ''}`}
+      className={`segment ${seg.type.replace('_', '-')}${isPlaying ? ' playing' : ''}${selected ? ' selected' : ''}${seg.type === 'speech' && !hasAudio ? ' no-audio' : ''}${isStale ? ' stale' : ''}${seg.type === 'speech' && /\{\w+\}/.test(seg.text) ? ' has-variables' : ''}${seg.condition && !evaluateCondition(seg.condition, variables) ? ' condition-excluded' : ''}`}
       onContextMenu={readOnly ? undefined : e => onContextMenu(e, seg.id)}
       onClick={e => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.closest('.kebab-wrapper')) return;
-        if (e.shiftKey) { onSelect(seg.id, true); return; }
-        onSelect(seg.id, false);
+        if (e.shiftKey) { multiSelectTo(seg.id); return; }
+        if (e.metaKey || e.ctrlKey) { toggleSelectionInGroup(seg.id); return; }
+        toggleSelection(seg.id);
         if (seg.type === 'speech' && !hasAudio) return;
+        if (seg.type === 'split_marker' && fullScript && computeMarkerDuration(fullScript, seg.id, variables, components) < 0) {
+          alert('Cannot play — variable mismatch. The fixed content in this section exceeds the target duration. Increase the variable or remove segments.');
+          return;
+        }
         onPlay(seg.id);
       }}
     >
-      {!readOnly && !isDragging && (
-        <>
-          <div ref={aboveRef} className="seg-drop-half seg-drop-top" />
-          <div ref={belowRef} className="seg-drop-half seg-drop-bottom" />
-          {aboveOver && <div className="seg-drop-indicator seg-drop-indicator-above" />}
-          {belowOver && <div className="seg-drop-indicator seg-drop-indicator-below" />}
-        </>
-      )}
-      {!readOnly && <DragHandle listeners={listeners} attributes={attributes} />}
+      {closestEdge && <DropIndicator edge={closestEdge} gap="3px" />}
+      {!readOnly && <DragHandle ref={handleRef} />}
       <span className="seg-icon">{icon}</span>
       <span className="seg-label">{readOnly ? readOnlyLabel : label}</span>
       <span className="seg-duration">{duration}</span>
+      {!readOnly && variables._conditions && Object.keys(variables._conditions).length > 0 && (
+        <select className="seg-condition-select" value={seg.condition || ''}
+          onClick={e => e.stopPropagation()}
+          onChange={e => onUpdate(seg.id, { condition: e.target.value || undefined })}>
+          <option value="">Always</option>
+          {Object.entries(variables._conditions).map(([k]) => (
+            <option key={k} value={k}>if {conditionLabel(k, variables._conditions, variables)}</option>
+          ))}
+        </select>
+      )}
       <span className="seg-actions">
         {!insidePlayingParent && !(seg.type === 'speech' && !hasAudio) && (
-          <button onClick={e => { e.stopPropagation(); onPlay(seg.id); }}>
+          <button onClick={e => {
+            e.stopPropagation();
+            if (seg.type === 'split_marker' && fullScript && computeMarkerDuration(fullScript, seg.id, variables, components) < 0) {
+              alert('Cannot play — variable mismatch. The fixed content in this section exceeds the target duration. Increase the variable or remove segments.');
+              return;
+            }
+            onPlay(seg.id);
+          }}>
             {isPlaying ? '⏸' : '▶'}
           </button>
         )}
