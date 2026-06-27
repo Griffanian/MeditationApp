@@ -524,7 +524,7 @@ h1 {
   background: var(--accent);
   cursor: pointer;
   border: 2px solid var(--bg-surface);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .variable-slider-error::-webkit-slider-thumb {
@@ -3559,6 +3559,8 @@ table.var-rec-table {
   color: var(--text);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .med-card-top {
@@ -3803,6 +3805,7 @@ table.var-rec-table {
   font-size: 13px;
   font-weight: 500;
   color: var(--accent);
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7809,23 +7812,23 @@ body.onboarding-active {
 
   .app-header-nav {
     position: fixed;
-    top: 62px;
-    border-top: 1px solid var(--border);
+    top: 60px;
     left: 0;
     right: 0;
     z-index: 99;
     display: flex;
-    justify-content: space-evenly;
     gap: 0;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border);
-    padding: 6px 0;
+    padding: 6px 20px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     flex: none;
   }
 
   .app-header-link {
+    flex: 1;
+    text-align: center;
     padding: 6px 10px;
     font-size: 13px;
     white-space: nowrap;
@@ -10375,9 +10378,8 @@ body.onboarding-active {
   }
 
   .app-header-nav {
-    top: 52px;
-    padding: 4px 0;
-    justify-content: flex-start;
+    top: 40px;
+    padding: 4px 10px;
     gap: 0;
   }
 
