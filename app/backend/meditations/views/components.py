@@ -285,14 +285,42 @@ class VariableRecordingsView(ComponentMixin, APIView):
             .order_by("variable_key")
         )
 
+        # Load script/variables for staleness checking
+        script, extra_vars, _ = self._get_script_and_vars(name, stage_id)
+        seg_info = None
+        all_vars = {}
+        if script:
+            speech = _collect_speech_segments(script)
+            seg_info = speech.get(seg_id)
+            all_vars = _collect_variables(script)
+            all_vars.update(extra_vars)
+
         results = []
         for rec in recordings:
             clip = rec.audio_clip
             user_clip = rec.user_clip
+
+            if not clip and not user_clip:
+                status = "missing"
+            elif user_clip:
+                status = "current"
+            elif clip and seg_info:
+                merged = {**all_vars}
+                for k, v in (rec.variable_values or {}).items():
+                    try:
+                        merged[k] = int(v)
+                    except (ValueError, TypeError):
+                        merged[k] = v
+                text = _substitute_variables(seg_info["text"], merged)
+                expected_hash = _tts_hash(text, seg_info["direction"], clip.voice_id)
+                status = "current" if clip.text_hash == expected_hash else "stale"
+            else:
+                status = "current"
+
             results.append({
                 "variable_values": rec.variable_values,
                 "variable_key": rec.variable_key,
-                "status": "has_audio" if (clip or user_clip) else "missing",
+                "status": status,
                 "source": rec.source or "unknown",
                 "text_hash": clip.text_hash if clip else None,
                 "user_clip_id": user_clip.id if user_clip else None,
@@ -355,7 +383,11 @@ class VariableRecordingsView(ComponentMixin, APIView):
                 variable_key=variable_key,
             ).select_related("audio_clip", "user_clip").first()
             if rec and (rec.audio_clip or rec.user_clip):
-                result["status"] = "has_audio"
+                if rec.user_clip:
+                    result["status"] = "current"
+                elif rec.audio_clip:
+                    expected_hash = _tts_hash(substituted, direction, rec.audio_clip.voice_id)
+                    result["status"] = "current" if rec.audio_clip.text_hash == expected_hash else "stale"
                 result["source"] = rec.source or "unknown"
                 result["text_hash"] = rec.audio_clip.text_hash if rec.audio_clip else None
                 result["user_clip_id"] = rec.user_clip.id if rec.user_clip else None

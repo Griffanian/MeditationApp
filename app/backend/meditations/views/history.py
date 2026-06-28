@@ -22,7 +22,7 @@ def _build_exercise_details(sessions):
                         stage_keys.add((med, sid))
 
     if not stage_keys:
-        return {}
+        return {}, {}
 
     # Batch-load all needed stages
     from django.db.models import Q
@@ -83,7 +83,7 @@ def _serialize_sessions(sessions):
                             "variables": _format_variables(item),
                         })
 
-        result.append({
+        entry = {
             "id": str(s.id),
             "practice": s.practice_id,
             "practice_display": s.practice_display or (s.practice.display_name if s.practice else ""),
@@ -93,7 +93,13 @@ def _serialize_sessions(sessions):
             "duration": s.duration,
             "completed_at": s.completed_at.isoformat(),
             "exercises": exercises,
-        })
+        }
+        if s.meditation_name:
+            entry["meditation_name"] = s.meditation_name
+            entry["meditation_display"] = s.meditation_display
+            entry["stage_id"] = s.stage_id
+            entry["stage_name"] = s.stage_name
+        result.append(entry)
     return result
 
 
@@ -106,20 +112,31 @@ class HistoryListView(APIView):
         return Response(_serialize_sessions(sessions))
 
     def post(self, request):
-        """Log a completed practice session."""
+        """Log a completed session (programme day or standalone exercise)."""
         practice_name = request.data.get("practice")
-        if not practice_name:
-            return Response({"error": "practice required"}, status=400)
+        meditation_name = request.data.get("meditation_name")
 
-        session = PracticeSession.objects.create(
-            user=request.user,
-            practice_id=practice_name,
-            practice_display=request.data.get("practice_display", ""),
-            week=request.data.get("week", 0),
-            day=request.data.get("day", 0),
-            day_label=request.data.get("day_label", ""),
-            duration=request.data.get("duration", 0),
-        )
+        if not practice_name and not meditation_name:
+            return Response({"error": "practice or meditation_name required"}, status=400)
+
+        kwargs = {
+            "user": request.user,
+            "duration": request.data.get("duration", 0),
+        }
+
+        if practice_name:
+            kwargs["practice_id"] = practice_name
+            kwargs["practice_display"] = request.data.get("practice_display", "")
+            kwargs["week"] = request.data.get("week", 0)
+            kwargs["day"] = request.data.get("day", 0)
+            kwargs["day_label"] = request.data.get("day_label", "")
+        else:
+            kwargs["meditation_name"] = meditation_name
+            kwargs["meditation_display"] = request.data.get("meditation_display", "")
+            kwargs["stage_id"] = request.data.get("stage_id", "")
+            kwargs["stage_name"] = request.data.get("stage_name", "")
+
+        session = PracticeSession.objects.create(**kwargs)
 
         return Response({
             "id": str(session.id),

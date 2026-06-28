@@ -228,12 +228,12 @@ export default function Dashboard() {
   }
 
   // --- Filter meditations by ownership ---
-  // For viewers: derive builder tabs from the exercises they can see
+  // For viewers: derive builder tabs from exercises specifically shared with them
   const builderTabs = (() => {
     if (auth.canCreate) return [];
     const seen = new Map(); // username -> display name
     for (const m of meditations) {
-      if (!m.is_public && m.created_by && !seen.has(m.created_by)) {
+      if (m.shared && m.created_by && !seen.has(m.created_by)) {
         seen.set(m.created_by, m.created_by_display || m.created_by);
       }
     }
@@ -255,8 +255,8 @@ export default function Dashboard() {
     return true;
   }) : meditations.filter(med => {
     if (effectiveOwnerFilter === 'public') return med.is_public;
-    // filter is a builder username
-    return med.created_by === effectiveOwnerFilter;
+    // Builder tab: only exercises specifically shared by this builder
+    return med.shared && med.created_by === effectiveOwnerFilter;
   });
 
   const hasOwn = meditations.some(m => m.created_by === auth.username);
@@ -405,13 +405,20 @@ export default function Dashboard() {
           <div className="med-card-stages">
             {med.stages.map(stage => {
               const vars = Object.entries(stage.variables || {});
+              const hasAssignments = med.assigned_stages?.length > 0;
+              const isAssigned = hasAssignments && med.assigned_stages.includes(stage.id);
+              const isDimmed = !auth.canCreate && hasAssignments && !isAssigned;
               return (
-                <div key={stage.id} className="dash-stage">
+                <div key={stage.id} className={`dash-stage${isAssigned ? ' dash-stage-assigned' : ''}${isDimmed ? ' dash-stage-dimmed' : ''}`}>
                   <div className="dash-stage-header">
-                    <Link
-                      to={`/edit/${med.name}?stage=${stage.id}`}
-                      className="dash-stage-name"
-                    >{stage.name}</Link>
+                    {auth.canCreate ? (
+                      <Link
+                        to={`/edit/${med.name}?stage=${stage.id}`}
+                        className="dash-stage-name"
+                      >{stage.name}</Link>
+                    ) : (
+                      <span className="dash-stage-name">{stage.name}</span>
+                    )}
                     <button
                       className="dash-stage-play"
                       onClick={() => handlePlayStage(med, stage)}

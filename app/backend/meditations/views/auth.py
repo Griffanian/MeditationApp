@@ -28,7 +28,7 @@ def _validate_password(password):
     return None
 
 from ..authentication import make_token
-from ..models import InviteLink, UserProfile, ViewerAccess
+from ..models import InviteLink, PendingInvitation, UserProfile, ViewerAccess
 from ..permissions import get_role
 from ..services import storage
 
@@ -178,6 +178,12 @@ class LoginView(APIView):
                 profile_photo = _profile_photo_url(user.profile)
             except Exception:
                 pass
+            pending_invitations = PendingInvitation.objects.filter(to_user=user).count()
+            linked_builders = list(
+                ViewerAccess.objects.filter(viewer=user)
+                .select_related("builder__profile")
+                .values_list("builder__username", flat=True)
+            ) if get_role(user) == "viewer" else []
             return Response({
                 "ok": True,
                 "token": token,
@@ -188,6 +194,8 @@ class LoginView(APIView):
                 "show_public": show_public,
                 "has_programmes": has_programmes,
                 "profile_photo": profile_photo,
+                "pending_invitations": pending_invitations,
+                "linked_builders": linked_builders,
             })
         return Response({"error": "Invalid credentials"}, status=401)
 
@@ -226,6 +234,11 @@ class AuthStatusView(APIView):
             except Exception:
                 pass
 
+            pending_invitations = PendingInvitation.objects.filter(to_user=request.user).count()
+            linked_builders = list(
+                ViewerAccess.objects.filter(viewer=request.user)
+                .values_list("builder__username", flat=True)
+            ) if get_role(request.user) == "viewer" else []
             return Response({
                 "authenticated": True,
                 "username": request.user.username,
@@ -235,6 +248,8 @@ class AuthStatusView(APIView):
                 "show_public": show_public,
                 "has_programmes": has_programmes,
                 "profile_photo": profile_photo,
+                "pending_invitations": pending_invitations,
+                "linked_builders": linked_builders,
             })
         return Response({"authenticated": False})
 

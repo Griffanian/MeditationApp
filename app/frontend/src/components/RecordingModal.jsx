@@ -62,6 +62,8 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
   }
 
   const effectiveHasAudio = hasAudio && !deleted;
+  const isEffectiveTrim = savedTrim && duration != null &&
+    !(savedTrim.start <= 0.05 && savedTrim.end >= duration - 0.05);
 
   const audioUrl = effectiveHasAudio
     ? (seg.type === 'asset'
@@ -178,7 +180,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
       wavesurferRef.current.pause();
     } else {
       stopPlayback(); // stop timeline, assembled audio, and any other sources
-      if (savedTrim && !trimMode) {
+      if (isEffectiveTrim && !trimMode) {
         wavesurferRef.current.play(savedTrim.start, savedTrim.end);
       } else {
         wavesurferRef.current.play();
@@ -354,10 +356,12 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
           )}
 
           {/* Status indicator */}
-          {isSpeech && hasVars && (
+          {isSpeech && (
             <div className={`modal-status modal-status-${audioStatus}`}>
-              {audioStatus === 'current' && '✓ Audio matches current variables'}
-              {audioStatus === 'stale' && '⚠ Audio was generated for different variable values'}
+              {audioStatus === 'current' && '✓ Audio is up to date'}
+              {audioStatus === 'stale' && (hasVars
+                ? '⚠ Audio was generated for different variable values'
+                : '⚠ Audio doesn\'t match current text — regenerate to update')}
               {audioStatus === 'missing' && 'No audio generated yet'}
             </div>
           )}
@@ -366,9 +370,9 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
           {effectiveHasAudio && (
             <div className="modal-section">
               <p className="modal-section-label">
-                Current recording
+                {audioStatus === 'stale' ? 'Stale recording' : 'Current recording'}
                 {duration && <span className="modal-duration"> ({duration.toFixed(1)}s)</span>}
-                {savedTrim && !trimMode && (
+                {isEffectiveTrim && !trimMode && (
                   <span className="modal-trim-info"> — trimmed to {savedTrim.start.toFixed(1)}s–{savedTrim.end.toFixed(1)}s</span>
                 )}
               </p>
@@ -391,7 +395,7 @@ export default function RecordingModal({ seg, meditationName, stageId, hasAudio,
                 {!trimMode ? (
                   <>
                     <button className="modal-btn-sm" onClick={enterTrimMode}>✂ Trim</button>
-                    {savedTrim && (
+                    {isEffectiveTrim && (
                       <button className="modal-btn-sm modal-btn-undo" onClick={undoTrim}>↩ Undo trim</button>
                     )}
                     <button className="modal-btn-sm modal-btn-delete" onClick={async () => {

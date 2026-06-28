@@ -42,6 +42,8 @@ def _serialize_progress(progress):
 
 class PracticeListView(APIView):
     def get(self, request):
+        from django.db.models import Q
+
         qs = visible_qs(
             Practice.objects.select_related("created_by__profile").order_by("display_name"),
             request.user,
@@ -53,10 +55,22 @@ class PracticeListView(APIView):
                 user=request.user, practice__in=practices
             ):
                 progress_map[prog.practice_id] = prog
+
+        # For viewers, compute which programmes are specifically shared
+        is_viewer = get_role(request.user) == "viewer"
+        shared_names = set()
+        if is_viewer:
+            shared_names = set(
+                Practice.objects.filter(shared_with=request.user)
+                .values_list("name", flat=True)
+            )
+
         result = []
         for p in practices:
             data = _serialize_practice(p)
             data["progress"] = _serialize_progress(progress_map.get(p.name))
+            if is_viewer:
+                data["shared"] = p.name in shared_names
             result.append(data)
         return Response(result)
 

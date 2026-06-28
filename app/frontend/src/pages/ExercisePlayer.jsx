@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, assembleStage, BASE } from '../api';
+import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, assembleStage, logSession, BASE } from '../api';
 import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration, unlockAudio } from '../playback';
 
 function formatTime(seconds) {
@@ -208,6 +208,18 @@ export default function ExercisePlayer() {
     setCountdown('');
   }
 
+  function handleComplete() {
+    const dur = audioRef.current?.duration || 0;
+    handleStop();
+    logSession({
+      meditation_name: name,
+      meditation_display: displayName,
+      stage_id: stageId,
+      stage_name: stageName,
+      duration: dur,
+    }).catch(() => {});
+  }
+
   async function handlePlay() {
     unlockAudio();
 
@@ -237,7 +249,7 @@ export default function ExercisePlayer() {
     audioRef.current = audio;
     audio.src = audioUrlRef.current;
     audio.onloadedmetadata = () => setDuration(audio.duration || 0);
-    audio.onended = () => handleStop();
+    audio.onended = () => handleComplete();
     audio.onerror = () => { setStatus('error'); setError('Audio playback failed'); };
     try {
       await audio.play();

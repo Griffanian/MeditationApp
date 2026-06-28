@@ -600,9 +600,53 @@ export async function removeViewer(userId) {
   await apiFetch(`${BASE}/api/my-viewers/${userId}`, { method: 'DELETE' });
 }
 
+export async function fetchSentInvitations() {
+  const res = await apiFetch(`${BASE}/api/my-viewers/pending`);
+  return safeJson(res, []);
+}
+
+export async function cancelSentInvitation(invitationId) {
+  await apiFetch(`${BASE}/api/my-viewers/pending/${invitationId}`, { method: 'DELETE' });
+}
+
+export async function fetchPendingInvitations() {
+  const res = await apiFetch(`${BASE}/api/my-invitations`);
+  return safeJson(res, []);
+}
+
+export async function respondToInvitation(invitationId, action) {
+  const res = await apiFetch(`${BASE}/api/my-invitations/${invitationId}/respond`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to respond');
+  return data;
+}
+
 export async function fetchViewerHistory(userId) {
   const res = await apiFetch(`${BASE}/api/my-viewers/${userId}/history`);
   return safeJson(res, []);
+}
+
+export async function assignStage(userId, meditation, stageId) {
+  const res = await apiFetch(`${BASE}/api/my-viewers/${userId}/stages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ meditation, stage_id: stageId }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to assign stage');
+  return data;
+}
+
+export async function unassignStage(userId, meditation, stageId) {
+  await apiFetch(`${BASE}/api/my-viewers/${userId}/stages`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ meditation, stage_id: stageId }),
+  });
 }
 
 export async function fetchViewerContent(userId) {

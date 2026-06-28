@@ -24,10 +24,18 @@ def visible_qs(queryset, user):
     if role == "builder":
         return queryset.filter(Q(is_public=True) | Q(created_by=user))
 
-    # viewer: public + directly shared + in shared category/group
-    from .models import Practice
+    # viewer: public + directly shared + in shared category/group + stage assignments
+    from .models import Practice, StageAssignment
 
     q = Q(is_public=True) | Q(shared_with=user)
+
+    # Include exercises with stage assignments
+    assigned_med_names = set(
+        StageAssignment.objects.filter(viewer=user)
+        .values_list("meditation_id", flat=True).distinct()
+    )
+    if assigned_med_names:
+        q = q | Q(name__in=assigned_med_names)
 
     # Check if this is a Meditation queryset (has 'category' field)
     model = queryset.model
@@ -117,6 +125,11 @@ class CanViewContent(BasePermission):
                 for item in (practice.items or []):
                     if item.get("meditation") == obj.name:
                         return True
+        # Check stage assignments
+        if hasattr(obj, 'category'):
+            from .models import StageAssignment
+            if StageAssignment.objects.filter(viewer=request.user, meditation=obj).exists():
+                return True
         return False
 
 

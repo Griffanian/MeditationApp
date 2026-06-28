@@ -10,6 +10,8 @@ const defaultAuth = {
   canManageContent: false, // admin, editor (edit anyone's content)
   showPublic: true,
   hasProgrammes: true,
+  pendingInvitations: 0,
+  linkedBuilders: [],
 };
 
 const AuthContext = createContext(defaultAuth);
@@ -26,6 +28,8 @@ export function buildAuth(data) {
     canManageContent: ['admin', 'editor'].includes(role),
     showPublic: data.show_public !== false,
     hasProgrammes: data.has_programmes !== false,
+    pendingInvitations: data.pending_invitations || 0,
+    linkedBuilders: data.linked_builders || [],
   };
 }
 

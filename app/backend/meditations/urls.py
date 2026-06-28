@@ -29,9 +29,16 @@ urlpatterns = [
 
     # Viewer management (builder)
     path("api/my-viewers", users.MyViewerListView.as_view()),
+    path("api/my-viewers/pending", users.SentInvitationListView.as_view()),
+    path("api/my-viewers/pending/<int:invitation_id>", users.CancelSentInvitationView.as_view()),
     path("api/my-viewers/<int:user_id>", users.MyViewerDetailView.as_view()),
     path("api/my-viewers/<int:user_id>/content", users.MyViewerContentView.as_view()),
+    path("api/my-viewers/<int:user_id>/stages", users.MyViewerStageView.as_view()),
     path("api/my-viewers/<int:user_id>/history", users.MyViewerHistoryView.as_view()),
+
+    # Invitations (received by logged-in user)
+    path("api/my-invitations", users.PendingInvitationListView.as_view()),
+    path("api/my-invitations/<int:invitation_id>/respond", users.PendingInvitationRespondView.as_view()),
 
     # Feedback
     path("api/feedback", feedback.FeedbackView.as_view()),

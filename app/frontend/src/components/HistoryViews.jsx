@@ -22,10 +22,16 @@ function formatTotalMins(secs) {
 }
 
 function weekDayLabel(s) {
+  if (s.meditation_name) return s.stage_name || '';
   const week = s.week != null ? `Week ${s.week + 1}` : null;
   const day = s.day_label || (s.day != null ? `Day ${s.day + 1}` : null);
   if (week && day) return `${week}, ${day}`;
   return week || day || '';
+}
+
+function sessionTitle(s) {
+  if (s.meditation_name) return s.meditation_display || s.meditation_name;
+  return s.practice_display || '';
 }
 
 // Group sessions within 30 minutes of each other into time blocks
@@ -102,10 +108,10 @@ export function ListView({ sessions }) {
                 return (
                 <div key={s.id} className="history-item">
                   <div className="history-item-top">
-                    <span className="history-item-name">{s.practice_display}</span>
+                    <span className="history-item-name">{sessionTitle(s)}</span>
                     {total > 0 && <span className="history-item-duration">{formatTotalMins(total)}</span>}
                   </div>
-                  <div className="history-item-detail">{weekDayLabel(s)}</div>
+                  {weekDayLabel(s) && <div className="history-item-detail">{weekDayLabel(s)}</div>}
                   <ExerciseBars exercises={s.exercises} />
                 </div>
                 );
@@ -119,7 +125,7 @@ export function ListView({ sessions }) {
   );
 }
 
-const PRACTICE_COLORS = ['#2d4a7a', '#4a2d6a', '#2d6a4a', '#6a4a2d', '#2d5a6a', '#6a2d4a', '#5a6a2d', '#3d3d7a'];
+const PRACTICE_COLORS = ['#5b7fb5', '#7b5baa', '#5b9a7a', '#a07b55', '#5b8a9a', '#9a5b7a', '#8a9a5b', '#6b6baa'];
 function practiceColor(name, map) {
   if (!map.has(name)) map.set(name, PRACTICE_COLORS[map.size % PRACTICE_COLORS.length]);
   return map.get(name);
@@ -163,8 +169,8 @@ export function CalendarView({ sessions }) {
         <span className="cal-day">{d}</span>
         <div className="cal-sessions">
           {daySessions.map((s, i) => (
-            <div key={i} className="cal-session-bar" style={{ background: practiceColor(s.practice_display, colorMap) }}>
-              <span className="cal-session-label">{weekDayLabel(s)}</span>
+            <div key={i} className="cal-session-bar" style={{ background: practiceColor(sessionTitle(s), colorMap) }}>
+              <span className="cal-session-label">{sessionTitle(s)}</span>
               <span className="cal-session-time">{formatTotalMins(sessionTotalSecs(s))}</span>
             </div>
           ))}
@@ -212,10 +218,10 @@ export function CalendarView({ sessions }) {
                   <span className="cal-detail-time">{formatTime(block.completed_at)}</span>
                   {block.sessions.map((s, i) => (
                     <div key={i} className="cal-detail-row">
-                      <span className="cal-detail-swatch" style={{ background: practiceColor(s.practice_display, colorMap) }} />
+                      <span className="cal-detail-swatch" style={{ background: practiceColor(sessionTitle(s), colorMap) }} />
                       <div className="cal-detail-info">
-                        <span className="cal-detail-name">{s.practice_display}</span>
-                        <span className="cal-detail-sub">{weekDayLabel(s)}{sessionTotalSecs(s) > 0 ? ` · ${formatTotalMins(sessionTotalSecs(s))}` : ''}</span>
+                        <span className="cal-detail-name">{sessionTitle(s)}</span>
+                        <span className="cal-detail-sub">{weekDayLabel(s)}{sessionTotalSecs(s) > 0 ? `${weekDayLabel(s) ? ' · ' : ''}${formatTotalMins(sessionTotalSecs(s))}` : ''}</span>
                         <ExerciseBars exercises={s.exercises} />
                       </div>
                     </div>

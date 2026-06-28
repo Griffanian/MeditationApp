@@ -28,10 +28,49 @@ def _check_meditation_perm(request, name, write=False):
 
 class MeditationListView(APIView):
     def get(self, request):
+        from ..models import Practice
+        from django.db.models import Q
+
         qs = visible_qs(
             Meditation.objects.prefetch_related("stages").select_related("created_by__profile", "group").order_by("name"),
             request.user,
         )
+
+        # For viewers, compute which exercises are specifically shared (not just public)
+        is_viewer = get_role(request.user) == "viewer"
+        shared_names = set()
+        assigned_stages_map = {}  # meditation_name -> [stage_id, ...]
+        if is_viewer:
+            from ..models import StageAssignment
+            user = request.user
+            shared_q = Q(shared_with=user)
+            shared_cat_names = Category.objects.filter(
+                shared_with=user
+            ).values_list("name", flat=True)
+            shared_group_cat_names = Category.objects.filter(
+                group__shared_with=user
+            ).values_list("name", flat=True)
+            shared_q |= Q(category__in=shared_cat_names) | Q(category__in=shared_group_cat_names)
+            shared_med_names = set()
+            for items in Practice.objects.filter(
+                shared_with=user
+            ).values_list("items", flat=True):
+                for item in (items or []):
+                    if "meditation" in item:
+                        shared_med_names.add(item["meditation"])
+            if shared_med_names:
+                shared_q |= Q(name__in=shared_med_names)
+
+            # Include exercises with stage assignments
+            for sa in StageAssignment.objects.filter(viewer=user).values("meditation_id", "stage_id"):
+                assigned_stages_map.setdefault(sa["meditation_id"], []).append(sa["stage_id"])
+            if assigned_stages_map:
+                shared_q |= Q(name__in=assigned_stages_map.keys())
+
+            shared_names = set(
+                Meditation.objects.filter(shared_q).values_list("name", flat=True)
+            )
+
         meds = []
         for m in qs:
             stage_objs = {s.stage_id: s for s in m.stages.all()}
@@ -48,7 +87,7 @@ class MeditationListView(APIView):
                     "name": s.get("name", ""),
                     "variables": variables or {},
                 })
-            meds.append({
+            entry = {
                 "name": m.name,
                 "display_name": m.display_name or m.name.capitalize(),
                 "category": m.category,
@@ -57,7 +96,12 @@ class MeditationListView(APIView):
                 "created_by": m.created_by.username if m.created_by else None,
                 "created_by_display": m.created_by.profile.name if m.created_by and hasattr(m.created_by, 'profile') else (m.created_by.username if m.created_by else None),
                 "is_public": m.is_public,
-            })
+            }
+            if is_viewer:
+                entry["shared"] = m.name in shared_names
+                if m.name in assigned_stages_map:
+                    entry["assigned_stages"] = assigned_stages_map[m.name]
+            meds.append(entry)
         return Response(meds)
 
     def post(self, request):
@@ -142,6 +186,22 @@ def _resolve_group(group_str):
 
 class GroupListView(APIView):
     def get(self, request):
+        qs = Group.objects.select_related("created_by").all()
+        if get_role(request.user) == "viewer":
+            visible_meds = visible_qs(Meditation.objects.all(), request.user)
+            # Groups containing visible exercises directly
+            direct_group_ids = set(
+                visible_meds.exclude(group__isnull=True)
+                .values_list("group_id", flat=True).distinct()
+            )
+            # Groups containing categories of visible exercises
+            visible_cat_names = visible_meds.values_list("category", flat=True).distinct()
+            cat_group_ids = set(
+                Category.objects.filter(name__in=visible_cat_names)
+                .exclude(group__isnull=True)
+                .values_list("group_id", flat=True).distinct()
+            )
+            qs = qs.filter(name__in=direct_group_ids | cat_group_ids)
         return Response([
             {
                 "name": g.name, "display_name": g.display_name,
@@ -149,7 +209,7 @@ class GroupListView(APIView):
                 "created_by": g.created_by.username if g.created_by else None,
                 "is_public": g.is_public,
             }
-            for g in Group.objects.select_related("created_by").all()
+            for g in qs
         ])
 
     def post(self, request):
@@ -197,9 +257,17 @@ class GroupDetailView(APIView):
 
 class CategoryListView(APIView):
     def get(self, request):
+        qs = Category.objects.select_related("group", "created_by__profile").all()
+        if get_role(request.user) == "viewer":
+            visible_cat_names = (
+                visible_qs(Meditation.objects.all(), request.user)
+                .values_list("category", flat=True)
+                .distinct()
+            )
+            qs = qs.filter(name__in=visible_cat_names)
         return Response([
             _serialize_category(c)
-            for c in Category.objects.select_related("group", "created_by__profile").all()
+            for c in qs
         ])
 
     def post(self, request):

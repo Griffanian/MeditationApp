@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import Category, Group, Meditation, Practice, PracticeSession, UserProfile, ViewerAccess
+from ..models import Category, Group, Meditation, PendingInvitation, Practice, PracticeSession, StageAssignment, UserProfile, ViewerAccess
 from ..permissions import IsAdmin, IsContentCreator, get_role
 from ..services import storage
 
@@ -146,7 +146,7 @@ class MyViewerListView(APIView):
         return Response(result)
 
     def post(self, request):
-        """Add an existing user as a viewer of this builder's content."""
+        """Send an invitation to an existing user to become a viewer."""
         username = request.data.get("username", "").strip()
         if not username:
             return Response({"error": "Username required"}, status=400)
@@ -159,11 +159,14 @@ class MyViewerListView(APIView):
         if viewer_user == request.user:
             return Response({"error": "Cannot add yourself"}, status=400)
 
-        _, created = ViewerAccess.objects.get_or_create(
-            viewer=viewer_user, builder=request.user
+        if ViewerAccess.objects.filter(viewer=viewer_user, builder=request.user).exists():
+            return Response({"error": "Already a viewer"}, status=400)
+
+        _, created = PendingInvitation.objects.get_or_create(
+            from_user=request.user, to_user=viewer_user
         )
         if not created:
-            return Response({"error": "Already a viewer"}, status=400)
+            return Response({"error": "Invitation already sent"}, status=400)
 
         return Response({"ok": True, "username": username}, status=201)
 
@@ -223,12 +226,83 @@ class MyViewerContentView(APIView):
             created_by=request.user, shared_with=viewer
         )
 
+        # Stage assignments from this builder
+        assignments = StageAssignment.objects.filter(
+            viewer=viewer, assigned_by=request.user
+        ).select_related("meditation")
+
+        # Look up stage display names from exercise instructions
+        stage_results = []
+        for a in assignments:
+            stage_name = a.stage_id
+            instr = a.meditation.instructions or {}
+            for s in instr.get("stages", []):
+                if s.get("id") == a.stage_id:
+                    stage_name = s.get("name", a.stage_id)
+                    break
+            stage_results.append({
+                "meditation": a.meditation_id,
+                "meditation_display": a.meditation.display_name or a.meditation_id,
+                "stage_id": a.stage_id,
+                "stage_name": stage_name,
+            })
+
         return Response({
             "groups": [{"name": g.name, "display_name": g.display_name} for g in shared_groups],
             "categories": [{"name": c.name, "display_name": c.display_name, "group": c.group.display_name if c.group else ""} for c in shared_categories],
             "exercises": [{"name": m.name, "display_name": m.display_name or m.name} for m in shared_meditations],
+            "stages": stage_results,
             "programmes": [{"name": p.name, "display_name": p.display_name or p.name} for p in shared_practices],
         })
+
+
+class MyViewerStageView(APIView):
+    """Assign or unassign a stage to a viewer."""
+    permission_classes = [IsContentCreator]
+
+    def post(self, request, user_id):
+        try:
+            viewer = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "Not found"}, status=404)
+        if not ViewerAccess.objects.filter(viewer=viewer, builder=request.user).exists():
+            return Response({"error": "Not your viewer"}, status=403)
+
+        meditation_name = request.data.get("meditation", "")
+        stage_id = request.data.get("stage_id", "")
+        if not meditation_name or not stage_id:
+            return Response({"error": "meditation and stage_id required"}, status=400)
+
+        try:
+            med = Meditation.objects.get(name=meditation_name)
+        except Meditation.DoesNotExist:
+            return Response({"error": "Exercise not found"}, status=404)
+
+        _, created = StageAssignment.objects.get_or_create(
+            viewer=viewer, meditation=med, stage_id=stage_id,
+            defaults={"assigned_by": request.user},
+        )
+        if not created:
+            return Response({"error": "Already assigned"}, status=400)
+        return Response({"ok": True}, status=201)
+
+    def delete(self, request, user_id):
+        try:
+            viewer = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "Not found"}, status=404)
+        if not ViewerAccess.objects.filter(viewer=viewer, builder=request.user).exists():
+            return Response({"error": "Not your viewer"}, status=403)
+
+        meditation_name = request.data.get("meditation", "")
+        stage_id = request.data.get("stage_id", "")
+        deleted, _ = StageAssignment.objects.filter(
+            viewer=viewer, meditation_id=meditation_name, stage_id=stage_id,
+            assigned_by=request.user,
+        ).delete()
+        if not deleted:
+            return Response({"error": "Not found"}, status=404)
+        return Response({"ok": True})
 
 
 class MyViewerHistoryView(APIView):
@@ -250,3 +324,95 @@ class MyViewerHistoryView(APIView):
             user=viewer
         ).select_related("practice")[:200])
         return Response(_serialize_sessions(sessions))
+
+
+class PendingInvitationListView(APIView):
+    """List invitations received by the logged-in user."""
+
+    def get(self, request):
+        invitations = PendingInvitation.objects.filter(
+            to_user=request.user
+        ).select_related("from_user", "from_user__profile").order_by("-created_at")
+
+        results = []
+        for inv in invitations:
+            photo = ""
+            try:
+                if inv.from_user.profile.profile_photo:
+                    photo = storage.file_url(inv.from_user.profile.profile_photo)
+            except UserProfile.DoesNotExist:
+                pass
+            display_name = ""
+            try:
+                display_name = inv.from_user.profile.display_name
+            except UserProfile.DoesNotExist:
+                pass
+            results.append({
+                "id": inv.pk,
+                "from_username": inv.from_user.username,
+                "from_display_name": display_name or inv.from_user.username,
+                "from_profile_photo": photo,
+                "created_at": inv.created_at.isoformat(),
+            })
+        return Response(results)
+
+
+class PendingInvitationRespondView(APIView):
+    """Accept or reject a pending invitation."""
+
+    def post(self, request, invitation_id):
+        try:
+            inv = PendingInvitation.objects.get(pk=invitation_id, to_user=request.user)
+        except PendingInvitation.DoesNotExist:
+            return Response({"error": "Invitation not found"}, status=404)
+
+        action = request.data.get("action", "")
+        if action not in ("accept", "reject"):
+            return Response({"error": "action must be 'accept' or 'reject'"}, status=400)
+
+        if action == "accept":
+            ViewerAccess.objects.get_or_create(
+                viewer=request.user, builder=inv.from_user
+            )
+
+        inv.delete()
+        return Response({"ok": True, "action": action})
+
+
+class SentInvitationListView(APIView):
+    """List pending invitations sent by the logged-in builder."""
+    permission_classes = [IsContentCreator]
+
+    def get(self, request):
+        invitations = PendingInvitation.objects.filter(
+            from_user=request.user
+        ).select_related("to_user", "to_user__profile").order_by("-created_at")
+
+        results = []
+        for inv in invitations:
+            photo = ""
+            try:
+                if inv.to_user.profile.profile_photo:
+                    photo = storage.file_url(inv.to_user.profile.profile_photo)
+            except UserProfile.DoesNotExist:
+                pass
+            results.append({
+                "id": inv.pk,
+                "username": inv.to_user.username,
+                "profile_photo": photo,
+                "created_at": inv.created_at.isoformat(),
+            })
+        return Response(results)
+
+
+class CancelSentInvitationView(APIView):
+    """Cancel a pending invitation sent by the logged-in builder."""
+    permission_classes = [IsContentCreator]
+
+    def delete(self, request, invitation_id):
+        deleted, _ = PendingInvitation.objects.filter(
+            pk=invitation_id, from_user=request.user
+        ).delete()
+        if not deleted:
+            return Response({"error": "Invitation not found"}, status=404)
+        return Response({"ok": True})

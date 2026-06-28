@@ -135,12 +135,12 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
         const fallbackData = await fallback.json();
         const fallbackParsed = parsePostRows(fallbackData);
         setRows(fallbackParsed);
-        const firstWithAudio = fallbackParsed.findIndex(r => r.status === 'has_audio');
+        const firstWithAudio = fallbackParsed.findIndex(r => r.status !== 'missing');
         if (firstWithAudio !== -1) setSelectedRow(firstWithAudio);
       } else {
         setRows(parsed);
         // Auto-select first with audio
-        const firstWithAudio = parsed.findIndex(r => r.status === 'has_audio');
+        const firstWithAudio = parsed.findIndex(r => r.status !== 'missing');
         if (firstWithAudio !== -1) setSelectedRow(firstWithAudio);
       }
     } catch (err) {
@@ -170,7 +170,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
 
   // Create/recreate WaveSurfer when selectedRow changes and the container is mounted
   useEffect(() => {
-    if (selectedRow === null || !rows[selectedRow] || rows[selectedRow].status !== 'has_audio') return;
+    if (selectedRow === null || !rows[selectedRow] || rows[selectedRow].status === 'missing') return;
     if (!waveformRef.current) return;
 
     const row = rows[selectedRow];
@@ -329,7 +329,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
 
   function handleRowClick(index) {
     const row = rows[index];
-    if (row.status !== 'has_audio') return;
+    if (row.status === 'missing') return;
     setSelectedRow(index);
   }
 
@@ -389,7 +389,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
   async function removeRow(index) {
     const row = rows[index];
     // If it has audio, confirm and delete the component record from the backend
-    if (row.status === 'has_audio') {
+    if (row.status !== 'missing') {
       if (!window.confirm(`Delete the recording for ${row.variableKey}?`)) return;
       await apiFetch(`${BASE}/api/meditations/${meditationName}/stages/${stageId}/variable-recordings/${seg.id}/delete/${row.variableKey}`, { method: 'DELETE' });
       if (onDone) onDone();
@@ -410,7 +410,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
 
   async function handleGenerate(index) {
     const row = rows[index];
-    if (row.status === 'has_audio') {
+    if (row.status !== 'missing') {
       if (!window.confirm(`This will replace the existing ${row.source === 'uploaded' ? 'recorded' : 'AI-generated'} audio for ${row.variableKey}. Continue?`)) return;
     }
     setGenerating(index);
@@ -429,7 +429,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
         const newRows = await refreshRows();
         if (newRows && generatedKey) {
           const newIndex = newRows.findIndex(r => r.variableKey === generatedKey);
-          if (newIndex !== -1 && newRows[newIndex]?.status === 'has_audio') {
+          if (newIndex !== -1 && newRows[newIndex]?.status !== 'missing') {
             setSelectedRow(newIndex);
           }
         }
@@ -444,7 +444,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
   async function handleRecord(index) {
     if (recording !== null) return;
     const row = rows[index];
-    if (row.status === 'has_audio') {
+    if (row.status !== 'missing') {
       if (!window.confirm(`This will replace the existing ${row.source === 'uploaded' ? 'recorded' : 'AI-generated'} audio for ${row.variableKey}. Continue?`)) return;
     }
     try {
@@ -477,7 +477,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
 
   function handleUploadClick(index) {
     const row = rows[index];
-    if (row.status === 'has_audio') {
+    if (row.status !== 'missing') {
       if (!window.confirm(`This will replace the existing ${row.source === 'uploaded' ? 'recorded' : 'AI-generated'} audio for ${row.variableKey}. Continue?`)) return;
     }
     uploadRowRef.current = index;
@@ -518,7 +518,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
     }
   }
 
-  const selectedHasAudio = selectedRow !== null && rows[selectedRow]?.status === 'has_audio';
+  const selectedHasAudio = selectedRow !== null && rows[selectedRow]?.status !== 'missing';
   const canAddRow = usedVarNames.every(v => (newValues[v] || '').trim() !== '');
   const isEffectiveTrim = savedTrim && duration != null &&
     !(savedTrim.start <= 0.05 && savedTrim.end >= duration - 0.05);
@@ -649,7 +649,7 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
                   {rows.map((row, i) => (
                     <tr
                       key={i}
-                      className={`${row.status === 'has_audio' ? 'has-audio' : 'no-audio'}${selectedRow === i ? ' selected' : ''}${row.status === 'has_audio' ? ' clickable' : ''}`}
+                      className={`${row.status !== 'missing' ? 'has-audio' : 'no-audio'}${selectedRow === i ? ' selected' : ''}${row.status !== 'missing' ? ' clickable' : ''}${row.status === 'stale' ? ' stale' : ''}`}
                       onClick={() => handleRowClick(i)}
                     >
                       {usedVarNames.map(varName => (
@@ -658,14 +658,16 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
                         </td>
                       ))}
                       <td className="var-rec-col-source">
-                        {row.status === 'has_audio' ? (
-                          row.source === 'uploaded'
-                            ? <span className="var-rec-badge var-rec-badge-recorded">🎙 Recorded</span>
-                            : row.source === 'generated'
-                              ? <span className="var-rec-badge var-rec-badge-ai">🤖 AI</span>
-                              : <span className="var-rec-badge var-rec-badge-done">✓ Done</span>
-                        ) : (
+                        {row.status === 'missing' ? (
                           <span className="var-rec-badge var-rec-badge-missing">Missing</span>
+                        ) : row.status === 'stale' ? (
+                          <span className="var-rec-badge var-rec-badge-stale">⚠ Stale</span>
+                        ) : row.source === 'uploaded' ? (
+                          <span className="var-rec-badge var-rec-badge-recorded">🎙 Recorded</span>
+                        ) : row.source === 'generated' ? (
+                          <span className="var-rec-badge var-rec-badge-ai">🤖 AI</span>
+                        ) : (
+                          <span className="var-rec-badge var-rec-badge-done">✓ Done</span>
                         )}
                       </td>
                       <td className="var-rec-col-actions" onClick={e => e.stopPropagation()}>
@@ -679,25 +681,25 @@ export default function VariableRecordingsModal({ seg, meditationName, stageId, 
                               className="modal-btn-sm"
                               onClick={() => handleGenerate(i)}
                               disabled={generating !== null}
-                              title={row.status === 'has_audio' ? 'Regenerate with AI' : 'Generate with AI'}
+                              title={row.status !== 'missing' ? 'Regenerate with AI' : 'Generate with AI'}
                             >
-                              {generating === i ? `⏳${genDots}` : row.status === 'has_audio' ? '🤖 Regenerate' : '🤖 Generate'}
+                              {generating === i ? `⏳${genDots}` : row.status !== 'missing' ? '🤖 Regenerate' : '🤖 Generate'}
                             </button>
                             <button
                               className="modal-btn-sm"
                               onClick={() => handleRecord(i)}
                               disabled={generating !== null || recording !== null}
-                              title={row.status === 'has_audio' ? 'Re-record with microphone' : 'Record with microphone'}
+                              title={row.status !== 'missing' ? 'Re-record with microphone' : 'Record with microphone'}
                             >
-                              {row.status === 'has_audio' ? '🎙 Re-record' : '🎙 Record'}
+                              {row.status !== 'missing' ? '🎙 Re-record' : '🎙 Record'}
                             </button>
                             <button
                               className="modal-btn-sm"
                               onClick={() => handleUploadClick(i)}
                               disabled={generating !== null || recording !== null}
-                              title={row.status === 'has_audio' ? 'Replace with uploaded MP3' : 'Upload MP3'}
+                              title={row.status !== 'missing' ? 'Replace with uploaded MP3' : 'Upload MP3'}
                             >
-                              {row.status === 'has_audio' ? '📁 Replace' : '📁 Upload'}
+                              {row.status !== 'missing' ? '📁 Replace' : '📁 Upload'}
                             </button>
                           </>
                         )}

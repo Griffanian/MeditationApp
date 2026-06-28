@@ -90,6 +90,27 @@ class ViewerAccess(models.Model):
         return f"{self.viewer.username} -> {self.builder.username}"
 
 
+class PendingInvitation(models.Model):
+    """A pending invitation from a builder to an existing user.
+
+    Created when a builder adds an existing user by username. The target
+    user must accept before a ViewerAccess record is created.
+    """
+    from_user = models.ForeignKey(
+        "auth.User", on_delete=models.CASCADE, related_name="sent_invitations"
+    )
+    to_user = models.ForeignKey(
+        "auth.User", on_delete=models.CASCADE, related_name="received_invitations"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("from_user", "to_user")
+
+    def __str__(self):
+        return f"{self.from_user.username} -> {self.to_user.username} (pending)"
+
+
 class Group(models.Model):
     name = models.SlugField(max_length=200, unique=True, primary_key=True)
     display_name = models.CharField(max_length=200)
@@ -287,6 +308,27 @@ class VariableRecording(models.Model):
         return f"{self.meditation_id}/{self.seg_id} [{self.variable_values}]"
 
 
+class StageAssignment(models.Model):
+    """A specific stage of an exercise assigned to a viewer by a builder."""
+    viewer = models.ForeignKey(
+        "auth.User", on_delete=models.CASCADE, related_name="stage_assignments"
+    )
+    meditation = models.ForeignKey(
+        Meditation, on_delete=models.CASCADE, related_name="stage_assignments"
+    )
+    stage_id = models.CharField(max_length=200)
+    assigned_by = models.ForeignKey(
+        "auth.User", on_delete=models.CASCADE, related_name="assigned_stages"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("viewer", "meditation", "stage_id")
+
+    def __str__(self):
+        return f"{self.viewer.username}: {self.meditation_id}/{self.stage_id}"
+
+
 class Asset(models.Model):
     filename = models.CharField(max_length=200, unique=True, primary_key=True)
     audio_file = models.FileField(upload_to="assets/", max_length=300)
@@ -409,12 +451,18 @@ class PracticeSession(models.Model):
         "auth.User", on_delete=models.CASCADE, related_name="practice_sessions"
     )
     practice = models.ForeignKey(
-        Practice, on_delete=models.CASCADE, related_name="sessions"
+        Practice, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="sessions",
     )
     practice_display = models.CharField(max_length=200, blank=True)
-    week = models.IntegerField()
-    day = models.IntegerField()
+    week = models.IntegerField(default=0)
+    day = models.IntegerField(default=0)
     day_label = models.CharField(max_length=200, blank=True)
+    # For standalone exercise completions (no programme)
+    meditation_name = models.CharField(max_length=200, blank=True)
+    meditation_display = models.CharField(max_length=200, blank=True)
+    stage_id = models.CharField(max_length=200, blank=True)
+    stage_name = models.CharField(max_length=200, blank=True)
     duration = models.FloatField(default=0)  # seconds
     completed_at = models.DateTimeField(auto_now_add=True)
 

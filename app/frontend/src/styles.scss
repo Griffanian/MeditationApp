@@ -3129,6 +3129,11 @@ table.var-rec-table {
   color: var(--text-muted);
 }
 
+.var-rec-badge-stale {
+  background: rgba(255, 180, 50, 0.15);
+  color: #d4880a;
+}
+
 .var-rec-remove {
   color: var(--text-muted);
   opacity: 0.6;
@@ -3792,6 +3797,14 @@ table.var-rec-table {
   background: var(--overlay-2);
   border-radius: 8px;
   padding: 8px 10px;
+}
+
+.dash-stage-assigned {
+  border-left: 3px solid var(--accent);
+}
+
+.dash-stage-dimmed {
+  opacity: 0.4;
 }
 
 .dash-stage-header {
@@ -6642,6 +6655,134 @@ table.var-rec-table {
   color: var(--text-muted);
 }
 
+/* Home invitation notification cards */
+.home-invitations {
+  margin-bottom: 16px;
+}
+
+.home-invitation-card {
+  background: var(--overlay-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.home-invitation-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.home-invitation-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.home-invitation-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.home-invitation-text {
+  font-size: 14px;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.home-invitation-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.home-invitation-accept {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.home-invitation-accept:hover {
+  filter: brightness(1.1);
+}
+
+.home-invitation-reject {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.home-invitation-reject:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+/* Clients page pending invitations */
+.client-pending-section {
+  margin-top: 16px;
+  margin-bottom: 4px;
+}
+
+.client-pending-title {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.client-pending-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--overlay-1);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+.client-pending-name {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.client-pending-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255, 180, 50, 0.15);
+  color: #d4880a;
+  font-weight: 500;
+}
+
 .home-streak-badge {
   display: inline-flex;
   align-items: center;
@@ -6862,6 +7003,38 @@ table.var-rec-table {
 }
 
 /* Home — next session card */
+/* Suggested exercise card */
+.home-suggested-exercise {
+  margin-bottom: 20px;
+}
+
+.home-suggested-card {
+  background: var(--bg-raised, var(--bg-surface));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.home-suggested-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.home-suggested-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.home-suggested-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
 .home-next-session {
   background: var(--bg-raised, var(--bg-surface));
   border: 1px solid var(--border);
@@ -8743,6 +8916,13 @@ body.onboarding-active {
   font-size: 1.1rem;
 }
 
+.user-mgmt-subsection-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
 .link-btn {
   background: none;
   border: none;
@@ -9354,10 +9534,48 @@ body.onboarding-active {
 
 .client-add-picker {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-direction: column;
+  gap: 2px;
   margin-top: 4px;
   margin-bottom: 4px;
+}
+
+.client-add-picker-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.client-add-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.client-add-picker-expand {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 4px 6px;
+  font-family: inherit;
+  line-height: 1;
+}
+
+.client-add-picker-stage {
+  margin-left: 22px;
+  font-size: 10px !important;
+}
+
+.client-add-picker-item-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.client-add-picker-item-disabled:hover {
+  background: var(--bg-surface) !important;
+  border-color: var(--border) !important;
 }
 
 .client-add-picker-item {
@@ -9369,6 +9587,7 @@ body.onboarding-active {
   color: var(--accent);
   cursor: pointer;
   font-family: inherit;
+  text-align: left;
   transition: all 0.15s;
 }
 
@@ -9384,6 +9603,15 @@ body.onboarding-active {
   padding: 3px 10px;
   font-size: 12px;
   color: var(--accent);
+}
+
+.client-content-tag-removable {
+  cursor: pointer;
+}
+
+.client-content-tag-removable:hover {
+  border-color: var(--error);
+  color: var(--error);
 }
 
 /* --- History page --- */

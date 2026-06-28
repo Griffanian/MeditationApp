@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
-import { fetchHistory, fetchPractices, fetchMyViewers, fetchMeditations, createMeditation, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, BASE } from '../api';
+import { fetchHistory, fetchPractices, fetchMyViewers, fetchMeditations, createMeditation, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, fetchPendingInvitations, respondToInvitation, BASE, apiFetch } from '../api';
 import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration as formatDur, unlockAudio } from '../playback';
 import { formatDuration, formatDate } from '../components/HistoryViews';
 
@@ -600,6 +600,8 @@ export default function Home() {
   const [practices, setPractices] = useState([]);
   const [viewerCount, setViewerCount] = useState(0);
   const [exerciseCount, setExerciseCount] = useState(null);
+  const [invitations, setInvitations] = useState([]);
+  const [sharedExercises, setSharedExercises] = useState([]);
 
   useEffect(() => {
     const promises = [
@@ -609,9 +611,28 @@ export default function Home() {
     if (auth.canCreate) {
       promises.push(fetchMyViewers().then(v => setViewerCount(Array.isArray(v) ? v.length : 0)));
       promises.push(fetchMeditations().then(m => setExerciseCount(Array.isArray(m) ? m.length : 0)));
+    } else {
+      // Viewers: fetch exercises to find shared ones for suggestions
+      promises.push(fetchMeditations().then(meds => {
+        const shared = (Array.isArray(meds) ? meds : []).filter(m => m.shared && m.stages?.length > 0);
+        setSharedExercises(shared);
+      }));
+    }
+    if (auth.pendingInvitations > 0) {
+      promises.push(fetchPendingInvitations().then(inv => setInvitations(Array.isArray(inv) ? inv : [])));
     }
     Promise.all(promises).finally(() => setLoading(false));
   }, []);
+
+  async function handleInvitationRespond(invId, action) {
+    try {
+      await respondToInvitation(invId, action);
+      setInvitations(prev => prev.filter(i => i.id !== invId));
+      if (auth.updateAuth) auth.updateAuth({ pendingInvitations: Math.max(0, auth.pendingInvitations - 1) });
+    } catch (err) {
+      alert(err.message);
+    }
+  }
 
   if (loading) return <div className="loading-page"><div className="loading-spinner" />Loading...</div>;
 
@@ -623,11 +644,16 @@ export default function Home() {
     .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))
     .slice(0, auth.canCreate ? 5 : 3);
 
-  // Find the current programme to continue (works for both builders and viewers)
+  // Find the current programme to continue
   const currentProgramme = (() => {
+    // For viewers: prefer shared programmes
+    const pool = !auth.canCreate
+      ? practices.filter(p => p.shared)
+      : practices;
+
     // Most recent session's programme (if it has remaining days)
     if (recentSessions.length > 0) {
-      const recentPrac = practices.find(p => p.name === recentSessions[0].practice);
+      const recentPrac = pool.find(p => p.name === recentSessions[0].practice);
       if (recentPrac) {
         const prog = getProgress(recentPrac.name, recentPrac.items || []);
         if (!prog || prog.pct < 100) return { practice: recentPrac, progress: prog };
@@ -636,7 +662,7 @@ export default function Home() {
     // Fallback: programme with highest (but incomplete) progress
     let best = null;
     let bestScore = -1;
-    for (const p of practices) {
+    for (const p of pool) {
       const weeks = p.items || [];
       const prog = getProgress(p.name, weeks);
       if (prog && prog.pct < 100 && prog.pct > bestScore) {
@@ -646,9 +672,21 @@ export default function Home() {
     }
     if (best) return best;
     // Fallback: first available programme
-    if (practices.length > 0) return { practice: practices[0], progress: null };
+    if (pool.length > 0) return { practice: pool[0], progress: null };
     return null;
   })();
+
+  // For viewers: pick a shared exercise to suggest (prefer ones with assigned stages)
+  const suggestedExercise = (() => {
+    if (auth.canCreate || sharedExercises.length === 0) return null;
+    // Prefer exercises with assigned stages
+    const withAssigned = sharedExercises.find(m => m.assigned_stages?.length > 0);
+    return withAssigned || sharedExercises[0];
+  })();
+  // If the suggested exercise has assigned stages, link to the first assigned one
+  const suggestedStage = suggestedExercise?.assigned_stages?.length > 0
+    ? suggestedExercise.stages.find(s => suggestedExercise.assigned_stages.includes(s.id))
+    : suggestedExercise?.stages?.[0];
 
   // Compute next day for the current programme
   const nextDay = currentProgramme ? (() => {
@@ -675,6 +713,30 @@ export default function Home() {
           <div className="home-greeting">
             <h1 className="home-greeting-title">{getGreeting()}, {name}</h1>
           </div>
+          {invitations.length > 0 && (
+            <div className="home-invitations">
+              {invitations.map(inv => (
+                <div key={inv.id} className="home-invitation-card">
+                  <div className="home-invitation-info">
+                    <div className="home-invitation-avatar">
+                      {inv.from_profile_photo ? (
+                        <img src={inv.from_profile_photo} alt="" className="home-invitation-avatar-img" />
+                      ) : (
+                        <span>{(inv.from_display_name || '?')[0].toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div>
+                      <p className="home-invitation-text"><strong>{inv.from_display_name}</strong> has invited you to be their client.</p>
+                    </div>
+                  </div>
+                  <div className="home-invitation-actions">
+                    <button className="home-invitation-accept" onClick={() => handleInvitationRespond(inv.id, 'accept')}>Accept</button>
+                    <button className="home-invitation-reject" onClick={() => handleInvitationRespond(inv.id, 'reject')}>Decline</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="home-streak-card">
             <div className="home-streak-top">
               <span className="home-streak-flame"><i className="fa-solid fa-fire"></i></span>
@@ -786,6 +848,30 @@ export default function Home() {
           <div className="home-greeting">
             <h1 className="home-greeting-title">{getGreeting()},<br />{name}</h1>
           </div>
+          {invitations.length > 0 && (
+            <div className="home-invitations">
+              {invitations.map(inv => (
+                <div key={inv.id} className="home-invitation-card">
+                  <div className="home-invitation-info">
+                    <div className="home-invitation-avatar">
+                      {inv.from_profile_photo ? (
+                        <img src={inv.from_profile_photo} alt="" className="home-invitation-avatar-img" />
+                      ) : (
+                        <span>{(inv.from_display_name || '?')[0].toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div>
+                      <p className="home-invitation-text"><strong>{inv.from_display_name}</strong> has invited you to be their client.</p>
+                    </div>
+                  </div>
+                  <div className="home-invitation-actions">
+                    <button className="home-invitation-accept" onClick={() => handleInvitationRespond(inv.id, 'accept')}>Accept</button>
+                    <button className="home-invitation-reject" onClick={() => handleInvitationRespond(inv.id, 'reject')}>Decline</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="home-streak-card">
             <div className="home-streak-top">
@@ -825,60 +911,99 @@ export default function Home() {
             const today = new Date();
             const monthShort = today.toLocaleString('default', { month: 'short' }).toUpperCase();
             const dayNum = today.getDate();
+            const coachName = currentProgramme.practice.created_by_display || currentProgramme.practice.created_by;
 
             return (
-              <div className="home-next-session">
-                <div className="home-next-header">
-                  <div className="home-next-date">
-                    <span className="home-next-date-month">{monthShort}</span>
-                    <span className="home-next-date-day">{dayNum}</span>
-                  </div>
-                  <div className="home-next-info">
-                    <div className="home-next-name">{currentProgramme.practice.display_name}</div>
-                    <div className="home-next-meta">
-                      {dayLabel} · {dayItems.length} meditation{dayItems.length !== 1 ? 's' : ''}{totalMins > 0 ? ` · ${totalMins} min` : ''}
-                    </div>
-                  </div>
-                  <Link to={`/play/${currentProgramme.practice.name}?week=${nextDay.week}&day=${nextDay.day}`} className="home-next-play">
-                    <span>▶</span>
-                  </Link>
-                </div>
-                {dayItems.length > 0 && (
-                  <div className="home-next-stages">
-                    {dayItems.map((item, idx) => {
-                      const varMins = (() => {
-                        for (const v of Object.values(item.variables || {})) {
-                          if (typeof v === 'object' && v.unit === 'minutes' && v.value != null) return Number(v.value);
-                        }
-                        return null;
-                      })();
-                      return (
-                        <div key={item.id} className="home-next-stage">
-                          <span className="home-next-stage-num">{idx + 1}</span>
-                          <span className="home-next-stage-name">{item.meditation_display}</span>
-                          {varMins != null && <span className="home-next-stage-dur">{varMins} min</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
+              <>
+                {coachName && (
+                  <h2 className="home-section-title">Continue {coachName}'s Programme</h2>
                 )}
-              </div>
+                <div className="home-next-session">
+                  <div className="home-next-header">
+                    <div className="home-next-date">
+                      <span className="home-next-date-month">{monthShort}</span>
+                      <span className="home-next-date-day">{dayNum}</span>
+                    </div>
+                    <div className="home-next-info">
+                      <div className="home-next-name">{currentProgramme.practice.display_name}</div>
+                      <div className="home-next-meta">
+                        {dayLabel} · {dayItems.length} meditation{dayItems.length !== 1 ? 's' : ''}{totalMins > 0 ? ` · ${totalMins} min` : ''}
+                      </div>
+                    </div>
+                    <Link to={`/play/${currentProgramme.practice.name}?week=${nextDay.week}&day=${nextDay.day}`} className="home-next-play">
+                      <span>▶</span>
+                    </Link>
+                  </div>
+                  {dayItems.length > 0 && (
+                    <div className="home-next-stages">
+                      {dayItems.map((item, idx) => {
+                        const varMins = (() => {
+                          for (const v of Object.values(item.variables || {})) {
+                            if (typeof v === 'object' && v.unit === 'minutes' && v.value != null) return Number(v.value);
+                          }
+                          return null;
+                        })();
+                        return (
+                          <div key={item.id} className="home-next-stage">
+                            <span className="home-next-stage-num">{idx + 1}</span>
+                            <span className="home-next-stage-name">{item.meditation_display}</span>
+                            {varMins != null && <span className="home-next-stage-dur">{varMins} min</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
             );
           })()}
+
+          {suggestedExercise && suggestedStage && (
+            <div className="home-suggested-exercise">
+              <h2 className="home-section-title">Practice the exercise assigned to you{suggestedExercise.created_by_display ? ` by ${suggestedExercise.created_by_display}` : ''}</h2>
+              <div className="home-suggested-card">
+                <div className="home-suggested-info">
+                  <div className="home-suggested-name">{suggestedExercise.display_name}</div>
+                  <div className="home-suggested-meta">
+                    {suggestedStage.name || suggestedStage.id}
+                  </div>
+                </div>
+                <Link
+                  to={`/play-exercise/${suggestedExercise.name}/${suggestedStage.id}`}
+                  state={{ displayName: suggestedExercise.display_name, stageName: suggestedStage.name }}
+                  className="home-next-play"
+                >
+                  <span>▶</span>
+                </Link>
+              </div>
+            </div>
+          )}
 
           {recentSessions.length > 0 && (
             <div className="home-section">
               <h2 className="home-section-title">Recent Sessions</h2>
               <div className="home-session-list">
-                {recentSessions.map(s => (
-                  <div key={s.id} className="home-session-item">
-                    <div>
-                      <div className="home-session-name">{s.practice_display}</div>
-                      <div className="home-session-detail">{s.day_label}{sessionTotalSecs(s) > 0 ? ` · ${formatDuration(sessionTotalSecs(s))}` : ''}</div>
+                {recentSessions.map(s => {
+                  const isExercise = !s.practice && s.meditation_name;
+                  const title = isExercise
+                    ? (s.meditation_display || s.meditation_name)
+                    : s.practice_display;
+                  const detail = isExercise
+                    ? s.stage_name || ''
+                    : s.day_label || '';
+                  const dur = sessionTotalSecs(s);
+                  return (
+                    <div key={s.id} className="home-session-item">
+                      <div>
+                        <div className="home-session-name">{title}</div>
+                        <div className="home-session-detail">
+                          {detail}{detail && dur > 0 ? ' · ' : ''}{dur > 0 ? formatDuration(dur) : ''}
+                        </div>
+                      </div>
+                      <span className="home-session-date">{formatDate(s.completed_at)}</span>
                     </div>
-                    <span className="home-session-date">{formatDate(s.completed_at)}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <Link to="/history" className="home-view-all">View all history</Link>
             </div>
