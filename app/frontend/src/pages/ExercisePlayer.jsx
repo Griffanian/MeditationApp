@@ -95,6 +95,28 @@ export default function ExercisePlayer() {
   const timelineRef = useRef([]);
   const wordTimestampsRef = useRef({});
   const audioUrlRef = useRef(null);
+  const wordsRef = useRef(null);
+  const measuredRef = useRef(false);
+  const [wordsPerPage, setWordsPerPage] = useState(50);
+
+  // Measure how many words fit in the box once, then chunk by that count
+  useEffect(() => {
+    const container = wordsRef.current;
+    if (!container || measuredRef.current) return;
+    const boxHeight = container.clientHeight;
+    if (boxHeight <= 0 || container.children.length === 0) return;
+    let fitCount = container.children.length;
+    for (let i = 0; i < container.children.length; i++) {
+      if (container.children[i].offsetTop >= boxHeight) {
+        fitCount = i;
+        break;
+      }
+    }
+    if (fitCount > 0 && fitCount < container.children.length) {
+      setWordsPerPage(fitCount);
+      measuredRef.current = true;
+    }
+  });
 
   // Load script, components, variables on mount
   useEffect(() => {
@@ -336,32 +358,38 @@ export default function ExercisePlayer() {
 
         {error && <div className="ep-error">{error}</div>}
 
-        {isActive && activeEntry && (
+        {isActive && activeEntry && activeEntry.type === 'speech' ? (
           <div className="ep-script-box">
             {contextLabel && <div className="ep-script-context">{contextLabel}</div>}
-
-            {activeEntry.type === 'speech' && (
-              <div className="ep-script-words">
-                {activeEntry.words.map((w, i) => (
-                  <span key={i} className={`ep-word${i === activeWordIdx ? ' active' : ''}`}>{w} </span>
-                ))}
-              </div>
-            )}
-
+            <div className="ep-script-words" ref={wordsRef}>
+              {(() => {
+                const idx = activeWordIdx >= 0 ? activeWordIdx : 0;
+                const page = Math.floor(idx / wordsPerPage);
+                const start = page * wordsPerPage;
+                const end = Math.min(start + wordsPerPage, activeEntry.words.length);
+                return activeEntry.words.slice(start, end).map((w, i) => {
+                  const realIdx = start + i;
+                  return <span key={realIdx} className={`ep-word${realIdx === activeWordIdx ? ' active' : ''}`}>{w} </span>;
+                });
+              })()}
+            </div>
+          </div>
+        ) : isActive && activeEntry ? (
+          <div className="ep-script-box">
+            {contextLabel && <div className="ep-script-context">{contextLabel}</div>}
             {(activeEntry.type === 'pause' || activeEntry.type === 'split_marker') && (
               <div className="ep-script-pause">
                 <span className="ep-script-pause-label">Pause</span>
                 <span className="ep-script-countdown">{countdown}</span>
               </div>
             )}
-
             {activeEntry.type === 'asset' && (
               <div className="ep-script-pause">
                 <span className="ep-script-pause-label">&#x266B;</span>
               </div>
             )}
           </div>
-        )}
+        ) : null}
 
         <div className="ep-seek-bar">
           <span className="ep-seek-time">{formatTime(elapsed)}</span>

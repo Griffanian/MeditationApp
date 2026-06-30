@@ -62,9 +62,17 @@ Rules:
 - Only use split_marker segments in the Main Practice section, and only when it contains a loop with a variable (so the duration scales with the user's chosen number of rounds/reps). Don't use split markers for fixed-duration content.
 - When using split_marker segments, they must be inside a section that has a targetDuration set (otherwise they have no target to split).
 - By default, structure a stage's script into sections: a Setup section (introduction, settling in, technique explanation), a Main Practice section (the core exercise — this is where split markers, loops, and rounds typically go), and a Cool Down section (winding down, returning to normal). Not every exercise needs all three, but this is the default structure.
-- Use variables to let users adjust things like number of rounds, repetitions in loops, or target durations of sections. Don't overdo it — just where there's a natural knob. Variables are defined in the stage's "variables" object and referenced in loops via the "variable" key or in targetDuration via "{varName}" syntax.
-- Variable format: {"value": 5, "displayName": "Rounds", "unit": "minutes"}. The "unit" field is optional: "minutes" (value × 60 for seconds), "seconds" (value used as-is), or omit for unitless (rounds, repetitions). Use "minutes" for duration variables so users can set values like 5 instead of 300.
+- Variables exist to enable PROGRESSION — letting the coach increase difficulty over a programme (e.g. more rounds, longer holds). Be minimal: only create a variable when there is a clear knob the coach would turn between weeks. Do not create variables for things that stay fixed.
+- Variable format: {"value": 5, "displayName": "Rounds", "unit": "minutes"}. The "unit" field is optional: "minutes" (value × 60 for seconds), "seconds" (value used as-is), or omit for unitless (rounds, repetitions). Use "minutes" for duration variables so users can set values like 5 instead of 300. Optional "min" and "max" fields constrain the allowed range.
+- Variables are defined in the stage's "variables" object and referenced in loops via the "variable" key or in targetDuration via "{varName}" syntax. You can also reference variables in speech text using {varName} and in pause duration_seconds using "{varName}".
 - You can create new variables and set targetDuration on sections as part of mutations. Always include the full variables object for the stage when adding or modifying variables.
+
+Conditions:
+- Conditions let segments be included or excluded based on variable values. They enable a single script to behave differently depending on the variables — e.g. only say "hold your breath" when the hold duration is above zero.
+- Conditions are defined in the variables object under a special "_conditions" key: {"_conditions": {"hasHold": {"variable": "holdDuration", "operator": ">=", "value": 1}}}
+- Supported operators: ">", "<", ">=", "<=", "==", "!=", "between" (uses "value" and "value2" for range)
+- Any segment (speech, pause, asset, loop) can have a "condition" field set to the name of a defined condition (e.g. "condition": "hasHold"). If the condition evaluates to false, that segment is skipped during playback.
+- Use conditions sparingly — only when the same script genuinely needs to behave differently based on a variable value. Don't create conditions where separate stages would be clearer.
 """
 
 PRACTICE_PROMPT = """

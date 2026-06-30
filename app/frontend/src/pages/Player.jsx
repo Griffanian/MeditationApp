@@ -16,6 +16,18 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function varSummary(variables) {
+  if (!variables) return null;
+  const entries = Object.entries(variables);
+  if (entries.length === 0) return null;
+  return entries.map(([k, v]) => {
+    const val = typeof v === 'object' ? v.value : v;
+    const unit = typeof v === 'object' && v.unit ? ` ${v.unit}` : '';
+    const display = typeof v === 'object' && v.displayName ? v.displayName : k;
+    return `${display}: ${val}${unit}`;
+  }).join(', ');
+}
+
 function itemDurationMinutes(item) {
   for (const v of Object.values(item.variables || {})) {
     if (typeof v === 'object' && v.unit === 'minutes' && v.value != null) return Number(v.value);
@@ -86,6 +98,145 @@ function buildTimeline(script, variables, components) {
   return timeline;
 }
 
+export function ProgrammeView() {
+  const { name } = useParams();
+  const navigate = useNavigate();
+  const [practice, setPractice] = useState(null);
+  const [completedDays, setCompletedDays] = useState({});
+  const [calendarWeekPage, setCalendarWeekPage] = useState(0);
+
+  useEffect(() => {
+    fetchPractice(name).then(p => {
+      p.items = migrateToWeeks(p.items);
+      setPractice(p);
+      if (p.progress) {
+        setCalendarWeekPage(Math.floor(p.progress.current_week / 4));
+      }
+      if (p.progress?.completed_days) {
+        setCompletedDays(p.progress.completed_days);
+      }
+    });
+  }, [name]);
+
+  if (!practice) return <div className="loading-page"><div className="loading-spinner" />Loading...</div>;
+
+  const weeks = practice.items || [];
+  if (weeks.length === 0) return <div className="player-empty">This programme has no content yet.</div>;
+
+  const allDays = [];
+  for (let wi = 0; wi < weeks.length; wi++) {
+    const wDays = weeks[wi]?.days || [];
+    for (let di = 0; di < wDays.length; di++) {
+      allDays.push({ wi, di });
+    }
+  }
+
+  const totalWeeks = weeks.length;
+  const viewSize = 4;
+  const startIdx = calendarWeekPage * viewSize;
+  const endIdx = Math.min(startIdx + viewSize, totalWeeks);
+  const visibleWeeks = weeks.slice(startIdx, endIdx);
+  const totalDays = allDays.length;
+  const completedCount = Object.keys(completedDays).length;
+
+  function goToDay(wi, di, stageIdx) {
+    const params = new URLSearchParams({ week: wi, day: di });
+    if (stageIdx != null) params.set('stage', stageIdx);
+    navigate(`/play/${name}?${params}`);
+  }
+
+  return (
+    <div className="player player-calendar">
+      <Link to="/practices" className="ep-back">&#x2190; Programmes</Link>
+
+      <div className="player-card">
+        <div className="player-card-header">
+          <h1 className="player-title">{practice.display_name}</h1>
+        </div>
+        <div className="player-meta">
+          <span>{totalWeeks} week{totalWeeks !== 1 ? 's' : ''}</span>
+          <span className="player-meta-sep">·</span>
+          <span>{totalDays} day{totalDays !== 1 ? 's' : ''}</span>
+          {completedCount > 0 && <>
+            <span className="player-meta-sep">·</span>
+            <span>{completedCount}/{totalDays} completed</span>
+          </>}
+        </div>
+
+        {/* Calendar navigation */}
+        <div className="prog-cal-toolbar">
+          <div className="prog-cal-nav">
+            <button className="prog-cal-nav-btn" disabled={calendarWeekPage === 0}
+              onClick={() => setCalendarWeekPage(p => p - 1)}>&#x2039;</button>
+            <span className="prog-cal-nav-label">
+              Week {startIdx + 1}{endIdx > startIdx + 1 ? `\u2013${endIdx}` : ''} of {totalWeeks}
+            </span>
+            <button className="prog-cal-nav-btn" disabled={endIdx >= totalWeeks}
+              onClick={() => setCalendarWeekPage(p => p + 1)}>&#x203A;</button>
+          </div>
+        </div>
+
+        {/* Calendar grid */}
+        <div className="prog-cal-grid">
+          <div className="prog-cal-header">
+            {Array.from({ length: 7 }, (_, i) => (
+              <div key={i} className="prog-cal-header-cell">Day {i + 1}</div>
+            ))}
+          </div>
+          <div className="prog-cal-body">
+            {visibleWeeks.map((wk, relWi) => {
+              const absWi = startIdx + relWi;
+              return (
+                <div key={absWi} className="prog-cal-week-section">
+                  <div className="prog-cal-week-label">
+                    <span>{wk.label}</span>
+                  </div>
+                  <div className="prog-cal-week-row">
+                    {wk.days.slice(0, 7).map((d, di) => {
+                      const dayItems = d.items || [];
+                      const isEmpty = dayItems.length === 0;
+                      const dKey = `${absWi}-${di}`;
+                      const isCompleted = !!completedDays[dKey];
+
+                      return (
+                        <div key={di}
+                          className={`prog-cal-day-cell${isEmpty ? ' empty' : ''}${isCompleted ? ' completed' : ''}`}
+                          onClick={() => { if (!isEmpty) goToDay(absWi, di); }}
+                          style={isEmpty ? undefined : { cursor: 'pointer' }}>
+                          <div className="prog-cal-day-cell-header">
+                            <span className="prog-cal-day-count">
+                              {isCompleted ? '\u2713 ' : ''}{dayItems.length > 0 ? `${dayItems.length} stage${dayItems.length !== 1 ? 's' : ''}` : ''}
+                            </span>
+                          </div>
+                          <div className="prog-cal-day-items">
+                            {dayItems.map((item, idx) => {
+                              const vars = varSummary(item.variables);
+                              return (
+                                <div key={item.id} className="prog-cal-item"
+                                  onClick={e => { e.stopPropagation(); goToDay(absWi, di, idx); }}
+                                  style={{ cursor: 'pointer' }}>
+                                  <div className="prog-cal-item-exercise">{item.meditation_display}</div>
+                                  <div className="prog-cal-item-stage">{item.stage_name}</div>
+                                  {vars && <div className="prog-cal-item-vars">{vars}</div>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {isEmpty && <div className="prog-cal-day-empty-label">Rest</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Player() {
   const { name } = useParams();
   const navigate = useNavigate();
@@ -93,6 +244,7 @@ export default function Player() {
   const [currentWeek, setCurrentWeek] = useState(0);
   const [currentDay, setCurrentDay] = useState(0);
   const [completedDays, setCompletedDays] = useState({});
+  const [autoplay, setAutoplay] = useState(false);
 
   // Playback state
   const [playIdx, setPlayIdx] = useState(-1);
@@ -108,6 +260,10 @@ export default function Player() {
   const [activeEntry, setActiveEntry] = useState(null);
   const [activeWordIdx, setActiveWordIdx] = useState(-1);
   const [countdown, setCountdown] = useState('');
+  const [wordsPerPage, setWordsPerPage] = useState(50);
+  const wordsRef = useRef(null);
+  const measuredRef = useRef(false);
+  const pendingStageRef = useRef(null);
 
   const audioRef = useRef(null);
   const droneRef = useRef(null);
@@ -116,6 +272,7 @@ export default function Player() {
   const stopRef = useRef(false);
   const gapTimerRef = useRef(null);
   const playIdxRef = useRef(-1);
+  const playedStagesRef = useRef(new Set());
   const preparedUrls = useRef({});
   const autoplayPending = useRef(false);
   const handlePlayRef = useRef(null);
@@ -135,7 +292,7 @@ export default function Player() {
       stage: p.get('stage'),
       from: p.get('from'),
     };
-    if (urlParamsRef.current.autoplay) autoplayPending.current = true;
+    if (urlParamsRef.current.autoplay || urlParamsRef.current.stage != null) autoplayPending.current = true;
     window.history.replaceState({}, '', window.location.pathname);
   }
 
@@ -144,6 +301,7 @@ export default function Player() {
     fetchPractice(name).then(p => {
       p.items = migrateToWeeks(p.items);
       setPractice(p);
+      if (urlParamsRef.current.autoplay) setAutoplay(true);
       if (hasUrlPos) {
         if (urlParamsRef.current.week !== null) setCurrentWeek(parseInt(urlParamsRef.current.week, 10));
         if (urlParamsRef.current.day !== null) setCurrentDay(parseInt(urlParamsRef.current.day, 10));
@@ -182,8 +340,31 @@ export default function Player() {
     };
   }, []);
 
-  // Stop playback when switching week/day
+  // Measure how many words fit in the box once, then chunk by that count
   useEffect(() => {
+    const container = wordsRef.current;
+    if (!container || measuredRef.current) return;
+    const boxHeight = container.clientHeight;
+    if (boxHeight <= 0 || container.children.length === 0) return;
+    // Find how many words fit before overflowing
+    let fitCount = container.children.length;
+    for (let i = 0; i < container.children.length; i++) {
+      if (container.children[i].offsetTop >= boxHeight) {
+        fitCount = i;
+        break;
+      }
+    }
+    if (fitCount > 0 && fitCount < container.children.length) {
+      setWordsPerPage(fitCount);
+      measuredRef.current = true;
+    }
+  });
+
+  // Stop playback when switching week/day; auto-start if autoplay is on
+  const autoplayRef = useRef(false);
+  autoplayRef.current = autoplay;
+  useEffect(() => {
+    playedStagesRef.current = new Set();
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     if (droneRef.current) { droneRef.current.stop(); droneRef.current = null; }
     if (nextAudioRef.current) { nextAudioRef.current = null; }
@@ -203,6 +384,13 @@ export default function Player() {
     setActiveEntry(null);
     setActiveWordIdx(-1);
     setCountdown('');
+    const stageToPlay = pendingStageRef.current;
+    pendingStageRef.current = null;
+    if (stageToPlay != null) {
+      setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
+    } else if (autoplayRef.current && practice) {
+      setTimeout(() => { if (handlePlayRef.current) handlePlayRef.current(); }, 0);
+    }
   }, [currentWeek, currentDay]);
 
   // Autoplay (optionally from a specific stage index)
@@ -216,8 +404,8 @@ export default function Player() {
     if (autoplayFromRef.current != null && handlePlayFromRef.current) {
       handlePlayFromRef.current(autoplayFromRef.current);
       autoplayFromRef.current = null;
-    } else if (autoplayStageRef.current != null && handlePlaySingleRef.current) {
-      handlePlaySingleRef.current(autoplayStageRef.current);
+    } else if (autoplayStageRef.current != null && handlePlayFromRef.current) {
+      handlePlayFromRef.current(autoplayStageRef.current);
       autoplayStageRef.current = null;
     } else if (handlePlayRef.current) {
       handlePlayRef.current();
@@ -401,10 +589,8 @@ export default function Player() {
   async function prepareOne(idx) {
     if (preparedUrls.current[idx]) return preparedUrls.current[idx];
     const item = items[idx];
-    if (Object.keys(item.variables || {}).length > 0) {
-      await saveStageVariables(item.meditation, item.stage_id, item.variables);
-    }
-    const data = await assembleStage(item.meditation, item.stage_id);
+    const vars = Object.keys(item.variables || {}).length > 0 ? item.variables : undefined;
+    const data = await assembleStage(item.meditation, item.stage_id, vars);
     const url = `${BASE}/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`;
     preparedUrls.current[idx] = url;
     return url;
@@ -432,7 +618,6 @@ export default function Player() {
 
   function playFromUrl(idx, single = false) {
     if (idx >= items.length || (single && idx !== playIdxRef.current)) {
-      if (!single) markDayCompleted();
       setStatus('idle');
       setPlayIdx(-1);
       setSingleMode(false);
@@ -442,6 +627,14 @@ export default function Player() {
       setActiveEntry(null);
       setActiveWordIdx(-1);
       setCountdown('');
+      // Autoplay: advance to next day
+      if (!single && autoplayRef.current) {
+        const flatIdx = allDays.findIndex(d => d.wi === currentWeek && d.di === currentDay);
+        if (flatIdx >= 0 && flatIdx < allDays.length - 1) {
+          const next = allDays[flatIdx + 1];
+          setTimeout(() => goToDay(next.wi, next.di), 1000);
+        }
+      }
       return;
     }
     if (stopRef.current) return;
@@ -470,8 +663,13 @@ export default function Player() {
 
     const onFinish = () => {
       audioRef.current = null;
+      playedStagesRef.current.add(idx);
+      // Mark day complete once all stages have been played
+      if (playedStagesRef.current.size >= items.length) {
+        markDayCompleted();
+      }
       if (!stopRef.current) {
-        if (single) {
+        if (single && !autoplayRef.current) {
           setStatus('idle');
           setPlayIdx(-1);
           setSingleMode(false);
@@ -614,7 +812,6 @@ export default function Player() {
     if (playIdx >= 0 && playIdx < items.length - 1) {
       playFromUrl(playIdx + 1);
     } else {
-      markDayCompleted();
       setStatus('idle');
       setPlayIdx(-1);
     }
@@ -640,23 +837,56 @@ export default function Player() {
     else if (stageLabel) contextLabel = stageLabel;
   }
 
+  // Compute flat list of all (weekIdx, dayIdx) pairs for prev/next navigation
+  const allDays = [];
+  for (let wi = 0; wi < weeks.length; wi++) {
+    const wDays = weeks[wi]?.days || [];
+    for (let di = 0; di < wDays.length; di++) {
+      allDays.push({ wi, di });
+    }
+  }
+  const currentFlatIdx = allDays.findIndex(d => d.wi === currentWeek && d.di === currentDay);
+  const hasPrevDay = currentFlatIdx > 0;
+  const hasNextDay = currentFlatIdx < allDays.length - 1;
+
+  function goToDay(wi, di) {
+    setCurrentWeek(wi);
+    setCurrentDay(di);
+    savePosition(wi, di, completedDays);
+  }
+
+  function goPrevDay() {
+    if (!hasPrevDay) return;
+    const prev = allDays[currentFlatIdx - 1];
+    goToDay(prev.wi, prev.di);
+  }
+
+  function goNextDay() {
+    if (!hasNextDay) return;
+    const next = allDays[currentFlatIdx + 1];
+    goToDay(next.wi, next.di);
+  }
+
   return (
     <div className="player">
-      <nav className="breadcrumb">
-        <Link to="/practices" className="breadcrumb-link">Programmes</Link>
-        <span className="breadcrumb-sep">/</span>
-        <Link to={`/practice/${name}`} className="breadcrumb-link">{practice.display_name}</Link>
-      </nav>
+      <Link to={`/programme/${name}`} className="ep-back">&#x2190; {practice.display_name}</Link>
 
       <div className="player-card">
         <div className="player-card-header">
-          <h1 className="player-title">{practice.display_name}</h1>
-          {isDayCompleted && <span className="player-completed-tick" title="Completed">✓</span>}
+          <h1 className="player-title">
+            <Link to={`/programme/${name}`} className="player-title-link">{practice.display_name}</Link>
+          </h1>
+          {isDayCompleted && <span className="player-completed-tick" title="Completed">&#x2713;</span>}
+        </div>
+
+        {/* Day navigation */}
+        <div className="player-day-nav">
+          <button className="player-day-nav-btn" disabled={!hasPrevDay} onClick={goPrevDay}>&#x2039;</button>
+          <span className="player-day-nav-label">{week?.label} — {day?.label}</span>
+          <button className="player-day-nav-btn" disabled={!hasNextDay} onClick={goNextDay}>&#x203A;</button>
         </div>
 
         <div className="player-meta">
-          <span className="player-meta-day">{week?.label} — {day?.label}</span>
-          <span className="player-meta-sep">·</span>
           <span className="player-meta-count">{items.length} stage{items.length !== 1 ? 's' : ''}</span>
           {(() => {
             const totalMins = items.reduce((sum, item) => sum + (itemDurationMinutes(item) || 0), 0);
@@ -697,7 +927,13 @@ export default function Player() {
           )}
         </div>
 
-
+        <button
+          className={`player-autoplay-toggle${autoplay ? ' active' : ''}`}
+          onClick={() => setAutoplay(a => !a)}
+          title={autoplay ? 'Autoplay on' : 'Autoplay off'}
+        >
+          Autoplay {autoplay ? 'on' : 'off'}
+        </button>
 
         {error && (
           <div className="player-bar-error">
@@ -709,36 +945,44 @@ export default function Player() {
         )}
 
         {/* Script display — always visible */}
-        <div className="ep-script-box">
-          {isActive && activeEntry ? (
-            <>
-              {contextLabel && <div className="ep-script-context">{contextLabel}</div>}
-
-              {activeEntry.type === 'speech' && (
-                <div className="ep-script-words">
-                  {activeEntry.words.map((w, i) => (
-                    <span key={i} className={`ep-word${i === activeWordIdx ? ' active' : ''}`}>{w} </span>
-                  ))}
-                </div>
-              )}
-
-              {(activeEntry.type === 'pause' || activeEntry.type === 'split_marker') && (
-                <div className="ep-script-pause">
-                  <span className="ep-script-pause-label">Pause</span>
-                  <span className="ep-script-countdown">{countdown}</span>
-                </div>
-              )}
-
-              {activeEntry.type === 'asset' && (
-                <div className="ep-script-pause">
-                  <span className="ep-script-pause-label">&#x266B;</span>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="ep-script-idle">Press play to begin</div>
-          )}
-        </div>
+        {isActive && activeEntry && activeEntry.type === 'speech' ? (
+          <div className="ep-script-box">
+            {contextLabel && <div className="ep-script-context">{contextLabel}</div>}
+            <div className="ep-script-words" ref={wordsRef}>
+              {(() => {
+                const idx = activeWordIdx >= 0 ? activeWordIdx : 0;
+                const page = Math.floor(idx / wordsPerPage);
+                const start = page * wordsPerPage;
+                const end = Math.min(start + wordsPerPage, activeEntry.words.length);
+                return activeEntry.words.slice(start, end).map((w, i) => {
+                  const realIdx = start + i;
+                  return <span key={realIdx} className={`ep-word${realIdx === activeWordIdx ? ' active' : ''}`}>{w} </span>;
+                });
+              })()}
+            </div>
+          </div>
+        ) : (
+          <div className="ep-script-box">
+            {isActive && activeEntry ? (
+              <>
+                {contextLabel && <div className="ep-script-context">{contextLabel}</div>}
+                {(activeEntry.type === 'pause' || activeEntry.type === 'split_marker') && (
+                  <div className="ep-script-pause">
+                    <span className="ep-script-pause-label">Pause</span>
+                    <span className="ep-script-countdown">{countdown}</span>
+                  </div>
+                )}
+                {activeEntry.type === 'asset' && (
+                  <div className="ep-script-pause">
+                    <span className="ep-script-pause-label">&#x266B;</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="ep-script-idle">Press play to begin</div>
+            )}
+          </div>
+        )}
 
         {/* Seek bar */}
         {isActive && (
@@ -769,7 +1013,7 @@ export default function Player() {
         <div className="player-stages">
           {items.map((item, idx) => {
             const isCurrent = idx === playIdx;
-            const isDone = playIdx >= 0 && idx < playIdx;
+            const isDone = playedStagesRef.current.has(idx);
             return (
               <div
                 key={item.id || idx}

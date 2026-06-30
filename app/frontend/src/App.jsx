@@ -4,7 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Practices from './pages/Practices';
 import Editor from './pages/Editor';
 import PracticeBuilder from './pages/PracticeBuilder';
-import Player from './pages/Player';
+import Player, { ProgrammeView } from './pages/Player';
 import ExercisePlayer from './pages/ExercisePlayer';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -159,6 +159,7 @@ export default function App() {
                 <Route path="/practices" element={<Practices />} />
                 <Route path="/edit/:name" element={<Editor />} />
                 <Route path="/practice/:name" element={authValue.canCreate ? <PracticeBuilder /> : <Navigate to="/practices" replace />} />
+                <Route path="/programme/:name" element={<ProgrammeView />} />
                 <Route path="/play/:name" element={<Player />} />
                 <Route path="/play-exercise/:name/:stageId" element={<ExercisePlayer />} />
                 <Route path="/history" element={<History />} />

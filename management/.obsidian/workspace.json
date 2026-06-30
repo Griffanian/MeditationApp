@@ -4,21 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "1b68e77cd8dde3e4",
+        "id": "b75c82c3eb5bc0a9",
         "type": "tabs",
         "children": [
           {
-            "id": "19b35cfccf05e958",
+            "id": "d8e4f2ab396cde60",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "meetings/2026-06-16_gaia-sthiram-meditation-practice-body-stillness-and-sensory-awareness.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "2026-06-16_gaia-sthiram-meditation-practice-body-stillness-and-sensory-awareness"
+              "title": "New tab"
             }
           }
         ]
@@ -187,11 +183,13 @@
       "darlal-switcher-plus:Open Symbols for the active editor": false
     }
   },
-  "active": "19b35cfccf05e958",
+  "active": "d8e4f2ab396cde60",
   "lastOpenFiles": [
-    "meetings/2026-06-23_special-forces-app-onboarding-user-wins-and-design-flow.md",
-    "meetings/2026-06-23_therapy-session-urges-shame-cycles-and-mindfulness-techniques-with-mentor.md",
     "meetings/2026-06-24_first-session-confidentiality-practice-overview-and-grounding-with-miles.md",
+    "meetings/2026-06-30_therapy-session-body-acceptance-mindfulness-practice-and-self-compassion-with-th.md",
+    "meetings/2026-06-16_gaia-sthiram-meditation-practice-body-stillness-and-sensory-awareness.md",
+    "meetings/2026-06-23_therapy-session-urges-shame-cycles-and-mindfulness-techniques-with-mentor.md",
+    "meetings/2026-06-23_special-forces-app-onboarding-user-wins-and-design-flow.md",
     "Onboarding Best Practices.md",
     "ideas/onboarding-design.md",
     "Users profiles.md",
@@ -214,8 +212,6 @@
     "resilient minds questions for whitelabelling.md",
     "contract-white-label-licence.md",
     "contract-content-creator.md",
-    "white-label-technical-spec.md",
-    "Organisations/Meditation Pro.md",
     "untitled folder",
     "Finances.xlsx",
     "Organisations",

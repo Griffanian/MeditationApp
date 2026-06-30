@@ -4140,6 +4140,10 @@ table.var-rec-table {
   margin: 0 auto;
 }
 
+.player.player-calendar {
+  max-width: 1100px;
+}
+
 .player-loading,
 .player-empty {
   padding: 40px;
@@ -4173,7 +4177,9 @@ table.var-rec-table {
 .player-card-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  text-align: center;
+  position: relative;
 }
 
 .player-title {
@@ -4183,7 +4189,23 @@ table.var-rec-table {
   font-weight: 600;
 }
 
+.player-title-link {
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.player-title-link:hover {
+  color: var(--accent);
+}
+
 .player-completed-tick {
+  position: absolute;
+  top: 0;
+  right: 0;
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -4195,6 +4217,48 @@ table.var-rec-table {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.player-day-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.player-day-nav-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-day-nav-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-medium);
+}
+
+.player-day-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.player-day-nav-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.prog-cal-day-cell.completed {
+  background: color-mix(in srgb, var(--success) 8%, transparent);
 }
 
 .player-meta {
@@ -4827,6 +4891,29 @@ table.var-rec-table {
   justify-content: center;
 }
 
+.player-autoplay-toggle {
+  display: block;
+  margin: 0 auto 12px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.player-autoplay-toggle:hover {
+  border-color: var(--border-medium);
+}
+
+.player-autoplay-toggle.active {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .ep-play-btn {
   width: 80px;
   height: 80px;
@@ -4899,8 +4986,9 @@ table.var-rec-table {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  gap: 8px;
 }
+
+
 
 .ep-script-context {
   font-size: 11px;
@@ -4908,6 +4996,8 @@ table.var-rec-table {
   letter-spacing: 0.5px;
   color: var(--accent);
   font-weight: 600;
+  text-align: center;
+  margin-bottom: 8px;
 }
 
 .ep-script-words {
@@ -8440,7 +8530,7 @@ body.onboarding-active {
     flex-wrap: wrap;
   }
 
-  /* Calendar grid — horizontal scroll on narrow screens */
+  /* Calendar grid — horizontal scroll on narrow screens (builder) */
   .prog-cal-grid {
     overflow-x: auto;
   }
@@ -8448,6 +8538,35 @@ body.onboarding-active {
   .prog-cal-header,
   .prog-cal-week-row {
     min-width: 700px;
+  }
+
+  /* Viewer calendar — fit to screen on mobile */
+  .player-calendar {
+    max-width: 100%;
+  }
+
+  .player-calendar .prog-cal-header,
+  .player-calendar .prog-cal-week-row {
+    min-width: 0;
+  }
+
+  .player-calendar .prog-cal-day-cell {
+    min-height: 80px;
+  }
+
+  .player-calendar .prog-cal-item-exercise,
+  .player-calendar .prog-cal-item-stage,
+  .player-calendar .prog-cal-item-vars {
+    font-size: 9px;
+  }
+
+  .player-calendar .prog-cal-day-count {
+    font-size: 9px;
+  }
+
+  .player-calendar .prog-cal-header-cell {
+    padding: 6px 4px;
+    font-size: 9px;
   }
 
   .prog-cal-toolbar {

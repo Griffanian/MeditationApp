@@ -31,9 +31,17 @@ For rhythmic breath cues, use a loop containing an asset and a pause. For exampl
 ]}
 
 Variables:
-- Create variables for any counts that a practitioner might want to adjust (number of rounds, breath counts, hold durations, etc.)
-- Each variable has a numeric "value" (the default) and a "displayName" for the UI
+- Variables exist to enable PROGRESSION — letting a coach increase difficulty over a programme (e.g. more rounds, longer holds between weeks). Be minimal: only create a variable when there is a clear knob a coach would turn. Do not create variables for things that stay fixed across the progression.
+- Each variable has a numeric "value" (the default) and a "displayName" for the UI. Optional "unit" field: "minutes" (value × 60 for seconds), "seconds" (value as-is), or omit for unitless (rounds, reps). Optional "min" and "max" for range constraints.
 - Reference variables in loops via the "variable" field — the loop's "repeat" should match the variable's default value
+- Variables can also be referenced in speech text using {varName} and in pause duration_seconds using "{varName}"
+
+Conditions:
+- Conditions let segments be included or excluded based on variable values, so a single script can handle different configurations (e.g. skip the "hold" section when hold duration is 0).
+- Define conditions in the variables object under "_conditions": {"condName": {"variable": "varName", "operator": ">=", "value": 1}}
+- Operators: ">", "<", ">=", "<=", "==", "!=", "between" (with "value" and "value2")
+- Any segment can have a "condition" field set to a condition name. If the condition is false, the segment is skipped.
+- Use conditions sparingly — only when the script genuinely needs to behave differently based on a variable.
 
 Guidelines:
 - Use sections (repeat: 1 loops with a label) to organize the script into logical parts

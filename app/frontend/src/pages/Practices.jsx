@@ -22,13 +22,27 @@ function getNextDay(prac) {
   const weeks = prac.items || [];
   const hasWeeks = weeks.length > 0 && weeks[0]?.days;
   if (!hasWeeks) return { week: 0, day: 0 };
+
+  // Build flat list of all days
+  const allDays = [];
   for (let wi = 0; wi < weeks.length; wi++) {
     const days = weeks[wi]?.days || [];
     for (let di = 0; di < days.length; di++) {
-      if (!completed[`${wi}-${di}`]) return { week: wi, day: di };
+      allDays.push({ week: wi, day: di });
     }
   }
-  return { week: 0, day: 0 };
+
+  // Find the latest completed day's position
+  let latestIdx = -1;
+  for (let i = 0; i < allDays.length; i++) {
+    const { week, day } = allDays[i];
+    if (completed[`${week}-${day}`]) latestIdx = i;
+  }
+
+  // Return the day after the latest completed, or the first day with content
+  const nextIdx = latestIdx + 1;
+  if (nextIdx < allDays.length) return allDays[nextIdx];
+  return allDays[0];
 }
 
 export default function Practices() {
@@ -173,7 +187,7 @@ export default function Practices() {
           return (
             <div key={prac.name} className="med-card">
               <div className="med-card-top">
-                <Link to={editable ? `/practice/${prac.name}?week=${getNextDay(prac).week}` : `/play/${prac.name}`} className="med-card-link">
+                <Link to={editable ? `/practice/${prac.name}?week=${getNextDay(prac).week}` : `/programme/${prac.name}`} className="med-card-link">
                   <span className="med-card-name">{prac.display_name}</span>
                 </Link>
                 {(editable || auth.canCreate) && (
@@ -245,11 +259,11 @@ export default function Practices() {
                 {(() => {
                   const progress = getProgress(prac);
                   const next = getNextDay(prac);
-                  return <Link to={`/play/${prac.name}?week=${next.week}&day=${next.day}`} className="prog-card-play-btn">
+                  return <Link to={`/play/${prac.name}?week=${next.week}&day=${next.day}&autoplay=1`} className="prog-card-play-btn">
                     &#x25B6; {progress ? 'Continue' : 'Start'}
                   </Link>;
                 })()}
-                <Link to={editable ? `/practice/${prac.name}?week=${getNextDay(prac).week}` : `/play/${prac.name}`} className="prog-card-edit-btn">{editable ? 'Edit' : 'View'}</Link>
+                <Link to={editable ? `/practice/${prac.name}?week=${getNextDay(prac).week}` : `/programme/${prac.name}`} className="prog-card-edit-btn">{editable ? 'Edit' : 'View'}</Link>
               </div>
             </div>
           );

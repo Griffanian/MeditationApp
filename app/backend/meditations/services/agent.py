@@ -32,18 +32,25 @@ Understanding the domain:
 - An "exercise" is a meditation technique with instructions and one or more "stages" (progression levels/variants, NOT sequential steps).
 - Each stage has a script (audio timeline) made of segments: speech, pause, asset, loop, split_marker.
 - A "section" is a loop with repeat: 1 and a label. Sections can have a targetDuration.
-- Variables let users adjust rounds, durations, etc. Format: {"value": 5, "displayName": "Rounds", "unit": "minutes"}.
+- Variables exist to enable PROGRESSION — letting the coach increase difficulty over a programme (e.g. more rounds, longer holds). Be minimal: only add a variable when there's a clear knob the coach would turn between programme weeks. Don't create variables for things that stay fixed.
+- Variable format: {"value": 5, "displayName": "Rounds", "unit": "minutes"}. Unit is optional: "minutes", "seconds", or omit for unitless (rounds, reps). Optional "min" and "max" fields for range constraints.
+- Variables can be referenced in speech text using {varName}, in pause duration_seconds using "{varName}", in loop repeat via the "variable" key, and in targetDuration via "{varName}".
 - A "programme" (practice) is a structured plan with weeks > days > items, where each item references an exercise stage.
 
 Script segment types:
-- speech (id, text)
-- pause (duration_seconds)
-- asset (file)
-- loop (variable, repeat OR targetDuration, segments, optional label, optional targetDurationUnit)
-- split_marker (optional multiplier)
+- speech (id, text, optional condition)
+- pause (duration_seconds, optional condition)
+- asset (file, optional condition)
+- loop (variable, repeat OR targetDuration, segments, optional label, optional targetDurationUnit, optional condition)
+- split_marker (optional multiplier, optional condition)
+
+Conditions:
+- Defined in the variables object under "_conditions": {"condName": {"variable": "varName", "operator": ">=", "value": 1}}
+- Operators: ">", "<", ">=", "<=", "==", "!=", "between" (with "value" and "value2")
+- Any segment can have a "condition" field referencing a named condition. If false, the segment is skipped during playback.
+- Use conditions sparingly — only when a single script genuinely needs to behave differently based on a variable.
 
 When creating/updating stage scripts, structure into sections: Setup, Main Practice, Cool Down.
-Use variables for natural knobs (rounds, duration). Don't overdo it.
 """
 
 EXERCISE_CONTEXT_PROMPT = """\
@@ -53,8 +60,9 @@ You are on the EXERCISE EDITOR page. The user is editing a specific meditation e
 Key rules for exercise modifications:
 - A "stage" represents a PROGRESSION LEVEL or VARIANT (e.g. beginner vs advanced), NOT a sequential step.
 - When updating instructions, provide the COMPLETE instructions object via update_meditation_instructions.
-- When updating a stage script, provide the COMPLETE script and variables via update_stage.
+- When updating a stage script, provide the COMPLETE script and variables (including _conditions if any) via update_stage.
 - Only use split_marker inside a section with targetDuration that contains a loop with a variable.
+- When adding conditions, define them in the variables under "_conditions" and reference them in segments via the "condition" field.
 """
 
 PRACTICE_CONTEXT_PROMPT = """\

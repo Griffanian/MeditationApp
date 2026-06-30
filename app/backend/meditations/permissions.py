@@ -53,9 +53,14 @@ def visible_qs(queryset, user):
         for items in Practice.objects.filter(
             shared_with=user
         ).values_list("items", flat=True):
-            for item in (items or []):
-                if "meditation" in item:
-                    shared_med_names.add(item["meditation"])
+            for entry in (items or []):
+                if "meditation" in entry:
+                    shared_med_names.add(entry["meditation"])
+                # weeks/days structure
+                for day in (entry.get("days") or []):
+                    for item in (day.get("items") or []):
+                        if "meditation" in item:
+                            shared_med_names.add(item["meditation"])
         if shared_med_names:
             q = q | Q(name__in=shared_med_names)
 
@@ -122,9 +127,13 @@ class CanViewContent(BasePermission):
         # Check if exercise belongs to a shared programme
         if hasattr(obj, 'category'):
             for practice in Practice.objects.filter(shared_with=request.user):
-                for item in (practice.items or []):
-                    if item.get("meditation") == obj.name:
+                for entry in (practice.items or []):
+                    if entry.get("meditation") == obj.name:
                         return True
+                    for day in (entry.get("days") or []):
+                        for item in (day.get("items") or []):
+                            if item.get("meditation") == obj.name:
+                                return True
         # Check stage assignments
         if hasattr(obj, 'category'):
             from .models import StageAssignment
