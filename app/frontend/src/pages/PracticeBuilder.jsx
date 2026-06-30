@@ -34,7 +34,7 @@ function formatTime(seconds) {
 
 function varSummary(variables) {
   if (!variables) return null;
-  const entries = Object.entries(variables);
+  const entries = Object.entries(variables).filter(([k]) => !k.startsWith('_'));
   if (entries.length === 0) return null;
   return entries.map(([k, v]) => {
     const val = typeof v === 'object' ? v.value : v;
@@ -505,7 +505,7 @@ export default function PracticeBuilder() {
                 <div className="day-edit-modal-empty">No stages yet. Add one below.</div>
               )}
               {editDayItems.map((item, idx) => {
-                const vars = Object.entries(item.variables || {});
+                const vars = Object.entries(item.variables || {}).filter(([k]) => !k.startsWith('_'));
                 const isDragOver = modalDragOver?.idx === idx;
                 const isDragging = modalDrag?.idx === idx;
 
@@ -664,11 +664,14 @@ export default function PracticeBuilder() {
                       <button key={stage.id} className="practice-picker-stage-btn"
                         onClick={() => addStage(pickerTarget.wi, pickerTarget.di, ex, stage)}>
                         {stage.name}
-                        {Object.keys(stage.variables || {}).length > 0 && (
-                          <span className="practice-picker-var-count">
-                            {Object.keys(stage.variables).length} var{Object.keys(stage.variables).length !== 1 ? 's' : ''}
-                          </span>
-                        )}
+                        {(() => {
+                          const varCount = Object.keys(stage.variables || {}).filter(k => !k.startsWith('_')).length;
+                          return varCount > 0 ? (
+                            <span className="practice-picker-var-count">
+                              {varCount} var{varCount !== 1 ? 's' : ''}
+                            </span>
+                          ) : null;
+                        })()}
                       </button>
                     ))}
                   </div>

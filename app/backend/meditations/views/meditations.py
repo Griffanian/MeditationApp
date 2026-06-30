@@ -86,6 +86,7 @@ class MeditationListView(APIView):
                     "id": stage_id,
                     "name": s.get("name", ""),
                     "variables": variables or {},
+                    "before_you_begin": stage_obj.before_you_begin if stage_obj else "",
                 })
             entry = {
                 "name": m.name,
@@ -623,6 +624,8 @@ class ChatView(APIView):
                                     stage.script = stage_data["script"]
                                 if "variables" in stage_data:
                                     stage.variables = stage_data["variables"]
+                                if "before_you_begin" in stage_data:
+                                    stage.before_you_begin = stage_data["before_you_begin"]
                                 stage.save()
                             except Exception as e:
                                 errors.append(

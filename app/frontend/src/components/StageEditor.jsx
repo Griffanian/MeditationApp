@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { extractInstruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item';
-import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, assembleStage, generateAllAudio } from '../api';
+import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, fetchBeforeYouBegin, saveBeforeYouBegin, assembleStage, generateAllAudio } from '../api';
+import MarkdownField from './MarkdownField';
 import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, setPlaybackVariables, computeMarkerDuration, registerExternalStop, unregisterExternalStop, unlockAudio } from '../playback';
 import { getClipboard, setClipboard } from '../clipboard';
 import { generateId, ensureIds, findById, findByIdWithContext, allIds, cloneWithNewIds, isDescendantOf } from '../segmentIds';
@@ -40,6 +41,17 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   const [variables, setVariables] = useState({});
   const [varRevision, setVarRevision] = useState(0);
   useEffect(() => { setPlaybackVariables(variables); }, [variables]);
+
+  const [beforeYouBegin, setBeforeYouBegin] = useState('');
+  const [bybCollapsed, setBybCollapsed] = useLocalState(`byb-collapsed-${meditationName}-${stageId}`, true);
+  const bybTimerRef = useRef(null);
+  function handleBybChange(text) {
+    setBeforeYouBegin(text);
+    if (bybTimerRef.current) clearTimeout(bybTimerRef.current);
+    bybTimerRef.current = setTimeout(() => {
+      saveBeforeYouBegin(meditationName, stageId, text);
+    }, 800);
+  }
 
   // Variable error detection — derived from variables state
   const UNIT_MULTS = { seconds: 1, minutes: 60, hours: 3600 };
@@ -309,6 +321,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
     }).finally(() => setLoadingTimeline(false));
     fetchStageComponents(meditationName, stageId).then(setComponents);
     fetchStageVariables(meditationName, stageId).then(setVariables).finally(() => setLoadingVars(false));
+    fetchBeforeYouBegin(meditationName, stageId).then(setBeforeYouBegin);
   }, [meditationName, stageId]);
 
   const save = useCallback(async (newScript) => {
@@ -836,6 +849,22 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
         )}
       </div>
       )}
+
+      <div className="stage-subsection">
+        <div className="section-header-row">
+          <div className="editor-section-label collapsible" onClick={() => setBybCollapsed(!bybCollapsed)}>
+            <span className={`chevron ${bybCollapsed ? 'collapsed' : ''}`}>▼</span> Before You Begin
+          </div>
+        </div>
+        {!bybCollapsed && (
+          <MarkdownField
+            value={beforeYouBegin}
+            onChange={handleBybChange}
+            placeholder="Add setup instructions shown before playback..."
+            readOnly={readOnly}
+          />
+        )}
+      </div>
 
       <div className="stage-subsection">
         <div className="section-header-row">

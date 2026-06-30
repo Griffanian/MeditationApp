@@ -58,6 +58,27 @@ class VariablesView(APIView):
         return Response({"status": "ok"})
 
 
+class BeforeYouBeginView(APIView):
+    def get(self, request, name, stage_id):
+        _, err = _check_med_perm(request, name)
+        if err:
+            return err
+        try:
+            stage = Stage.objects.get(meditation_id=name, stage_id=stage_id)
+            return Response({"before_you_begin": stage.before_you_begin})
+        except Stage.DoesNotExist:
+            return Response({"before_you_begin": ""})
+
+    def put(self, request, name, stage_id):
+        m, err = _check_med_perm(request, name, write=True)
+        if err:
+            return err
+        stage, _ = Stage.objects.get_or_create(meditation=m, stage_id=stage_id)
+        stage.before_you_begin = request.data.get("before_you_begin", "")
+        stage.save()
+        return Response({"status": "ok"})
+
+
 class GenerateStageScriptView(APIView):
     throttle_scope = "ai-generation"
 

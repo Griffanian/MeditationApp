@@ -1,14 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, assembleStage, logSession, BASE } from '../api';
+import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, fetchBeforeYouBegin, assembleStage, logSession, BASE } from '../api';
+import ReactMarkdown from 'react-markdown';
 import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration, unlockAudio } from '../playback';
-
-function formatTime(seconds) {
-  if (!seconds || !isFinite(seconds)) return '0:00';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
+import PlaybackCard from '../components/PlaybackCard';
 
 function collectLoops(segments, map = {}) {
   for (const seg of segments) {
@@ -89,34 +84,14 @@ export default function ExercisePlayer() {
   const [activeEntry, setActiveEntry] = useState(null);
   const [activeWordIdx, setActiveWordIdx] = useState(-1);
   const [countdown, setCountdown] = useState('');
+  const [beforeYouBegin, setBeforeYouBegin] = useState('');
+  const [showByb, setShowByb] = useState(false);
 
   const audioRef = useRef(null);
   const tickRef = useRef(null);
   const timelineRef = useRef([]);
   const wordTimestampsRef = useRef({});
   const audioUrlRef = useRef(null);
-  const wordsRef = useRef(null);
-  const measuredRef = useRef(false);
-  const [wordsPerPage, setWordsPerPage] = useState(50);
-
-  // Measure how many words fit in the box once, then chunk by that count
-  useEffect(() => {
-    const container = wordsRef.current;
-    if (!container || measuredRef.current) return;
-    const boxHeight = container.clientHeight;
-    if (boxHeight <= 0 || container.children.length === 0) return;
-    let fitCount = container.children.length;
-    for (let i = 0; i < container.children.length; i++) {
-      if (container.children[i].offsetTop >= boxHeight) {
-        fitCount = i;
-        break;
-      }
-    }
-    if (fitCount > 0 && fitCount < container.children.length) {
-      setWordsPerPage(fitCount);
-      measuredRef.current = true;
-    }
-  });
 
   // Load script, components, variables on mount
   useEffect(() => {
@@ -128,6 +103,9 @@ export default function ExercisePlayer() {
           fetchStageScript(name, stageId),
           fetchStageComponents(name, stageId),
           fetchStageVariables(name, stageId),
+          fetchBeforeYouBegin(name, stageId).then(byb => {
+            if (!cancelled && byb) { setBeforeYouBegin(byb); setShowByb(true); }
+          }),
           ...(!displayName ? [fetchMeta(name).then(m => {
             if (!cancelled) setDisplayName(m.display_name || name);
           })] : []),
@@ -304,9 +282,6 @@ export default function ExercisePlayer() {
     navigate(-1);
   }
 
-  const progress = duration > 0 ? (elapsed / duration) * 100 : 0;
-  const isActive = status === 'playing' || status === 'paused' || status === 'assembling';
-
   // Build context label
   let contextLabel = '';
   if (activeEntry) {
@@ -321,90 +296,43 @@ export default function ExercisePlayer() {
   }
 
   return (
-    <div className="exercise-player">
+    <div className="player">
+      {showByb && (
+        <div className="modal-overlay" onClick={() => setShowByb(false)}>
+          <div className="modal byb-modal" onClick={e => e.stopPropagation()}>
+            <div className="byb-modal-header">
+              <h3>Before You Begin</h3>
+              <button className="modal-close" onClick={() => setShowByb(false)}>×</button>
+            </div>
+            <div className="byb-modal-body">
+              <ReactMarkdown>{beforeYouBegin}</ReactMarkdown>
+            </div>
+            <button className="byb-modal-ready" onClick={() => setShowByb(false)}>Ready</button>
+          </div>
+        </div>
+      )}
       <button className="ep-back" onClick={handleBack}>&#x2190; Back</button>
 
-      <div className="ep-card">
-        <div className="ep-title">{displayName || name}</div>
-        {stageName && <div className="ep-stage">{stageName}</div>}
-
-        <div className="ep-controls">
-          {status === 'loading' && (
-            <button className="ep-play-btn ep-play-btn-disabled" disabled>
-              <span className="ep-play-icon ep-spin">&#x25CC;</span>
-            </button>
-          )}
-          {status === 'assembling' && (
-            <button className="ep-play-btn ep-play-btn-disabled" disabled>
-              <span className="ep-play-icon ep-spin">&#x25CC;</span>
-            </button>
-          )}
-          {(status === 'ready' || status === 'error') && (
-            <button className="ep-play-btn" onClick={handlePlay}>
-              <span className="ep-play-icon">&#x25B6;</span>
-            </button>
-          )}
-          {status === 'playing' && (
-            <button className="ep-play-btn" onClick={handlePause}>
-              <span className="ep-play-icon ep-pause-icon" />
-            </button>
-          )}
-          {status === 'paused' && (
-            <button className="ep-play-btn" onClick={handlePlay}>
-              <span className="ep-play-icon">&#x25B6;</span>
-            </button>
-          )}
+      <div className="player-card">
+        <div className="player-card-header">
+          <h1 className="player-title">{displayName || name}</h1>
         </div>
+        {stageName && <div className="player-meta"><span>{stageName}</span></div>}
 
-        {error && <div className="ep-error">{error}</div>}
-
-        {isActive && activeEntry && activeEntry.type === 'speech' ? (
-          <div className="ep-script-box">
-            {contextLabel && <div className="ep-script-context">{contextLabel}</div>}
-            <div className="ep-script-words" ref={wordsRef}>
-              {(() => {
-                const idx = activeWordIdx >= 0 ? activeWordIdx : 0;
-                const page = Math.floor(idx / wordsPerPage);
-                const start = page * wordsPerPage;
-                const end = Math.min(start + wordsPerPage, activeEntry.words.length);
-                return activeEntry.words.slice(start, end).map((w, i) => {
-                  const realIdx = start + i;
-                  return <span key={realIdx} className={`ep-word${realIdx === activeWordIdx ? ' active' : ''}`}>{w} </span>;
-                });
-              })()}
-            </div>
-          </div>
-        ) : isActive && activeEntry ? (
-          <div className="ep-script-box">
-            {contextLabel && <div className="ep-script-context">{contextLabel}</div>}
-            {(activeEntry.type === 'pause' || activeEntry.type === 'split_marker') && (
-              <div className="ep-script-pause">
-                <span className="ep-script-pause-label">Pause</span>
-                <span className="ep-script-countdown">{countdown}</span>
-              </div>
-            )}
-            {activeEntry.type === 'asset' && (
-              <div className="ep-script-pause">
-                <span className="ep-script-pause-label">&#x266B;</span>
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        <div className="ep-seek-bar">
-          <span className="ep-seek-time">{formatTime(elapsed)}</span>
-          <input
-            type="range"
-            className="ep-seek"
-            min="0"
-            max={duration || 1}
-            step="0.1"
-            value={elapsed}
-            style={{ '--progress': `${progress}%` }}
-            onChange={e => handleSeek(parseFloat(e.target.value))}
-          />
-          <span className="ep-seek-time">{status === 'loading' ? '...' : formatTime(duration)}</span>
-        </div>
+        <PlaybackCard
+          status={status}
+          elapsed={elapsed}
+          duration={duration}
+          activeEntry={activeEntry}
+          activeWordIdx={activeWordIdx}
+          countdown={countdown}
+          contextLabel={contextLabel}
+          error={error}
+          onPlay={handlePlay}
+          onPause={handlePause}
+          onSeek={handleSeek}
+          onDismissError={() => setError(null)}
+        />
       </div>
     </div>
   );

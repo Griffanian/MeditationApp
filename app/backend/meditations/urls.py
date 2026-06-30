@@ -95,6 +95,7 @@ urlpatterns = [
     # Stage script & variables
     path("api/meditations/<str:name>/stages/<str:stage_id>/script", scripts.StageScriptView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/variables", stages.VariablesView.as_view()),
+    path("api/meditations/<str:name>/stages/<str:stage_id>/before-you-begin", stages.BeforeYouBeginView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/generate-script", stages.GenerateStageScriptView.as_view()),
 
     # Stage components

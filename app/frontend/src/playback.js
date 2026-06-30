@@ -25,11 +25,14 @@ export function evaluateCondition(condition, variables) {
   }
   const { variable, operator, value } = condition;
   if (!variable || !operator || value == null) return true;
-  const resolved = resolveVar(variables[variable]);
+  const varVal = variables[variable];
+  const resolved = resolveVar(varVal);
   if (resolved == null) return true;
-  const threshold = Number(value);
+  // Resolve threshold in the same unit as the variable
+  const unitMult = (typeof varVal === 'object' && varVal.unit) ? (UNIT_MULTIPLIERS[varVal.unit] || 1) : 1;
+  const threshold = Number(value) * unitMult;
   if (operator === 'between') {
-    const t2 = Number(condition.value2);
+    const t2 = Number(condition.value2) * unitMult;
     if (isNaN(t2)) return true;
     return resolved >= threshold && resolved <= t2;
   }

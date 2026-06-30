@@ -250,6 +250,20 @@ export async function saveStageVariables(name, stageId, variables) {
   });
 }
 
+export async function fetchBeforeYouBegin(name, stageId) {
+  const res = await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/before-you-begin`);
+  const data = await safeJson(res, {});
+  return data.before_you_begin || '';
+}
+
+export async function saveBeforeYouBegin(name, stageId, text) {
+  await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/before-you-begin`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ before_you_begin: text }),
+  });
+}
+
 export async function fetchStageScript(name, stageId) {
   const res = await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/script`);
   return safeJson(res, []);

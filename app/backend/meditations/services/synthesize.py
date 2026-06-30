@@ -84,11 +84,17 @@ def _evaluate_condition(condition, variables: dict, stage_conditions: dict = Non
     if val is None:
         return True
     resolved = _resolve_var(val)
-    threshold = float(threshold)
+    # Resolve threshold in the same unit as the variable
+    if isinstance(val, dict) and val.get("unit"):
+        multiplier = UNIT_MULTIPLIERS.get(val["unit"], 1)
+        threshold = float(threshold) * multiplier
+    else:
+        threshold = float(threshold)
     if operator == "between":
         threshold2 = condition.get("value2")
         if threshold2 is None: return True
-        return threshold <= resolved <= float(threshold2)
+        threshold2 = float(threshold2) * (UNIT_MULTIPLIERS.get(val["unit"], 1) if isinstance(val, dict) and val.get("unit") else 1)
+        return threshold <= resolved <= threshold2
     if operator == ">": return resolved > threshold
     if operator == "<": return resolved < threshold
     if operator == ">=": return resolved >= threshold
@@ -896,8 +902,16 @@ def compute_variable_mins(meditation_name: str, stage_id: str) -> dict:
                 match = re.match(r"^\{(\w+)\}$", target)
                 if match and match.group(1) in stage_variables:
                     var_name = match.group(1)
+                    # Compute fixed content with the variable at its minimum (0)
+                    # so conditions that exclude segments at low values are respected
+                    min_test_vars = dict(merged_vars)
+                    var_data = stage_variables.get(var_name, {})
+                    if isinstance(var_data, dict):
+                        min_test_vars[var_name] = {**var_data, "value": 0}
+                    else:
+                        min_test_vars[var_name] = 0
                     fixed = _compute_duration(
-                        seg["segments"], merged_vars,
+                        seg["segments"], min_test_vars,
                         marker_duration=0,
                         comp_cache=comp_cache, asset_cache=asset_cache,
                     )

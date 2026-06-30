@@ -160,6 +160,7 @@ class PracticeStagesView(APIView):
                     "id": stage_id,
                     "name": s.get("name", ""),
                     "variables": variables or {},
+                    "before_you_begin": stage_obj.before_you_begin if stage_obj else "",
                 })
             if stages:
                 result.append({

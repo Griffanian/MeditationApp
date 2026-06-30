@@ -187,6 +187,7 @@ class Stage(models.Model):
     stage_id = models.CharField(max_length=200)
     script = models.JSONField(default=list, blank=True)
     variables = models.JSONField(default=dict, blank=True)
+    before_you_begin = models.TextField(default="", blank=True)
 
     class Meta:
         unique_together = ("meditation", "stage_id")

@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { fetchPractice, saveStageVariables, assembleStage, computeDurations, savePracticeProgress, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, BASE } from '../api';
+import { fetchPractice, saveStageVariables, assembleStage, computeDurations, savePracticeProgress, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, fetchBeforeYouBegin, BASE } from '../api';
+import ReactMarkdown from 'react-markdown';
 import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration, unlockAudio } from '../playback';
+import PlaybackCard from '../components/PlaybackCard';
 
 function migrateToWeeks(items) {
   if (!items || items.length === 0) return [];
@@ -18,7 +20,7 @@ function formatTime(seconds) {
 
 function varSummary(variables) {
   if (!variables) return null;
-  const entries = Object.entries(variables);
+  const entries = Object.entries(variables).filter(([k]) => !k.startsWith('_'));
   if (entries.length === 0) return null;
   return entries.map(([k, v]) => {
     const val = typeof v === 'object' ? v.value : v;
@@ -245,6 +247,8 @@ export default function Player() {
   const [currentDay, setCurrentDay] = useState(0);
   const [completedDays, setCompletedDays] = useState({});
   const [autoplay, setAutoplay] = useState(false);
+  const [bybContent, setBybContent] = useState('');
+  const [showByb, setShowByb] = useState(false);
 
   // Playback state
   const [playIdx, setPlayIdx] = useState(-1);
@@ -260,13 +264,9 @@ export default function Player() {
   const [activeEntry, setActiveEntry] = useState(null);
   const [activeWordIdx, setActiveWordIdx] = useState(-1);
   const [countdown, setCountdown] = useState('');
-  const [wordsPerPage, setWordsPerPage] = useState(50);
-  const wordsRef = useRef(null);
-  const measuredRef = useRef(false);
   const pendingStageRef = useRef(null);
 
   const audioRef = useRef(null);
-  const droneRef = useRef(null);
   const nextAudioRef = useRef(null);
   const timerRef = useRef(null);
   const stopRef = useRef(false);
@@ -336,29 +336,8 @@ export default function Player() {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       if (timerRef.current) clearInterval(timerRef.current);
       if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
-      if (droneRef.current) { droneRef.current.stop(); droneRef.current = null; }
     };
   }, []);
-
-  // Measure how many words fit in the box once, then chunk by that count
-  useEffect(() => {
-    const container = wordsRef.current;
-    if (!container || measuredRef.current) return;
-    const boxHeight = container.clientHeight;
-    if (boxHeight <= 0 || container.children.length === 0) return;
-    // Find how many words fit before overflowing
-    let fitCount = container.children.length;
-    for (let i = 0; i < container.children.length; i++) {
-      if (container.children[i].offsetTop >= boxHeight) {
-        fitCount = i;
-        break;
-      }
-    }
-    if (fitCount > 0 && fitCount < container.children.length) {
-      setWordsPerPage(fitCount);
-      measuredRef.current = true;
-    }
-  });
 
   // Stop playback when switching week/day; auto-start if autoplay is on
   const autoplayRef = useRef(false);
@@ -366,7 +345,6 @@ export default function Player() {
   useEffect(() => {
     playedStagesRef.current = new Set();
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    if (droneRef.current) { droneRef.current.stop(); droneRef.current = null; }
     if (nextAudioRef.current) { nextAudioRef.current = null; }
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
@@ -386,10 +364,30 @@ export default function Player() {
     setCountdown('');
     const stageToPlay = pendingStageRef.current;
     pendingStageRef.current = null;
-    if (stageToPlay != null) {
+    // Fetch before_you_begin for stages in this day
+    if (practice) {
+      const week = (practice.items || [])[currentWeek];
+      const dayData = week?.days?.[currentDay];
+      const dayItems = dayData?.items || [];
+      const uniqueStages = [...new Set(dayItems.map(i => `${i.meditation}/${i.stage_id}`))];
+      Promise.all(
+        uniqueStages.map(key => {
+          const [med, sid] = key.split('/');
+          return fetchBeforeYouBegin(med, sid).catch(() => '');
+        })
+      ).then(results => {
+        const combined = results.filter(Boolean).join('\n\n---\n\n');
+        setBybContent(combined);
+        if (combined) {
+          // Show modal and defer playback until dismissed
+          if (stageToPlay != null) pendingStageRef.current = stageToPlay;
+          setShowByb(true);
+        } else if (stageToPlay != null) {
+          setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
+        }
+      });
+    } else if (stageToPlay != null) {
       setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
-    } else if (autoplayRef.current && practice) {
-      setTimeout(() => { if (handlePlayRef.current) handlePlayRef.current(); }, 0);
     }
   }, [currentWeek, currentDay]);
 
@@ -525,72 +523,23 @@ export default function Player() {
 
   // --- Background drone (barely perceptible "still playing" signal) ---
 
-  function startDrone() {
-    if (droneRef.current) return;
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const master = ctx.createGain();
-      master.gain.value = 0;
-      master.connect(ctx.destination);
-
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = 120;
-      filter.connect(master);
-
-      const osc1 = ctx.createOscillator();
-      osc1.type = 'sine';
-      osc1.frequency.value = 55;
-      osc1.connect(filter);
-      osc1.start();
-
-      const osc2 = ctx.createOscillator();
-      osc2.type = 'sine';
-      osc2.frequency.value = 83;
-      const osc2Gain = ctx.createGain();
-      osc2Gain.gain.value = 0.5;
-      osc2.connect(osc2Gain);
-      osc2Gain.connect(filter);
-      osc2.start();
-
-      // Fade in over 2 seconds
-      master.gain.setValueAtTime(0, ctx.currentTime);
-      master.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 2);
-
-      droneRef.current = {
-        ctx, master,
-        resume() {
-          if (ctx.state === 'suspended') ctx.resume();
-          master.gain.cancelScheduledValues(ctx.currentTime);
-          master.gain.setValueAtTime(master.gain.value, ctx.currentTime);
-          master.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 1);
-        },
-        pause() {
-          master.gain.cancelScheduledValues(ctx.currentTime);
-          master.gain.setValueAtTime(master.gain.value, ctx.currentTime);
-          master.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
-        },
-        stop() {
-          try { osc1.stop(); osc2.stop(); ctx.close(); } catch {}
-        },
-      };
-    } catch {}
-  }
-
-  function stopDrone() {
-    if (droneRef.current) {
-      droneRef.current.stop();
-      droneRef.current = null;
-    }
-  }
-
   // --- Prepare / play ---
 
   async function prepareOne(idx) {
     if (preparedUrls.current[idx]) return preparedUrls.current[idx];
     const item = items[idx];
     const vars = Object.keys(item.variables || {}).length > 0 ? item.variables : undefined;
-    const data = await assembleStage(item.meditation, item.stage_id, vars);
+    let data;
+    try {
+      data = await assembleStage(item.meditation, item.stage_id, vars);
+    } catch (err) {
+      // If assembly fails with overrides, retry without them (uses stage defaults)
+      if (vars) {
+        data = await assembleStage(item.meditation, item.stage_id);
+      } else {
+        throw err;
+      }
+    }
     const url = `${BASE}/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`;
     preparedUrls.current[idx] = url;
     return url;
@@ -611,6 +560,7 @@ export default function Player() {
     const url = preparedUrls.current[nextIdx];
     if (!url) return;
     const next = new Audio(url);
+    next.crossOrigin = 'anonymous';
     next.preload = 'auto';
     next.load();
     nextAudioRef.current = { idx: nextIdx, audio: next };
@@ -622,19 +572,11 @@ export default function Player() {
       setPlayIdx(-1);
       setSingleMode(false);
       stopTimer();
-      stopDrone();
+
       timelineRef.current = null;
       setActiveEntry(null);
       setActiveWordIdx(-1);
       setCountdown('');
-      // Autoplay: advance to next day
-      if (!single && autoplayRef.current) {
-        const flatIdx = allDays.findIndex(d => d.wi === currentWeek && d.di === currentDay);
-        if (flatIdx >= 0 && flatIdx < allDays.length - 1) {
-          const next = allDays[flatIdx + 1];
-          setTimeout(() => goToDay(next.wi, next.di), 1000);
-        }
-      }
       return;
     }
     if (stopRef.current) return;
@@ -644,7 +586,7 @@ export default function Player() {
     setElapsed(0);
     setDuration(0);
     setStatus('playing');
-    startDrone();
+
 
     // Load script timeline for this stage
     loadStageTimeline(idx);
@@ -656,6 +598,7 @@ export default function Player() {
     } else {
       audio = new Audio(preparedUrls.current[idx]);
     }
+
 
     audioRef.current = audio;
     startTimer();
@@ -674,7 +617,7 @@ export default function Player() {
           setPlayIdx(-1);
           setSingleMode(false);
           stopTimer();
-          stopDrone();
+    
           timelineRef.current = null;
           setActiveEntry(null);
         } else {
@@ -697,7 +640,6 @@ export default function Player() {
   async function handlePlay() {
     if (status === 'paused' && audioRef.current) {
       audioRef.current.play();
-      if (droneRef.current) droneRef.current.resume();
       setStatus('playing');
       startTimer();
       return;
@@ -779,7 +721,6 @@ export default function Player() {
   function handlePause() {
     if (audioRef.current && status === 'playing') {
       audioRef.current.pause();
-      if (droneRef.current) droneRef.current.pause();
       setStatus('paused');
       stopTimer();
     }
@@ -790,7 +731,6 @@ export default function Player() {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     if (nextAudioRef.current) { nextAudioRef.current = null; }
     if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
-    stopDrone();
     stopTimer();
     setStatus('idle');
     setPlayIdx(-1);
@@ -817,8 +757,6 @@ export default function Player() {
     }
   }
 
-  const progress = duration > 0 ? (elapsed / duration) * 100 : 0;
-  const isActive = status !== 'idle' && status !== 'error';
 
   // Build context label
   let contextLabel = '';
@@ -869,6 +807,27 @@ export default function Player() {
 
   return (
     <div className="player">
+      {showByb && (
+        <div className="modal-overlay" onClick={() => setShowByb(false)}>
+          <div className="modal byb-modal" onClick={e => e.stopPropagation()}>
+            <div className="byb-modal-header">
+              <h3>Before You Begin</h3>
+              <button className="modal-close" onClick={() => setShowByb(false)}>×</button>
+            </div>
+            <div className="byb-modal-body">
+              <ReactMarkdown>{bybContent}</ReactMarkdown>
+            </div>
+            <button className="byb-modal-ready" onClick={() => {
+              setShowByb(false);
+              const stageToPlay = pendingStageRef.current;
+              pendingStageRef.current = null;
+              if (stageToPlay != null) {
+                setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
+              }
+            }}>Ready</button>
+          </div>
+        </div>
+      )}
       <Link to={`/programme/${name}`} className="ep-back">&#x2190; {practice.display_name}</Link>
 
       <div className="player-card">
@@ -898,116 +857,35 @@ export default function Player() {
           })()}
         </div>
 
-        {/* ExercisePlayer-style controls */}
-        <div className="ep-controls">
-          {status === 'idle' && (
-            <button className="ep-play-btn" onClick={handlePlay} disabled={items.length === 0}>
-              <span className="ep-play-icon">&#x25B6;</span>
-            </button>
-          )}
-          {status === 'assembling' && (
-            <button className="ep-play-btn ep-play-btn-disabled" disabled>
-              <span className="ep-play-icon ep-spin">&#x25CC;</span>
-            </button>
-          )}
-          {status === 'playing' && (
-            <button className="ep-play-btn" onClick={handlePause}>
-              <span className="ep-play-icon ep-pause-icon" />
-            </button>
-          )}
-          {status === 'paused' && (
-            <button className="ep-play-btn" onClick={handlePlay}>
-              <span className="ep-play-icon">&#x25B6;</span>
-            </button>
-          )}
-          {status === 'between' && (
-            <button className="ep-play-btn ep-play-btn-disabled" disabled>
-              <span className="ep-play-icon ep-spin">&#x25CC;</span>
-            </button>
-          )}
-        </div>
-
-        <button
-          className={`player-autoplay-toggle${autoplay ? ' active' : ''}`}
-          onClick={() => setAutoplay(a => !a)}
-          title={autoplay ? 'Autoplay on' : 'Autoplay off'}
+        <PlaybackCard
+          status={status}
+          elapsed={elapsed}
+          duration={duration}
+          activeEntry={activeEntry}
+          activeWordIdx={activeWordIdx}
+          countdown={countdown}
+          contextLabel={contextLabel}
+          error={error ? error.message : null}
+          errorLabel={error ? items[error.idx]?.meditation_display : null}
+          onPlay={handlePlay}
+          onPause={handlePause}
+          onSeek={t => {
+            if (audioRef.current) {
+              audioRef.current.currentTime = t;
+              setElapsed(t);
+              updateScriptDisplay(t);
+            }
+          }}
+          onDismissError={() => setError(null)}
         >
-          Autoplay {autoplay ? 'on' : 'off'}
-        </button>
-
-        {error && (
-          <div className="player-bar-error">
-            <span className="player-bar-error-msg">{items[error.idx]?.meditation_display}: {error.message}</span>
-            <div className="player-bar-error-actions">
-              <button className="player-bar-error-btn" onClick={() => setError(null)}>Dismiss</button>
-            </div>
-          </div>
-        )}
-
-        {/* Script display — always visible */}
-        {isActive && activeEntry && activeEntry.type === 'speech' ? (
-          <div className="ep-script-box">
-            {contextLabel && <div className="ep-script-context">{contextLabel}</div>}
-            <div className="ep-script-words" ref={wordsRef}>
-              {(() => {
-                const idx = activeWordIdx >= 0 ? activeWordIdx : 0;
-                const page = Math.floor(idx / wordsPerPage);
-                const start = page * wordsPerPage;
-                const end = Math.min(start + wordsPerPage, activeEntry.words.length);
-                return activeEntry.words.slice(start, end).map((w, i) => {
-                  const realIdx = start + i;
-                  return <span key={realIdx} className={`ep-word${realIdx === activeWordIdx ? ' active' : ''}`}>{w} </span>;
-                });
-              })()}
-            </div>
-          </div>
-        ) : (
-          <div className="ep-script-box">
-            {isActive && activeEntry ? (
-              <>
-                {contextLabel && <div className="ep-script-context">{contextLabel}</div>}
-                {(activeEntry.type === 'pause' || activeEntry.type === 'split_marker') && (
-                  <div className="ep-script-pause">
-                    <span className="ep-script-pause-label">Pause</span>
-                    <span className="ep-script-countdown">{countdown}</span>
-                  </div>
-                )}
-                {activeEntry.type === 'asset' && (
-                  <div className="ep-script-pause">
-                    <span className="ep-script-pause-label">&#x266B;</span>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="ep-script-idle">Press play to begin</div>
-            )}
-          </div>
-        )}
-
-        {/* Seek bar */}
-        {isActive && (
-          <div className="ep-seek-bar">
-            <span className="ep-seek-time">{formatTime(elapsed)}</span>
-            <input
-              type="range"
-              className="ep-seek"
-              min="0"
-              max={duration || 1}
-              step="0.1"
-              value={elapsed}
-              style={{ '--progress': `${progress}%` }}
-              onChange={e => {
-                const t = parseFloat(e.target.value);
-                if (audioRef.current) {
-                  audioRef.current.currentTime = t;
-                  setElapsed(t);
-                  updateScriptDisplay(t);
-                }
-              }}
-            />
-            <span className="ep-seek-time">{formatTime(duration)}</span>
-          </div>
-        )}
+          <button
+            className={`player-autoplay-toggle${autoplay ? ' active' : ''}`}
+            onClick={() => setAutoplay(a => !a)}
+            title={autoplay ? 'Autoplay on' : 'Autoplay off'}
+          >
+            Autoplay {autoplay ? 'on' : 'off'}
+          </button>
+        </PlaybackCard>
 
         {/* Stage list */}
         <div className="player-stages">
