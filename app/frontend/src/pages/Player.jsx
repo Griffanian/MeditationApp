@@ -411,7 +411,7 @@ export default function Player() {
         setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
       }
     }
-  }, [currentWeek, currentDay]);
+  }, [practice, currentWeek, currentDay]);
 
   // Autoplay (optionally from a specific stage index)
   const autoplayStageRef = useRef(urlParamsRef.current.stage != null ? parseInt(urlParamsRef.current.stage, 10) : null);
@@ -419,7 +419,8 @@ export default function Player() {
   const handlePlaySingleRef = useRef(null);
   const handlePlayFromRef = useRef(null);
   useEffect(() => {
-    if (!practice || !autoplayPending.current) return;
+    if (!practice || !autoplayPending.current || bybLoading) return;
+    if (showByb) return; // Wait for user to dismiss BYB modal first
     autoplayPending.current = false;
     if (autoplayFromRef.current != null && handlePlayFromRef.current) {
       handlePlayFromRef.current(autoplayFromRef.current);
@@ -430,7 +431,7 @@ export default function Player() {
     } else if (handlePlayRef.current) {
       handlePlayRef.current();
     }
-  }, [practice]);
+  }, [practice, bybLoading, showByb]);
 
   if (!practice) return <div className="loading-page"><div className="loading-spinner" />Loading player...</div>;
 
@@ -590,7 +591,7 @@ export default function Player() {
     nextAudioRef.current = { idx: nextIdx, audio: next };
   }
 
-  function playFromUrl(idx, single = false) {
+  async function playFromUrl(idx, single = false) {
     if (idx >= items.length || (single && idx !== playIdxRef.current)) {
       setStatus('idle');
       setPlayIdx(-1);
@@ -611,15 +612,15 @@ export default function Player() {
     setDuration(0);
     setStatus('playing');
 
-    // Clear old timeline before loading new one to prevent stale subtitle display
+    // Clear old timeline and load new one before starting audio
     timelineRef.current = null;
     setActiveEntry(null);
     setActiveWordIdx(-1);
     setCountdown('');
     wordTimestampsRef.current = {};
 
-    // Load script timeline for this stage
-    loadStageTimeline(idx);
+    await loadStageTimeline(idx);
+    if (stopRef.current) return;
 
     let audio;
     if (nextAudioRef.current && nextAudioRef.current.idx === idx) {
@@ -629,7 +630,6 @@ export default function Player() {
       audio = new Audio(preparedUrls.current[idx]);
     }
 
-
     audioRef.current = audio;
     startTimer();
     preloadNext(idx);
@@ -637,7 +637,6 @@ export default function Player() {
     const onFinish = () => {
       audioRef.current = null;
       playedStagesRef.current.add(idx);
-      // Mark day complete once all stages have been played
       if (playedStagesRef.current.size >= items.length) {
         markDayCompleted();
       }
@@ -647,7 +646,7 @@ export default function Player() {
           setPlayIdx(-1);
           setSingleMode(false);
           stopTimer();
-    
+
           timelineRef.current = null;
           setActiveEntry(null);
         } else {
