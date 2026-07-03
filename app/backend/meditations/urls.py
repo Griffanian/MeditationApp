@@ -81,6 +81,9 @@ urlpatterns = [
     path("api/meditations/<str:name>/generate-audio/<str:seg_id>", components.RootGenerateAudioView.as_view()),
     path("api/meditations/<str:name>/upload-component/<str:seg_id>", components.RootUploadComponentView.as_view()),
 
+    # Cached outputs check
+    path("api/check-cached-outputs", assembly.CheckCachedOutputsView.as_view()),
+
     # Durations
     path("api/stage-durations", assembly.StageDurationsView.as_view()),
     path("api/compute-durations", assembly.ComputeDurationsView.as_view()),

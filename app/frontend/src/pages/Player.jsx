@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { fetchPractice, saveStageVariables, assembleStage, computeDurations, savePracticeProgress, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, fetchBeforeYouBegin, BASE } from '../api';
+import { fetchPractice, saveStageVariables, assembleStage, computeDurations, savePracticeProgress, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, fetchBeforeYouBegin, checkCachedOutputs, BASE } from '../api';
 import ReactMarkdown from 'react-markdown';
 import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration, unlockAudio } from '../playback';
 import PlaybackCard from '../components/PlaybackCard';
@@ -249,6 +249,7 @@ export default function Player() {
   const [autoplay, setAutoplay] = useState(false);
   const [bybContent, setBybContent] = useState('');
   const [showByb, setShowByb] = useState(false);
+  const [bybLoading, setBybLoading] = useState(true);
 
   // Playback state
   const [playIdx, setPlayIdx] = useState(-1);
@@ -362,13 +363,31 @@ export default function Player() {
     setActiveEntry(null);
     setActiveWordIdx(-1);
     setCountdown('');
+    setBybLoading(true);
     const stageToPlay = pendingStageRef.current;
     pendingStageRef.current = null;
-    // Fetch before_you_begin for stages in this day
+    // Check for pre-assembled cached audio on day load
     if (practice) {
       const week = (practice.items || [])[currentWeek];
       const dayData = week?.days?.[currentDay];
       const dayItems = dayData?.items || [];
+      if (dayItems.length > 0) {
+        checkCachedOutputs(dayItems.map(i => ({
+          meditation: i.meditation,
+          stage_id: i.stage_id,
+          variables: i.variables,
+        }))).then(cached => {
+          for (const [idx, data] of Object.entries(cached)) {
+            const i = parseInt(idx);
+            const item = dayItems[i];
+            if (item && data.filename) {
+              preparedUrls.current[i] = `${BASE}/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`;
+            }
+          }
+          const n = Object.keys(cached).length;
+          if (n > 0) console.log(`[playback] ${n}/${dayItems.length} stages pre-cached`);
+        }).catch(() => {});
+      }
       const uniqueStages = [...new Set(dayItems.map(i => `${i.meditation}/${i.stage_id}`))];
       Promise.all(
         uniqueStages.map(key => {
@@ -378,16 +397,19 @@ export default function Player() {
       ).then(results => {
         const combined = results.filter(Boolean).join('\n\n---\n\n');
         setBybContent(combined);
+        setBybLoading(false);
         if (combined) {
-          // Show modal and defer playback until dismissed
           if (stageToPlay != null) pendingStageRef.current = stageToPlay;
           setShowByb(true);
         } else if (stageToPlay != null) {
           setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
         }
-      });
-    } else if (stageToPlay != null) {
-      setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
+      }).catch(() => setBybLoading(false));
+    } else {
+      setBybLoading(false);
+      if (stageToPlay != null) {
+        setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
+      }
     }
   }, [currentWeek, currentDay]);
 
@@ -529,6 +551,7 @@ export default function Player() {
     if (preparedUrls.current[idx]) return preparedUrls.current[idx];
     const item = items[idx];
     const vars = Object.keys(item.variables || {}).length > 0 ? item.variables : undefined;
+    const t0 = performance.now();
     let data;
     try {
       data = await assembleStage(item.meditation, item.stage_id, vars);
@@ -540,6 +563,7 @@ export default function Player() {
         throw err;
       }
     }
+    console.log(`[playback] prepareOne(${idx}) assemble: ${Math.round(performance.now() - t0)}ms`, data.timings_ms || {});
     const url = `${BASE}/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`;
     preparedUrls.current[idx] = url;
     return url;
@@ -587,6 +611,12 @@ export default function Player() {
     setDuration(0);
     setStatus('playing');
 
+    // Clear old timeline before loading new one to prevent stale subtitle display
+    timelineRef.current = null;
+    setActiveEntry(null);
+    setActiveWordIdx(-1);
+    setCountdown('');
+    wordTimestampsRef.current = {};
 
     // Load script timeline for this stage
     loadStageTimeline(idx);
@@ -651,6 +681,7 @@ export default function Player() {
 
     setStatus('assembling');
     setPlayIdx(0);
+    const t0 = performance.now();
     try {
       await prepareOne(0);
     } catch (err) {
@@ -661,6 +692,7 @@ export default function Player() {
     }
     if (stopRef.current) return;
 
+    console.log(`[playback] handlePlay total-to-play: ${Math.round(performance.now() - t0)}ms`);
     playFromUrl(0);
     prepareAll();
   }
@@ -858,7 +890,7 @@ export default function Player() {
         </div>
 
         <PlaybackCard
-          status={status}
+          status={bybLoading && status === 'idle' ? 'loading' : status}
           elapsed={elapsed}
           duration={duration}
           activeEntry={activeEntry}

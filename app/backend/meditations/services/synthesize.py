@@ -234,8 +234,6 @@ def generate_components(
         Stage, VariableRecording, Voice,
     )
 
-    client = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
-
     meditation = Meditation.objects.get(name=meditation_name)
     stage = None
     stage_variables = {}
@@ -254,54 +252,84 @@ def generate_components(
     speech_segments = _collect_speech_segments(script)
     total = len(speech_segments)
 
-    for i, (seg_id, seg_info) in enumerate(speech_segments.items()):
+    # --- First pass: collect text_hashes and seg_ids we need ---
+    seg_data = []
+    text_hashes_needed = set()
+    seg_ids_needed = set()
+    for seg_id, seg_info in speech_segments.items():
         if only_seg_ids is not None and seg_id not in only_seg_ids:
             continue
-
         text_template = seg_info["text"]
         direction = seg_info["direction"]
         var_refs = _get_stage_var_refs(text_template, stage_variables)
-
-        # Substitute all variables to get the final spoken text
         text = _substitute_variables(text_template, variables)
         text_hash = _tts_hash(text, direction, voice_id)
+        seg_data.append((seg_id, seg_info, text, direction, text_hash, var_refs))
+        text_hashes_needed.add(text_hash)
+        seg_ids_needed.add(seg_id)
+
+    # --- Bulk-load existing data (3 queries instead of 2N) ---
+    clip_map = {
+        clip.text_hash: clip
+        for clip in GeneratedVoiceClip.objects.filter(pk__in=text_hashes_needed)
+    }
+    ssa_map = {
+        ssa.seg_id: ssa
+        for ssa in SpeechSegmentAudio.objects.filter(
+            meditation=meditation, stage=stage, seg_id__in=seg_ids_needed,
+        ).select_related("audio_clip")
+    }
+    vr_map = {}
+    for vr in VariableRecording.objects.filter(
+        meditation=meditation, stage=stage, seg_id__in=seg_ids_needed,
+    ).select_related("audio_clip"):
+        vr_map[(vr.seg_id, vr.variable_key)] = vr
+
+    # ElevenLabs client — only initialise if we actually need to generate
+    client = None
+
+    # --- Second pass: process each segment using preloaded data ---
+    for i, (seg_id, seg_info, text, direction, text_hash, var_refs) in enumerate(seg_data):
+        existing_clip = clip_map.get(text_hash)
 
         if var_refs:
-            # Variable segment — create VariableRecording rows
             _generate_variable_segment(
                 client, meditation, stage, seg_id, text, direction,
                 text_hash, voice_id, voice_obj, var_refs, variables,
-                i, total,
+                i, total, existing_clip=existing_clip, vr_map=vr_map,
             )
         else:
-            # Fixed segment — create/update SpeechSegmentAudio
             _generate_fixed_segment(
                 client, meditation, stage, seg_id, text, direction,
                 text_hash, voice_id, voice_obj, i, total,
+                existing_clip=existing_clip, existing_ssa=ssa_map.get(seg_id),
             )
 
 
 def _generate_fixed_segment(
     client, meditation, stage, seg_id, text, direction,
     text_hash, voice_id, voice_obj, i, total,
+    existing_clip=None, existing_ssa=None,
 ):
     from meditations.models import GeneratedVoiceClip, SpeechSegmentAudio
 
-    existing_clip = GeneratedVoiceClip.objects.filter(pk=text_hash).first()
-    ssa, _ = SpeechSegmentAudio.objects.get_or_create(
-        meditation=meditation, stage=stage, seg_id=seg_id,
-    )
+    ssa = existing_ssa
+    if ssa is None:
+        ssa, _ = SpeechSegmentAudio.objects.get_or_create(
+            meditation=meditation, stage=stage, seg_id=seg_id,
+        )
 
     if existing_clip:
         if ssa.audio_clip_id != text_hash:
             ssa.audio_clip = existing_clip
             ssa.save(update_fields=["audio_clip"])
             print(f"  [{i + 1}/{total}] linked existing clip: {seg_id}")
-        else:
-            print(f"  [{i + 1}/{total}] cached: {seg_id}")
         return
 
     print(f'  [{i + 1}/{total}] generating (fixed): "{text[:50]}..."')
+    if client is None:
+        from elevenlabs import ElevenLabs
+        client = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
     audio_bytes, words = _generate_tts_clip(client, text, direction, voice_id)
 
     audio = AudioSegment.from_mp3(io.BytesIO(audio_bytes))
@@ -328,14 +356,15 @@ def _generate_fixed_segment(
 def _generate_variable_segment(
     client, meditation, stage, seg_id, text, direction,
     text_hash, voice_id, voice_obj, var_refs, variables,
-    i, total,
+    i, total, existing_clip=None, vr_map=None,
 ):
     from meditations.models import GeneratedVoiceClip, VariableRecording
 
-    existing_clip = GeneratedVoiceClip.objects.filter(pk=text_hash).first()
-
     if not existing_clip:
         print(f'  [{i + 1}/{total}] generating (variable): "{text[:50]}..."')
+        if client is None:
+            from elevenlabs import ElevenLabs
+            client = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
         audio_bytes, words = _generate_tts_clip(client, text, direction, voice_id)
 
         audio = AudioSegment.from_mp3(io.BytesIO(audio_bytes))
@@ -353,8 +382,6 @@ def _generate_variable_segment(
             timestamps=words,
             duration=len(audio) / 1000,
         )
-    else:
-        print(f"  [{i + 1}/{total}] cached (variable): {seg_id}")
 
     # Build var_vals dict for all var_refs at their current values
     var_vals = {}
@@ -367,6 +394,12 @@ def _generate_variable_segment(
         return
 
     variable_key = _make_variable_key(var_vals)
+
+    # Skip DB write if VR already exists and points to the right clip
+    if vr_map is not None:
+        existing_vr = vr_map.get((seg_id, variable_key))
+        if existing_vr and existing_vr.audio_clip_id == existing_clip.text_hash:
+            return
 
     VariableRecording.objects.update_or_create(
         meditation=meditation,
@@ -786,8 +819,22 @@ def _compute_content_hash(
         stage_variables = {}
 
     speech = _collect_speech_segments(script)
-    clip_hashes = []
 
+    # Bulk-load all SSA and VR rows for this meditation/stage (2 queries instead of N)
+    stage_filter = {"stage__stage_id": stage_id} if stage_id else {"stage": None}
+    ssa_map = {
+        ssa.seg_id: ssa
+        for ssa in SpeechSegmentAudio.objects.filter(
+            meditation_id=meditation_name, **stage_filter,
+        ).select_related("audio_clip", "user_clip")
+    }
+    vr_map = {}
+    for vr in VariableRecording.objects.filter(
+        meditation_id=meditation_name, **stage_filter,
+    ).select_related("audio_clip", "user_clip"):
+        vr_map[(vr.seg_id, vr.variable_key)] = vr
+
+    clip_hashes = []
     for seg_id, seg_info in speech.items():
         var_refs = _get_stage_var_refs(seg_info["text"], stage_variables)
 
@@ -799,23 +846,14 @@ def _compute_content_hash(
                 if val is not None:
                     var_vals[var_name] = str(val)
             variable_key = _make_variable_key(var_vals)
-            rec = VariableRecording.objects.filter(
-                meditation_id=meditation_name,
-                stage__stage_id=stage_id if stage_id else None,
-                seg_id=seg_id,
-                variable_key=variable_key,
-            ).select_related("audio_clip", "user_clip").first()
+            rec = vr_map.get((seg_id, variable_key))
             if rec:
                 if rec.user_clip:
                     clip_hashes.append(f"upload_{rec.user_clip.id}")
                 elif rec.audio_clip:
                     clip_hashes.append(rec.audio_clip.text_hash)
         else:
-            ssa = SpeechSegmentAudio.objects.filter(
-                meditation_id=meditation_name,
-                stage__stage_id=stage_id if stage_id else None,
-                seg_id=seg_id,
-            ).select_related("audio_clip", "user_clip").first()
+            ssa = ssa_map.get(seg_id)
             if ssa:
                 if ssa.user_clip:
                     clip_hashes.append(f"upload_{ssa.user_clip.id}")

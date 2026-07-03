@@ -10,3 +10,4 @@
 - [ ]  Identify speakers in [[meetings/2026-06-24_first-session-confidentiality-practice-overview-and-grounding-with-miles]]: `speaker`
 - [ ]  still too big on iphone with progames as well.
 - [ ] Identify speakers in [[meetings/2026-06-30_therapy-session-body-acceptance-mindfulness-practice-and-self-compassion-with-th]]: `speaker`
+- [ ] Identify speakers in [[meetings/2026-07-02_meditation-practice-check-in-and-body-awareness-with-embodiment-coach]]: `speaker`

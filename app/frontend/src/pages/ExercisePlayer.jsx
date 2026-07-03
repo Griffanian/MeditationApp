@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, fetchBeforeYouBegin, assembleStage, logSession, BASE } from '../api';
+import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, fetchBeforeYouBegin, assembleStage, checkCachedOutputs, logSession, BASE } from '../api';
 import ReactMarkdown from 'react-markdown';
 import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration, unlockAudio } from '../playback';
 import PlaybackCard from '../components/PlaybackCard';
@@ -106,6 +106,12 @@ export default function ExercisePlayer() {
           fetchBeforeYouBegin(name, stageId).then(byb => {
             if (!cancelled && byb) { setBeforeYouBegin(byb); setShowByb(true); }
           }),
+          checkCachedOutputs([{ meditation: name, stage_id: stageId }]).then(cached => {
+            if (!cancelled && cached["0"]) {
+              audioUrlRef.current = `${BASE}/audio/meditation/${name}/stage/${stageId}/output/${cached["0"].filename}?t=${Date.now()}`;
+              console.log('[playback] exercise pre-cached');
+            }
+          }).catch(() => {}),
           ...(!displayName ? [fetchMeta(name).then(m => {
             if (!cancelled) setDisplayName(m.display_name || name);
           })] : []),
@@ -231,12 +237,15 @@ export default function ExercisePlayer() {
     }
 
     handleStop();
+    const t0 = performance.now();
 
     // Assemble if we don't have a URL yet
     if (!audioUrlRef.current) {
       setStatus('assembling');
       try {
         const data = await assembleStage(name, stageId);
+        const assembleMs = Math.round(performance.now() - t0);
+        console.log(`[playback] assemble API: ${assembleMs}ms`, data.timings_ms || {});
         audioUrlRef.current = `${BASE}/audio/meditation/${name}/stage/${stageId}/output/${data.filename}?t=${Date.now()}`;
       } catch (err) {
         setStatus('error');
@@ -245,14 +254,19 @@ export default function ExercisePlayer() {
       }
     }
 
+    const tLoad = performance.now();
     const audio = audioRef.current || new Audio();
     audioRef.current = audio;
     audio.src = audioUrlRef.current;
-    audio.onloadedmetadata = () => setDuration(audio.duration || 0);
+    audio.onloadedmetadata = () => {
+      console.log(`[playback] audio load: ${Math.round(performance.now() - tLoad)}ms`);
+      setDuration(audio.duration || 0);
+    };
     audio.onended = () => handleComplete();
     audio.onerror = () => { setStatus('error'); setError('Audio playback failed'); };
     try {
       await audio.play();
+      console.log(`[playback] total play-to-audio: ${Math.round(performance.now() - t0)}ms`);
       setStatus('playing');
       startTick();
     } catch {

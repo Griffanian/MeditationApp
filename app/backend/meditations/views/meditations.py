@@ -28,48 +28,71 @@ def _check_meditation_perm(request, name, write=False):
 
 class MeditationListView(APIView):
     def get(self, request):
-        from ..models import Practice
-        from django.db.models import Q
+        from ..models import Practice, StageAssignment
+        from django.db.models import Q, Prefetch
 
-        qs = visible_qs(
-            Meditation.objects.prefetch_related("stages").select_related("created_by__profile", "group").order_by("name"),
-            request.user,
+        user = request.user
+        role = get_role(user)
+        is_viewer = role == "viewer"
+
+        base_qs = (
+            Meditation.objects
+            .prefetch_related(
+                Prefetch("stages", queryset=Stage.objects.only(
+                    "meditation_id", "stage_id", "variables", "before_you_begin",
+                ))
+            )
+            .select_related("created_by__profile", "group")
+            .defer("script")
+            .order_by("name")
         )
 
-        # For viewers, compute which exercises are specifically shared (not just public)
-        is_viewer = get_role(request.user) == "viewer"
         shared_names = set()
-        assigned_stages_map = {}  # meditation_name -> [stage_id, ...]
-        if is_viewer:
-            from ..models import StageAssignment
-            user = request.user
+        assigned_stages_map = {}
+
+        if role in ("admin", "editor"):
+            qs = base_qs
+        elif role == "builder":
+            qs = base_qs.filter(Q(is_public=True) | Q(created_by=user))
+        else:
+            # Viewer: build shared Q once — reuse for filtering AND the shared flag
             shared_q = Q(shared_with=user)
-            shared_cat_names = Category.objects.filter(
-                shared_with=user
-            ).values_list("name", flat=True)
-            shared_group_cat_names = Category.objects.filter(
-                group__shared_with=user
-            ).values_list("name", flat=True)
-            shared_q |= Q(category__in=shared_cat_names) | Q(category__in=shared_group_cat_names)
+
+            # Categories shared directly or via group (single query)
+            shared_cat_names = list(Category.objects.filter(
+                Q(shared_with=user) | Q(group__shared_with=user)
+            ).values_list("name", flat=True).distinct())
+            if shared_cat_names:
+                shared_q |= Q(category__in=shared_cat_names)
+
+            # Meditations referenced in shared practices
             shared_med_names = set()
             for items in Practice.objects.filter(
                 shared_with=user
             ).values_list("items", flat=True):
-                for item in (items or []):
-                    if "meditation" in item:
-                        shared_med_names.add(item["meditation"])
+                for entry in (items or []):
+                    if "meditation" in entry:
+                        shared_med_names.add(entry["meditation"])
+                    for day in (entry.get("days") or []):
+                        for item in (day.get("items") or []):
+                            if "meditation" in item:
+                                shared_med_names.add(item["meditation"])
             if shared_med_names:
                 shared_q |= Q(name__in=shared_med_names)
 
-            # Include exercises with stage assignments
+            # Stage assignments
             for sa in StageAssignment.objects.filter(viewer=user).values("meditation_id", "stage_id"):
                 assigned_stages_map.setdefault(sa["meditation_id"], []).append(sa["stage_id"])
             if assigned_stages_map:
                 shared_q |= Q(name__in=assigned_stages_map.keys())
 
+            # shared_names for the response flag (single lightweight query)
             shared_names = set(
                 Meditation.objects.filter(shared_q).values_list("name", flat=True)
             )
+
+            # Full queryset: public + everything shared
+            qs = base_qs.filter(Q(is_public=True) | shared_q).distinct()
 
         meds = []
         for m in qs:

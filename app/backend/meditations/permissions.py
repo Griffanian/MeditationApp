@@ -41,12 +41,9 @@ def visible_qs(queryset, user):
     model = queryset.model
     if hasattr(model, 'category'):
         shared_cat_names = Category.objects.filter(
-            shared_with=user
-        ).values_list("name", flat=True)
-        shared_group_cat_names = Category.objects.filter(
-            group__shared_with=user
-        ).values_list("name", flat=True)
-        q = q | Q(category__in=shared_cat_names) | Q(category__in=shared_group_cat_names)
+            Q(shared_with=user) | Q(group__shared_with=user)
+        ).values_list("name", flat=True).distinct()
+        q = q | Q(category__in=shared_cat_names)
 
         # Include exercises that belong to a shared programme
         shared_med_names = set()

@@ -217,6 +217,15 @@ export async function sendChatMessage(message, history, context) {
   return data;
 }
 
+export async function checkCachedOutputs(items) {
+  const res = await apiFetch(`${BASE}/api/check-cached-outputs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  return safeJson(res, {});
+}
+
 export async function fetchStageDurations(items) {
   const res = await apiFetch(`${BASE}/api/stage-durations`, {
     method: 'POST',

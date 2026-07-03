@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 
 const AMBIENT_VOLUME = 0.3;
-const AMBIENT_SRC = '/ambient/campfire-loop.mp3';
+const AMBIENT_SRC = '/ambient/fire-crackle-loop.wav';
 
 function formatTime(seconds) {
   if (!seconds || !isFinite(seconds)) return '0:00';
@@ -20,35 +20,51 @@ export default function PlaybackCard({
   const [wordsPerPage, setWordsPerPage] = useState(50);
   const wordsRef = useRef(null);
   const measuredRef = useRef(false);
-  const ambientRef = useRef(null);
+  const ambientRef = useRef(null); // { ctx, gainNode, source }
 
   function startAmbient() {
-    if (!ambientRef.current) {
-      const audio = new Audio(AMBIENT_SRC);
-      audio.loop = true;
-      audio.volume = AMBIENT_VOLUME;
-      audio.play().catch(() => {});
-      ambientRef.current = audio;
-    } else {
-      ambientRef.current.volume = AMBIENT_VOLUME;
-      ambientRef.current.play().catch(() => {});
+    const amb = ambientRef.current;
+    if (amb) {
+      if (amb.ctx.state === 'suspended') amb.ctx.resume();
+      amb.gainNode.gain.setTargetAtTime(AMBIENT_VOLUME, amb.ctx.currentTime, 0.1);
+      return;
     }
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = AMBIENT_VOLUME;
+    gainNode.connect(ctx.destination);
+    fetch(AMBIENT_SRC)
+      .then(r => r.arrayBuffer())
+      .then(buf => ctx.decodeAudioData(buf))
+      .then(audioBuffer => {
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.loop = true;
+        source.connect(gainNode);
+        source.start();
+        ambientRef.current = { ctx, gainNode, source };
+        console.log('[ambient] started, duration:', audioBuffer.duration.toFixed(1) + 's');
+      })
+      .catch(err => console.warn('[ambient] failed to start:', err));
   }
 
-  // Manage ambient volume based on status
+  // Start ambient automatically when playback begins (handles all play paths)
   useEffect(() => {
-    if (!ambientRef.current) return;
-    if (status === 'playing' || status === 'assembling' || status === 'between') {
-      ambientRef.current.volume = AMBIENT_VOLUME;
-    } else {
-      ambientRef.current.volume = 0;
+    const shouldPlay = status === 'playing' || status === 'assembling' || status === 'between';
+    if (shouldPlay && !ambientRef.current) {
+      startAmbient();
+    } else if (ambientRef.current) {
+      const target = shouldPlay ? AMBIENT_VOLUME : 0;
+      ambientRef.current.gainNode.gain.setTargetAtTime(target, ambientRef.current.ctx.currentTime, 0.3);
     }
   }, [status]);
 
   // Cleanup on unmount
   useEffect(() => () => {
-    if (ambientRef.current) {
-      ambientRef.current.pause();
+    const amb = ambientRef.current;
+    if (amb) {
+      amb.source.stop();
+      amb.ctx.close();
       ambientRef.current = null;
     }
   }, []);

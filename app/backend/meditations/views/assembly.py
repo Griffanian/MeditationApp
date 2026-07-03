@@ -1,5 +1,6 @@
 import io
 import json
+import time
 
 from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
@@ -26,6 +27,10 @@ class AssemblyMixin:
         return dict(variables_data or {})
 
     def _assemble(self, request, name, stage_id=None):
+        t_total = time.monotonic()
+        timings = {}
+
+        t0 = time.monotonic()
         meditation = get_object_or_404(Meditation, name=name)
         if not CanViewContent().has_object_permission(request, None, meditation):
             return Response({"error": "Forbidden"}, status=403)
@@ -45,43 +50,57 @@ class AssemblyMixin:
         body_vars = request.data.get("variables") if request.method == "POST" else None
         if body_vars and isinstance(body_vars, dict):
             extra_vars.update(self._parse_variables(body_vars))
+        timings["db_fetch"] = round((time.monotonic() - t0) * 1000)
 
         if not script:
             return Response({"error": "not found"}, status=404)
 
         # Generate all components first (idempotent — reuses existing clips)
+        t0 = time.monotonic()
         generate_components(script, name, stage_id, extra_variables=extra_vars)
+        timings["generate_components"] = round((time.monotonic() - t0) * 1000)
 
         # Compute content hash (includes clip text_hashes for cache correctness)
+        t0 = time.monotonic()
         h = _compute_content_hash(script, extra_vars, name, stage_id, stage_variables)
-        print(f"[assemble] med={name} stage={stage_id} hash={h}")
+        timings["content_hash"] = round((time.monotonic() - t0) * 1000)
 
         # Check for cached output
+        t0 = time.monotonic()
         try:
             cached = AssembledOutput.objects.get(
                 meditation=meditation, stage=stage, content_hash=h,
             )
-            print(f"[assemble] cache HIT → {cached.audio_file}")
+            timings["cache_check"] = round((time.monotonic() - t0) * 1000)
+            timings["total"] = round((time.monotonic() - t_total) * 1000)
+            print(f"[assemble] med={name} stage={stage_id} hash={h} cache=HIT timings={timings}")
             return Response({
                 "status": "cached",
                 "filename": f"output_{h}.mp3",
                 "duration": cached.duration,
+                "timings_ms": timings,
             })
         except AssembledOutput.DoesNotExist:
-            print(f"[assemble] cache MISS — assembling fresh")
+            timings["cache_check"] = round((time.monotonic() - t0) * 1000)
 
+        t0 = time.monotonic()
         try:
             audio = assemble(script, name, stage_id, variables=extra_vars)
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
+        timings["assemble_audio"] = round((time.monotonic() - t0) * 1000)
 
+        t0 = time.monotonic()
         buf = io.BytesIO()
         audio.export(buf, format="mp3", bitrate="192k")
         buf.seek(0)
+        timings["mp3_export"] = round((time.monotonic() - t0) * 1000)
 
+        t0 = time.monotonic()
         filename = f"output_{h}.mp3"
         file_path = storage.output_path(name, filename, stage_id)
         storage.upload_file(file_path, buf.read(), content_type="audio/mpeg")
+        timings["storage_upload"] = round((time.monotonic() - t0) * 1000)
 
         output, _created = AssembledOutput.objects.get_or_create(
             meditation=meditation,
@@ -93,11 +112,77 @@ class AssemblyMixin:
             },
         )
 
+        timings["total"] = round((time.monotonic() - t_total) * 1000)
+        print(f"[assemble] med={name} stage={stage_id} hash={h} cache=MISS timings={timings}")
+
         return Response({
             "status": "ok",
             "filename": filename,
             "duration": output.duration,
+            "timings_ms": timings,
         })
+
+
+class CheckCachedOutputsView(APIView):
+    """Batch-check which stages have pre-assembled audio cached."""
+
+    def post(self, request):
+        items = request.data.get("items", [])
+        if not items:
+            return Response({})
+
+        # Deduplicate by (meditation, stage_id, variables_json)
+        unique = {}
+        idx_map = {}  # maps dedupe key -> list of original indices
+        for i, item in enumerate(items):
+            med = item.get("meditation")
+            sid = item.get("stage_id")
+            if not med or not sid:
+                continue
+            vars_json = json.dumps(item.get("variables") or {}, sort_keys=True)
+            key = (med, sid, vars_json)
+            if key not in unique:
+                unique[key] = item
+                idx_map[key] = []
+            idx_map[key].append(i)
+
+        # Batch-load all Stage objects (1 query)
+        from django.db.models import Q
+        stage_q = Q()
+        for med, sid, _ in unique:
+            stage_q |= Q(meditation_id=med, stage_id=sid)
+        stage_map = {}
+        for s in Stage.objects.filter(stage_q):
+            stage_map[(s.meditation_id, s.stage_id)] = s
+
+        # Compute content hashes and collect them
+        hash_to_key = {}
+        for (med, sid, vars_json), item in unique.items():
+            stage = stage_map.get((med, sid))
+            if not stage or not stage.script:
+                continue
+            extra_vars = dict(stage.variables or {})
+            item_vars = json.loads(vars_json)
+            if item_vars:
+                extra_vars.update(item_vars)
+            h = _compute_content_hash(
+                stage.script, extra_vars, med, sid, stage.variables or {},
+            )
+            hash_to_key[h] = (med, sid, vars_json)
+
+        # Batch-check AssembledOutput for all hashes (1 query)
+        results = {}
+        for output in AssembledOutput.objects.filter(content_hash__in=hash_to_key.keys()):
+            key = hash_to_key.get(output.content_hash)
+            if not key:
+                continue
+            med, sid, _ = key
+            filename = f"output_{output.content_hash}.mp3"
+            entry = {"filename": filename, "duration": output.duration}
+            for idx in idx_map.get(key, []):
+                results[str(idx)] = entry
+
+        return Response(results)
 
 
 class StageDurationsView(APIView):
