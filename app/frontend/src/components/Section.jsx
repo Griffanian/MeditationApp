@@ -272,7 +272,13 @@ export default function Section({ seg, playingId, isPaused, onPlay, onWordClick,
             )}
           </span>
         )}
-        <span className="seg-count">{seg.segments.length} segments</span>
+        <span className="seg-count">
+          {seg.segments.length} segments
+          {isSection && (() => {
+            const fixed = computeFixedDuration(seg.segments, variables, components);
+            return fixed > 0 ? <span className="seg-fixed-dur"> · fixed: {formatDuration(fixed)}</span> : null;
+          })()}
+        </span>
         <span style={{ marginLeft: 'auto' }} className="seg-actions">
           {!isSection && (
             <span className="loop-counter">

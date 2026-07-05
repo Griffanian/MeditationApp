@@ -265,12 +265,35 @@ export async function fetchBeforeYouBegin(name, stageId) {
   return data.before_you_begin || '';
 }
 
+export async function fetchBeforeYouBeginBlocks(name, stageId) {
+  const res = await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/before-you-begin`);
+  const data = await safeJson(res, {});
+  return data.blocks || [];
+}
+
 export async function saveBeforeYouBegin(name, stageId, text) {
   await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/before-you-begin`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ before_you_begin: text }),
   });
+}
+
+export async function saveBeforeYouBeginBlocks(name, stageId, blocks) {
+  await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/before-you-begin`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ blocks }),
+  });
+}
+
+export async function validatePrompt({ text, label, options, context }) {
+  const res = await apiFetch(`${BASE}/api/validate-prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, label, options, context }),
+  });
+  return safeJson(res, { status: 'ok' });
 }
 
 export async function fetchStageScript(name, stageId) {

@@ -8,11 +8,14 @@ export function formatDuration(secs) {
 }
 
 function sessionTotalSecs(s) {
+  // Prefer actual recorded duration (how long user actually listened)
+  if (s.duration > 0) return s.duration;
+  // Fallback: estimate from compiled exercise durations (for old records)
   if (s.exercises && s.exercises.length > 0) {
     const total = s.exercises.reduce((sum, ex) => sum + (ex.duration || 0), 0);
     if (total > 0) return total;
   }
-  return s.duration || 0;
+  return 0;
 }
 
 function formatTotalMins(secs) {
@@ -34,17 +37,28 @@ function sessionTitle(s) {
   return s.practice_display || '';
 }
 
+// Stable key for grouping/coloring — uses practice ID so renames don't split entries
+function sessionKey(s) {
+  if (s.meditation_name) return s.meditation_name;
+  return s.practice || s.practice_display || '';
+}
+
+// Get the display time for a session (prefer started_at over completed_at)
+function sessionTime(s) {
+  return s.started_at || s.completed_at;
+}
+
 // Group sessions within 30 minutes of each other into time blocks
 function groupByTimeBlock(sessions) {
-  const sorted = [...sessions].sort((a, b) => new Date(a.completed_at) - new Date(b.completed_at));
+  const sorted = [...sessions].sort((a, b) => new Date(sessionTime(a)) - new Date(sessionTime(b)));
   const blocks = [];
   for (const s of sorted) {
-    const t = new Date(s.completed_at).getTime();
+    const t = new Date(sessionTime(s)).getTime();
     const last = blocks[blocks.length - 1];
     if (last && t - last.time <= 30 * 60 * 1000) {
       last.sessions.push(s);
     } else {
-      blocks.push({ time: t, completed_at: s.completed_at, sessions: [s] });
+      blocks.push({ time: t, completed_at: sessionTime(s), sessions: [s] });
     }
   }
   blocks.reverse();
@@ -85,7 +99,7 @@ function ExerciseBars({ exercises }) {
 export function ListView({ sessions }) {
   const grouped = {};
   for (const s of sessions) {
-    const dateKey = new Date(s.completed_at).toLocaleDateString();
+    const dateKey = new Date(sessionTime(s)).toLocaleDateString();
     if (!grouped[dateKey]) grouped[dateKey] = [];
     grouped[dateKey].push(s);
   }
@@ -97,12 +111,22 @@ export function ListView({ sessions }) {
         return (
         <div key={date} className="history-date-group">
           <h3 className="history-date-heading">
-            {formatDate(items[0].completed_at)}
+            {formatDate(sessionTime(items[0]))}
             {dayTotal > 0 && <span className="history-date-total">{formatTotalMins(dayTotal)}</span>}
           </h3>
           {groupByTimeBlock(items).map((block, bi) => (
             <div key={bi} className="history-session">
-              <div className="history-session-time">{formatTime(block.completed_at)}</div>
+              <div className="history-session-time">
+                {formatTime(block.completed_at)}
+                {(() => {
+                  const endTimes = block.sessions.map(s => s.completed_at).filter(Boolean);
+                  const endTime = endTimes.length > 0 ? endTimes.sort().pop() : null;
+                  if (endTime && endTime !== block.completed_at && formatTime(endTime) !== formatTime(block.completed_at)) {
+                    return <span className="history-session-range"> &ndash; {formatTime(endTime)}</span>;
+                  }
+                  return null;
+                })()}
+              </div>
               {block.sessions.map(s => {
                 const total = sessionTotalSecs(s);
                 return (
@@ -126,9 +150,10 @@ export function ListView({ sessions }) {
 }
 
 const PRACTICE_COLORS = ['#5b7fb5', '#7b5baa', '#5b9a7a', '#a07b55', '#5b8a9a', '#9a5b7a', '#8a9a5b', '#6b6baa'];
-function practiceColor(name, map) {
-  if (!map.has(name)) map.set(name, PRACTICE_COLORS[map.size % PRACTICE_COLORS.length]);
-  return map.get(name);
+function practiceColor(key, displayName, map) {
+  if (!map.has(key)) map.set(key, { color: PRACTICE_COLORS[map.size % PRACTICE_COLORS.length], name: displayName });
+  else map.get(key).name = displayName; // keep the latest name
+  return map.get(key).color;
 }
 
 export function CalendarView({ sessions }) {
@@ -146,7 +171,7 @@ export function CalendarView({ sessions }) {
 
   const dayMap = {};
   for (const s of sessions) {
-    const d = new Date(s.completed_at);
+    const d = new Date(sessionTime(s));
     if (d.getFullYear() === year && d.getMonth() === month) {
       const day = d.getDate();
       if (!dayMap[day]) dayMap[day] = [];
@@ -169,7 +194,7 @@ export function CalendarView({ sessions }) {
         <span className="cal-day">{d}</span>
         <div className="cal-sessions">
           {daySessions.map((s, i) => (
-            <div key={i} className="cal-session-bar" style={{ background: practiceColor(sessionTitle(s), colorMap) }}>
+            <div key={i} className="cal-session-bar" style={{ background: practiceColor(sessionKey(s), sessionTitle(s), colorMap) }}>
               <span className="cal-session-label">{sessionTitle(s)}</span>
               <span className="cal-session-time">{formatTotalMins(sessionTotalSecs(s))}</span>
             </div>
@@ -190,8 +215,8 @@ export function CalendarView({ sessions }) {
       </div>
       {practiceNames.length > 0 && (
         <div className="cal-legend">
-          {practiceNames.map(([name, color]) => (
-            <span key={name} className="cal-legend-item">
+          {practiceNames.map(([key, { color, name }]) => (
+            <span key={key} className="cal-legend-item">
               <span className="cal-legend-swatch" style={{ background: color }} />
               {name}
             </span>
@@ -218,7 +243,7 @@ export function CalendarView({ sessions }) {
                   <span className="cal-detail-time">{formatTime(block.completed_at)}</span>
                   {block.sessions.map((s, i) => (
                     <div key={i} className="cal-detail-row">
-                      <span className="cal-detail-swatch" style={{ background: practiceColor(sessionTitle(s), colorMap) }} />
+                      <span className="cal-detail-swatch" style={{ background: practiceColor(sessionKey(s), sessionTitle(s), colorMap) }} />
                       <div className="cal-detail-info">
                         <span className="cal-detail-name">{sessionTitle(s)}</span>
                         <span className="cal-detail-sub">{weekDayLabel(s)}{sessionTotalSecs(s) > 0 ? `${weekDayLabel(s) ? ' · ' : ''}${formatTotalMins(sessionTotalSecs(s))}` : ''}</span>

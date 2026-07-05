@@ -187,7 +187,8 @@ class Stage(models.Model):
     stage_id = models.CharField(max_length=200)
     script = models.JSONField(default=list, blank=True)
     variables = models.JSONField(default=dict, blank=True)
-    before_you_begin = models.TextField(default="", blank=True)
+    before_you_begin = models.TextField(default="", blank=True)  # legacy text
+    before_you_begin_blocks = models.JSONField(default=list, blank=True)
 
     class Meta:
         unique_together = ("meditation", "stage_id")
@@ -465,6 +466,7 @@ class PracticeSession(models.Model):
     stage_id = models.CharField(max_length=200, blank=True)
     stage_name = models.CharField(max_length=200, blank=True)
     duration = models.FloatField(default=0)  # seconds
+    started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

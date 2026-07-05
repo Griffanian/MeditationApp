@@ -16,7 +16,7 @@ function computeStreak(sessions) {
   if (sessions.length === 0) return 0;
   const daySet = new Set();
   for (const s of sessions) {
-    const d = new Date(s.completed_at);
+    const d = new Date(s.started_at || s.completed_at);
     d.setHours(0, 0, 0, 0);
     daySet.add(d.getTime());
   }
@@ -61,7 +61,7 @@ function hasSessionThisWeek(sessions) {
   const now = new Date();
   const weekAgo = new Date(now);
   weekAgo.setDate(weekAgo.getDate() - 7);
-  return sessions.some(s => new Date(s.completed_at) >= weekAgo);
+  return sessions.some(s => new Date(s.started_at || s.completed_at) >= weekAgo);
 }
 
 function getWeekDays(sessions) {
@@ -75,7 +75,7 @@ function getWeekDays(sessions) {
 
   const sessionDays = new Set();
   for (const s of sessions) {
-    const d = new Date(s.completed_at);
+    const d = new Date(s.started_at || s.completed_at);
     d.setHours(0, 0, 0, 0);
     sessionDays.add(d.getTime());
   }
@@ -113,11 +113,14 @@ function formatHours(secs) {
 }
 
 function sessionTotalSecs(s) {
+  // Prefer actual recorded duration (how long user actually listened)
+  if (s.duration > 0) return s.duration;
+  // Fallback: estimate from compiled exercise durations (for old records)
   if (s.exercises && s.exercises.length > 0) {
     const total = s.exercises.reduce((sum, ex) => sum + (ex.duration || 0), 0);
     if (total > 0) return total;
   }
-  return s.duration || 0;
+  return 0;
 }
 
 function resolveWordVars(word, variables) {
@@ -641,7 +644,7 @@ export default function Home() {
   const totalSessions = sessions.length;
   const totalSeconds = sessions.reduce((sum, s) => sum + sessionTotalSecs(s), 0);
   const recentSessions = [...sessions]
-    .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))
+    .sort((a, b) => new Date(b.started_at || b.completed_at) - new Date(a.started_at || a.completed_at))
     .slice(0, auth.canCreate ? 5 : 3);
 
   // Find the current programme to continue
@@ -688,19 +691,29 @@ export default function Home() {
     ? suggestedExercise.stages.find(s => suggestedExercise.assigned_stages.includes(s.id))
     : suggestedExercise?.stages?.[0];
 
-  // Compute next day for the current programme
+  // Compute next day for the current programme — day after where user last left off
   const nextDay = currentProgramme ? (() => {
-    const completed = currentProgramme.practice.progress?.completed_days || {};
+    const progress = currentProgramme.practice.progress;
     const weeks = currentProgramme.practice.items || [];
     const hasWeeks = weeks.length > 0 && weeks[0]?.days;
     if (!hasWeeks) return { week: 0, day: 0 };
-    for (let wi = 0; wi < weeks.length; wi++) {
-      const days = weeks[wi]?.days || [];
-      for (let di = 0; di < days.length; di++) {
-        if (!completed[`${wi}-${di}`] && (days[di]?.items?.length > 0)) return { week: wi, day: di };
-      }
+    if (!progress) return { week: 0, day: 0 };
+
+    // Advance one day from current position
+    let wi = progress.current_week;
+    let di = progress.current_day + 1;
+    // Wrap to next week if past end of current week's days
+    const currentDays = weeks[wi]?.days || [];
+    if (di >= currentDays.length) {
+      wi++;
+      di = 0;
     }
-    return { week: 0, day: 0 };
+    // If past end of programme, stay at last day
+    if (wi >= weeks.length) {
+      wi = progress.current_week;
+      di = progress.current_day;
+    }
+    return { week: wi, day: di };
   })() : null;
 
   return (
@@ -763,8 +776,10 @@ export default function Home() {
           </div>
 
           {currentProgramme && nextDay && (() => {
-            const dayData = currentProgramme.practice.items?.[nextDay.week]?.days?.[nextDay.day];
+            const weekData = currentProgramme.practice.items?.[nextDay.week];
+            const dayData = weekData?.days?.[nextDay.day];
             const dayItems = dayData?.items || [];
+            const weekLabel = weekData?.label || `Week ${nextDay.week + 1}`;
             const dayLabel = dayData?.label || `Day ${nextDay.day + 1}`;
             const totalMins = dayItems.reduce((sum, item) => {
               for (const v of Object.values(item.variables || {})) {
@@ -786,7 +801,7 @@ export default function Home() {
                   <div className="home-next-info">
                     <div className="home-next-name">{currentProgramme.practice.display_name}</div>
                     <div className="home-next-meta">
-                      {dayLabel} · {dayItems.length} meditation{dayItems.length !== 1 ? 's' : ''}{totalMins > 0 ? ` · ${totalMins} min` : ''}
+                      {weekLabel} · {dayLabel} · {dayItems.length} meditation{dayItems.length !== 1 ? 's' : ''}{totalMins > 0 ? ` · ${totalMins} min` : ''}
                     </div>
                   </div>
                   <Link to={`/play/${currentProgramme.practice.name}?week=${nextDay.week}&day=${nextDay.day}`} className="home-next-play">
@@ -824,9 +839,9 @@ export default function Home() {
                   <div key={s.id} className="home-session-item">
                     <div>
                       <div className="home-session-name">{s.practice_display}</div>
-                      <div className="home-session-detail">{s.day_label}{sessionTotalSecs(s) > 0 ? ` · ${formatDuration(sessionTotalSecs(s))}` : ''}</div>
+                      <div className="home-session-detail">{s.week != null ? `Week ${s.week + 1} · ` : ''}{s.day_label}{sessionTotalSecs(s) > 0 ? ` · ${formatDuration(sessionTotalSecs(s))}` : ''}</div>
                     </div>
-                    <span className="home-session-date">{formatDate(s.completed_at)}</span>
+                    <span className="home-session-date">{formatDate(s.started_at || s.completed_at)}</span>
                   </div>
                 ))}
               </div>
@@ -899,8 +914,10 @@ export default function Home() {
           </div>
 
           {currentProgramme && nextDay && (() => {
-            const dayData = currentProgramme.practice.items?.[nextDay.week]?.days?.[nextDay.day];
+            const weekData = currentProgramme.practice.items?.[nextDay.week];
+            const dayData = weekData?.days?.[nextDay.day];
             const dayItems = dayData?.items || [];
+            const weekLabel = weekData?.label || `Week ${nextDay.week + 1}`;
             const dayLabel = dayData?.label || `Day ${nextDay.day + 1}`;
             const totalMins = dayItems.reduce((sum, item) => {
               for (const v of Object.values(item.variables || {})) {
@@ -927,7 +944,7 @@ export default function Home() {
                     <div className="home-next-info">
                       <div className="home-next-name">{currentProgramme.practice.display_name}</div>
                       <div className="home-next-meta">
-                        {dayLabel} · {dayItems.length} meditation{dayItems.length !== 1 ? 's' : ''}{totalMins > 0 ? ` · ${totalMins} min` : ''}
+                        {weekLabel} · {dayLabel} · {dayItems.length} meditation{dayItems.length !== 1 ? 's' : ''}{totalMins > 0 ? ` · ${totalMins} min` : ''}
                       </div>
                     </div>
                     <Link to={`/play/${currentProgramme.practice.name}?week=${nextDay.week}&day=${nextDay.day}`} className="home-next-play">
@@ -1000,7 +1017,7 @@ export default function Home() {
                           {detail}{detail && dur > 0 ? ' · ' : ''}{dur > 0 ? formatDuration(dur) : ''}
                         </div>
                       </div>
-                      <span className="home-session-date">{formatDate(s.completed_at)}</span>
+                      <span className="home-session-date">{formatDate(s.started_at || s.completed_at)}</span>
                     </div>
                   );
                 })}

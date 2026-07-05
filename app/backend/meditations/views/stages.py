@@ -65,16 +65,29 @@ class BeforeYouBeginView(APIView):
             return err
         try:
             stage = Stage.objects.get(meditation_id=name, stage_id=stage_id)
-            return Response({"before_you_begin": stage.before_you_begin})
         except Stage.DoesNotExist:
-            return Response({"before_you_begin": ""})
+            return Response({"before_you_begin": "", "blocks": []})
+        # Prefer structured blocks; fall back to wrapping legacy text
+        blocks = stage.before_you_begin_blocks or []
+        if not blocks and stage.before_you_begin:
+            blocks = [{"type": "text", "content": stage.before_you_begin}]
+        return Response({
+            "before_you_begin": stage.before_you_begin,
+            "blocks": blocks,
+        })
 
     def put(self, request, name, stage_id):
         m, err = _check_med_perm(request, name, write=True)
         if err:
             return err
         stage, _ = Stage.objects.get_or_create(meditation=m, stage_id=stage_id)
-        stage.before_you_begin = request.data.get("before_you_begin", "")
+        if "blocks" in request.data:
+            stage.before_you_begin_blocks = request.data["blocks"]
+            # Keep legacy field in sync with text blocks for backwards compat
+            texts = [b["content"] for b in request.data["blocks"] if b.get("type") == "text" and b.get("content")]
+            stage.before_you_begin = "\n\n".join(texts)
+        else:
+            stage.before_you_begin = request.data.get("before_you_begin", "")
         stage.save()
         return Response({"status": "ok"})
 

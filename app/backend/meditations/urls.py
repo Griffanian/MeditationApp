@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     assembly, assets, assistant, auth, clone, components, feedback,
     history, invites, meditations, practices, scripts, sharing, stages, trim, users,
+    validate,
 )
 
 urlpatterns = [
@@ -83,6 +84,10 @@ urlpatterns = [
 
     # Cached outputs check
     path("api/check-cached-outputs", assembly.CheckCachedOutputsView.as_view()),
+    path("api/debug/cache-log", assembly.CacheDebugLogView.as_view()),
+
+    # Prompt validation
+    path("api/validate-prompt", validate.ValidatePromptView.as_view()),
 
     # Durations
     path("api/stage-durations", assembly.StageDurationsView.as_view()),

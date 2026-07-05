@@ -1,10 +1,24 @@
 import io
 import json
+import os
 import time
+from datetime import datetime, timezone
 
 from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+CACHE_DEBUG_LOG = "/tmp/cache_debug.log"
+
+
+def _log_cache_event(event):
+    """Append a timestamped debug entry to the cache debug log."""
+    entry = {
+        "time": datetime.now(timezone.utc).isoformat(),
+        **event,
+    }
+    with open(CACHE_DEBUG_LOG, "a") as f:
+        f.write(json.dumps(entry) + "\n")
 
 from ..models import AssembledOutput, Meditation, Practice, Stage
 from ..permissions import CanViewContent
@@ -157,9 +171,14 @@ class CheckCachedOutputsView(APIView):
 
         # Compute content hashes and collect them
         hash_to_key = {}
+        skipped = []
         for (med, sid, vars_json), item in unique.items():
             stage = stage_map.get((med, sid))
-            if not stage or not stage.script:
+            if not stage:
+                skipped.append({"med": med, "stage": sid, "reason": "stage_not_found"})
+                continue
+            if not stage.script:
+                skipped.append({"med": med, "stage": sid, "reason": "no_script"})
                 continue
             extra_vars = dict(stage.variables or {})
             item_vars = json.loads(vars_json)
@@ -172,17 +191,61 @@ class CheckCachedOutputsView(APIView):
 
         # Batch-check AssembledOutput for all hashes (1 query)
         results = {}
+        matched_hashes = set()
         for output in AssembledOutput.objects.filter(content_hash__in=hash_to_key.keys()):
             key = hash_to_key.get(output.content_hash)
             if not key:
                 continue
+            matched_hashes.add(output.content_hash)
             med, sid, _ = key
             filename = f"output_{output.content_hash}.mp3"
             entry = {"filename": filename, "duration": output.duration}
             for idx in idx_map.get(key, []):
                 results[str(idx)] = entry
 
+        # Log cache misses
+        missed = []
+        for h, (med, sid, vars_json) in hash_to_key.items():
+            if h not in matched_hashes:
+                # Check what hashes DO exist for this stage
+                existing = list(
+                    AssembledOutput.objects.filter(
+                        meditation_id=med, stage__stage_id=sid,
+                    ).values_list("content_hash", flat=True)[:5]
+                )
+                missed.append({"med": med, "stage": sid, "computed_hash": h, "existing_hashes": existing, "vars": vars_json})
+
+        if skipped or missed:
+            print(f"[check-cached] skipped={skipped} missed={missed}")
+            _log_cache_event({
+                "event": "cache_miss",
+                "total_requested": len(items),
+                "total_hit": len(results),
+                "skipped": skipped,
+                "missed": missed,
+            })
+
         return Response(results)
+
+
+class CacheDebugLogView(APIView):
+    """Return the cache debug log entries (admin only)."""
+
+    def get(self, request):
+        if not request.user.is_staff:
+            return Response({"error": "Forbidden"}, status=403)
+        if not os.path.exists(CACHE_DEBUG_LOG):
+            return Response({"entries": [], "note": "No cache issues recorded yet"})
+        with open(CACHE_DEBUG_LOG) as f:
+            lines = f.readlines()
+        # Return last 100 entries
+        entries = []
+        for line in lines[-100:]:
+            try:
+                entries.append(json.loads(line.strip()))
+            except json.JSONDecodeError:
+                entries.append({"raw": line.strip()})
+        return Response({"entries": entries})
 
 
 class StageDurationsView(APIView):

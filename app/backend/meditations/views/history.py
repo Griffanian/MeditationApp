@@ -91,6 +91,7 @@ def _serialize_sessions(sessions):
             "day": s.day,
             "day_label": s.day_label,
             "duration": s.duration,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
             "completed_at": s.completed_at.isoformat(),
             "exercises": exercises,
         }
@@ -112,31 +113,65 @@ class HistoryListView(APIView):
         return Response(_serialize_sessions(sessions))
 
     def post(self, request):
-        """Log a completed session (programme day or standalone exercise)."""
+        """Log a completed session (programme day or standalone exercise).
+
+        For programme sessions: deduplicates by (user, practice, week, day) on the
+        same calendar day — restarting the same day won't create duplicate entries.
+        """
         practice_name = request.data.get("practice")
         meditation_name = request.data.get("meditation_name")
 
         if not practice_name and not meditation_name:
             return Response({"error": "practice or meditation_name required"}, status=400)
 
-        kwargs = {
-            "user": request.user,
-            "duration": request.data.get("duration", 0),
-        }
+        started_at = request.data.get("started_at")
 
         if practice_name:
-            kwargs["practice_id"] = practice_name
-            kwargs["practice_display"] = request.data.get("practice_display", "")
-            kwargs["week"] = request.data.get("week", 0)
-            kwargs["day"] = request.data.get("day", 0)
-            kwargs["day_label"] = request.data.get("day_label", "")
-        else:
-            kwargs["meditation_name"] = meditation_name
-            kwargs["meditation_display"] = request.data.get("meditation_display", "")
-            kwargs["stage_id"] = request.data.get("stage_id", "")
-            kwargs["stage_name"] = request.data.get("stage_name", "")
+            # Deduplicate: if a session for this (user, practice, week, day) already
+            # exists today, update it instead of creating a duplicate.
+            from django.utils import timezone as tz
+            today_start = tz.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            existing = PracticeSession.objects.filter(
+                user=request.user,
+                practice_id=practice_name,
+                week=request.data.get("week", 0),
+                day=request.data.get("day", 0),
+                completed_at__gte=today_start,
+            ).first()
 
-        session = PracticeSession.objects.create(**kwargs)
+            if existing:
+                # Update the existing entry with latest duration and end time
+                existing.duration = request.data.get("duration", 0) or existing.duration
+                if started_at and not existing.started_at:
+                    existing.started_at = started_at
+                from django.utils import timezone as tz
+                existing.completed_at = tz.now()
+                existing.save(update_fields=["duration", "started_at", "completed_at"])
+                return Response({
+                    "id": str(existing.id),
+                    "completed_at": existing.completed_at.isoformat(),
+                }, status=200)
+
+            session = PracticeSession.objects.create(
+                user=request.user,
+                practice_id=practice_name,
+                practice_display=request.data.get("practice_display", ""),
+                week=request.data.get("week", 0),
+                day=request.data.get("day", 0),
+                day_label=request.data.get("day_label", ""),
+                duration=request.data.get("duration", 0),
+                started_at=started_at,
+            )
+        else:
+            session = PracticeSession.objects.create(
+                user=request.user,
+                meditation_name=meditation_name,
+                meditation_display=request.data.get("meditation_display", ""),
+                stage_id=request.data.get("stage_id", ""),
+                stage_name=request.data.get("stage_name", ""),
+                duration=request.data.get("duration", 0),
+                started_at=started_at,
+            )
 
         return Response({
             "id": str(session.id),

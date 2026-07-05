@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { fetchPractice, saveStageVariables, assembleStage, computeDurations, savePracticeProgress, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, fetchBeforeYouBegin, checkCachedOutputs, BASE } from '../api';
+import { fetchPractice, saveStageVariables, assembleStage, computeDurations, savePracticeProgress, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, fetchBeforeYouBegin, fetchBeforeYouBeginBlocks, checkCachedOutputs, validatePrompt, BASE } from '../api';
 import ReactMarkdown from 'react-markdown';
 import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration, unlockAudio } from '../playback';
 import PlaybackCard from '../components/PlaybackCard';
@@ -247,9 +247,15 @@ export default function Player() {
   const [currentDay, setCurrentDay] = useState(0);
   const [completedDays, setCompletedDays] = useState({});
   const [autoplay, setAutoplay] = useState(false);
-  const [bybContent, setBybContent] = useState('');
+  const [bybBlocks, setBybBlocks] = useState([]);      // [{type, content, variable, label}]
+  const [bybStep, setBybStep] = useState(0);
+  const [bybResponses, setBybResponses] = useState({}); // {variable: value}
+  const [bybVarDefs, setBybVarDefs] = useState({});    // {varName: {type, options, allowCustom, ...}}
+  const [bybValidation, setBybValidation] = useState({}); // {variable: {status, message, suggestion}}
+  const [bybValidating, setBybValidating] = useState(false);
   const [showByb, setShowByb] = useState(false);
   const [bybLoading, setBybLoading] = useState(true);
+  const bybValidationTimer = useRef(null);
 
   // Playback state
   const [playIdx, setPlayIdx] = useState(-1);
@@ -274,6 +280,8 @@ export default function Player() {
   const gapTimerRef = useRef(null);
   const playIdxRef = useRef(-1);
   const playedStagesRef = useRef(new Set());
+  const sessionStartRef = useRef(null);
+  const cumulativeDurationRef = useRef(0);
   const preparedUrls = useRef({});
   const autoplayPending = useRef(false);
   const handlePlayRef = useRef(null);
@@ -389,28 +397,69 @@ export default function Player() {
         }).catch(() => {});
       }
       const uniqueStages = [...new Set(dayItems.map(i => `${i.meditation}/${i.stage_id}`))];
-      Promise.all(
-        uniqueStages.map(key => {
+      // Fetch BYB blocks and stage variables in parallel
+      Promise.all([
+        Promise.all(uniqueStages.map(key => {
           const [med, sid] = key.split('/');
-          return fetchBeforeYouBegin(med, sid).catch(() => '');
-        })
-      ).then(results => {
-        const combined = results.filter(Boolean).join('\n\n---\n\n');
-        setBybContent(combined);
-        setBybLoading(false);
-        if (combined) {
-          if (stageToPlay != null) pendingStageRef.current = stageToPlay;
+          return fetchBeforeYouBeginBlocks(med, sid).catch(() => []);
+        })),
+        Promise.all(uniqueStages.map(key => {
+          const [med, sid] = key.split('/');
+          return fetchStageVariables(med, sid).catch(() => ({}));
+        })),
+      ]).then(([blockResults, varResults]) => {
+        // Build a merged variable definitions map across all stages
+        const varDefs = {};
+        for (const vars of varResults) {
+          for (const [k, v] of Object.entries(vars || {})) {
+            if (k !== '_conditions' && k !== 'computed_min') varDefs[k] = v;
+          }
+        }
+
+        // Combine all stage blocks into one sequence
+        const allBlocks = [];
+        for (const blocks of blockResults) {
+          if (blocks.length > 0) allBlocks.push(...blocks);
+        }
+        setBybBlocks(allBlocks);
+        setBybStep(0);
+        setBybVarDefs(varDefs);
+
+        // Set defaults for prompt blocks from variable definitions
+        const defaults = {};
+        for (const b of allBlocks) {
+          if (b.type === 'prompt' && b.variable && varDefs[b.variable]) {
+            const def = varDefs[b.variable];
+            defaults[b.variable] = def.value ?? def.options?.[0] ?? '';
+          }
+        }
+        setBybResponses(defaults);
+
+        if (allBlocks.length > 0) {
+          // Store play intent so Ready button triggers playback
+          if (autoplayPending.current) {
+            pendingStageRef.current = autoplayFromRef.current ?? autoplayStageRef.current ?? 0;
+            autoplayPending.current = false;
+          } else if (stageToPlay != null) {
+            pendingStageRef.current = stageToPlay;
+          }
           setShowByb(true);
-        } else if (stageToPlay != null) {
-          setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
+          setBybLoading(false);
+        } else {
+          setBybLoading(false);
+          if (stageToPlay != null) {
+            setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
+          }
         }
       }).catch(() => setBybLoading(false));
-    } else {
+    } else if (practice) {
+      // No stages in this day — nothing to check
       setBybLoading(false);
       if (stageToPlay != null) {
         setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
       }
     }
+    // When practice is null (still loading), keep bybLoading=true
   }, [practice, currentWeek, currentDay]);
 
   // Autoplay (optionally from a specific stage index)
@@ -453,6 +502,16 @@ export default function Player() {
     const newCompleted = { ...completedDays, [dayKey]: true };
     setCompletedDays(newCompleted);
     savePosition(currentWeek, currentDay, newCompleted);
+    logPartialSession();
+  }
+
+  function logPartialSession() {
+    if (!sessionStartRef.current) return;
+    // Include current track's elapsed time if still playing
+    const currentElapsed = audioRef.current?.currentTime || 0;
+    const totalDuration = cumulativeDurationRef.current + currentElapsed;
+    if (totalDuration <= 0) return;
+    const endedAt = new Date().toISOString();
     import('../api').then(({ logSession }) => {
       logSession({
         practice: name,
@@ -460,9 +519,13 @@ export default function Player() {
         week: currentWeek,
         day: currentDay,
         day_label: day?.label || `Day ${currentDay + 1}`,
-        duration: audioRef.current?.duration || 0,
+        duration: totalDuration,
+        started_at: sessionStartRef.current,
+        ended_at: endedAt,
       });
     });
+    // Session logged — reset so we don't double-log
+    sessionStartRef.current = null;
   }
 
   // --- Script display ---
@@ -574,7 +637,11 @@ export default function Player() {
     setPrepareStatus('preparing');
     for (let i = 0; i < items.length; i++) {
       if (stopRef.current) return;
-      try { await prepareOne(i); } catch {}
+      try {
+        await prepareOne(i);
+      } catch (err) {
+        console.warn(`[playback] prepareOne(${i}) failed:`, err);
+      }
     }
     setPrepareStatus('ready');
   }
@@ -612,22 +679,45 @@ export default function Player() {
     setDuration(0);
     setStatus('playing');
 
-    // Clear old timeline and load new one before starting audio
+    // Clear old timeline immediately, load new one in parallel (non-blocking)
     timelineRef.current = null;
     setActiveEntry(null);
     setActiveWordIdx(-1);
     setCountdown('');
     wordTimestampsRef.current = {};
-
-    await loadStageTimeline(idx);
-    if (stopRef.current) return;
+    loadStageTimeline(idx);
 
     let audio;
     if (nextAudioRef.current && nextAudioRef.current.idx === idx) {
       audio = nextAudioRef.current.audio;
       nextAudioRef.current = null;
     } else {
-      audio = new Audio(preparedUrls.current[idx]);
+      let url = preparedUrls.current[idx];
+      if (!url) {
+        // URL missing (background prep may have been suspended on mobile) — try assembling now
+        console.warn(`[playback] No audio URL for stage ${idx}, assembling on demand`);
+        setStatus('assembling');
+        try {
+          url = await prepareOne(idx);
+        } catch (err) {
+          console.warn(`[playback] On-demand assembly failed for stage ${idx}:`, err);
+          // Advance to next track without counting this one as played
+          if (!stopRef.current) {
+            setStatus('between');
+            stopTimer();
+            gapTimerRef.current = setTimeout(() => {
+              gapTimerRef.current = null;
+              if (!stopRef.current) {
+                playFromUrl(idx + 1, single);
+              }
+            }, 2000);
+          }
+          return;
+        }
+        if (stopRef.current) return;
+        setStatus('playing');
+      }
+      audio = new Audio(url);
     }
 
     audioRef.current = audio;
@@ -635,6 +725,9 @@ export default function Player() {
     preloadNext(idx);
 
     const onFinish = () => {
+      if (audio.duration && isFinite(audio.duration)) {
+        cumulativeDurationRef.current += audio.duration;
+      }
       audioRef.current = null;
       playedStagesRef.current.add(idx);
       if (playedStagesRef.current.size >= items.length) {
@@ -662,8 +755,35 @@ export default function Player() {
       }
     };
     audio.onended = onFinish;
-    audio.onerror = onFinish;
-    audio.play().catch(onFinish);
+    audio.onerror = () => {
+      console.warn(`[playback] Audio error on stage ${idx}`);
+      audioRef.current = null;
+      stopTimer();
+      // Don't count errored playback as played — advance to next track
+      if (!stopRef.current) {
+        setStatus('between');
+        gapTimerRef.current = setTimeout(() => {
+          gapTimerRef.current = null;
+          if (!stopRef.current) {
+            playFromUrl(idx + 1, single);
+          }
+        }, 2000);
+      }
+    };
+    audio.play().catch(() => {
+      console.warn(`[playback] Failed to start playback for stage ${idx}`);
+      audioRef.current = null;
+      stopTimer();
+      if (!stopRef.current) {
+        setStatus('between');
+        gapTimerRef.current = setTimeout(() => {
+          gapTimerRef.current = null;
+          if (!stopRef.current) {
+            playFromUrl(idx + 1, single);
+          }
+        }, 2000);
+      }
+    });
   }
 
   async function handlePlay() {
@@ -677,6 +797,11 @@ export default function Player() {
     stopRef.current = false;
     setSingleMode(false);
     unlockAudio();
+    if (!sessionStartRef.current) {
+      sessionStartRef.current = new Date().toISOString();
+      cumulativeDurationRef.current = 0;
+      playedStagesRef.current = new Set();
+    }
 
     setStatus('assembling');
     setPlayIdx(0);
@@ -702,6 +827,11 @@ export default function Player() {
     stopRef.current = false;
     setSingleMode(false);
     unlockAudio();
+    if (!sessionStartRef.current) {
+      sessionStartRef.current = new Date().toISOString();
+      cumulativeDurationRef.current = 0;
+      playedStagesRef.current = new Set();
+    }
 
     setStatus('assembling');
     setPlayIdx(startIdx);
@@ -758,6 +888,10 @@ export default function Player() {
   }
 
   function handleStop() {
+    // Log partial session if any stages were played
+    if (playedStagesRef.current.size > 0 || (audioRef.current && audioRef.current.currentTime > 0)) {
+      logPartialSession();
+    }
     stopRef.current = true;
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     if (nextAudioRef.current) { nextAudioRef.current = null; }
@@ -838,27 +972,168 @@ export default function Player() {
 
   return (
     <div className="player">
-      {showByb && (
-        <div className="modal-overlay" onClick={() => setShowByb(false)}>
-          <div className="modal byb-modal" onClick={e => e.stopPropagation()}>
-            <div className="byb-modal-header">
-              <h3>Before You Begin</h3>
-              <button className="modal-close" onClick={() => setShowByb(false)}>×</button>
+      {showByb && (() => {
+        const block = bybBlocks[bybStep];
+        const isLast = bybStep >= bybBlocks.length - 1;
+        const hasChoiceBlocks = bybBlocks.some(b => b.type === 'choice' || b.type === 'text_input');
+
+        function handleBybFinish() {
+          setShowByb(false);
+          // Apply prompt responses as variable overrides on the day items
+          for (const b of bybBlocks) {
+            if (!b.variable) continue;
+            const val = bybResponses[b.variable];
+            if (val == null) continue;
+            for (const item of items) {
+              if (!item.variables) item.variables = {};
+              item.variables[b.variable] = { ...item.variables[b.variable], value: val };
+            }
+          }
+          // Clear cached URLs since variables may have changed
+          if (hasChoiceBlocks) preparedUrls.current = {};
+          const stageToPlay = pendingStageRef.current;
+          pendingStageRef.current = null;
+          if (stageToPlay != null) {
+            setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
+          }
+        }
+
+        // Can advance from choice blocks only if a response is selected
+        const canAdvance = !block || block.type === 'text' || (
+          block.variable && bybResponses[block.variable] != null && bybResponses[block.variable] !== ''
+        );
+
+        return (
+        <div className="modal-overlay">
+          <div className="modal byb-modal byb-wizard" onClick={e => e.stopPropagation()}>
+            {bybBlocks.length > 1 && (
+              <div className="byb-wizard-progress">
+                {bybBlocks.map((_, i) => (
+                  <div key={i} className={`byb-progress-dot${i === bybStep ? ' active' : i < bybStep ? ' done' : ''}`} />
+                ))}
+              </div>
+            )}
+
+            <div className="byb-wizard-content">
+              {block?.type === 'text' && (
+                <div className="byb-wizard-text">
+                  <ReactMarkdown>{block.content || ''}</ReactMarkdown>
+                </div>
+              )}
+              {block?.type === 'prompt' && (() => {
+                const varDef = bybVarDefs[block.variable] || {};
+                const val = bybResponses[block.variable] ?? '';
+                const options = varDef.options || [];
+                const isCustom = varDef.allowCustom && !options.includes(val);
+                const label = block.label || varDef.displayName || block.variable;
+                const validation = bybValidation[block.variable];
+
+                function handleCustomChange(newVal) {
+                  setBybResponses(r => ({ ...r, [block.variable]: newVal }));
+                  setBybValidation(v => ({ ...v, [block.variable]: null }));
+                  // Debounce validation
+                  if (bybValidationTimer.current) clearTimeout(bybValidationTimer.current);
+                  if (newVal.trim().length > 1) {
+                    bybValidationTimer.current = setTimeout(() => {
+                      setBybValidating(true);
+                      validatePrompt({
+                        text: newVal,
+                        label,
+                        options,
+                        context: varDef.displayName || '',
+                      }).then(result => {
+                        setBybValidation(v => ({ ...v, [block.variable]: result }));
+                      }).finally(() => setBybValidating(false));
+                    }, 800);
+                  }
+                }
+
+                function applySuggestion() {
+                  if (validation?.suggestion) {
+                    setBybResponses(r => ({ ...r, [block.variable]: validation.suggestion }));
+                    setBybValidation(v => ({ ...v, [block.variable]: { status: 'ok' } }));
+                  }
+                }
+
+                return (
+                  <div className="byb-wizard-choice">
+                    <h3 className="byb-wizard-label">{label}</h3>
+                    {options.length > 0 ? (
+                      <div className="byb-prompt-options">
+                        {options.map(opt => (
+                          <button key={opt}
+                            className={`byb-option${val === opt ? ' byb-option-selected' : ''}`}
+                            onClick={() => {
+                              setBybResponses(r => ({ ...r, [block.variable]: opt }));
+                              setBybValidation(v => ({ ...v, [block.variable]: null }));
+                            }}>
+                            {opt}
+                          </button>
+                        ))}
+                        {varDef.allowCustom && (
+                          <>
+                            <button
+                              className={`byb-option${isCustom ? ' byb-option-selected' : ''}`}
+                              onClick={() => {
+                                setBybResponses(r => ({ ...r, [block.variable]: '' }));
+                                setBybValidation(v => ({ ...v, [block.variable]: null }));
+                              }}>
+                              Choose your own
+                            </button>
+                            {isCustom && (
+                              <input type="text" className="byb-custom-input"
+                                placeholder="Type your own..."
+                                value={val}
+                                autoFocus
+                                onChange={e => handleCustomChange(e.target.value)} />
+                            )}
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <input type="text" className="byb-text-input"
+                        placeholder="Type here..."
+                        value={val}
+                        onChange={e => handleCustomChange(e.target.value)} />
+                    )}
+                    {bybValidating && isCustom && (
+                      <div className="byb-validation byb-validation-checking">Checking...</div>
+                    )}
+                    {validation && validation.status === 'spelling' && (
+                      <div className="byb-validation byb-validation-spelling">
+                        {validation.message}
+                        {validation.suggestion && (
+                          <button className="byb-validation-fix" onClick={applySuggestion}>
+                            Use "{validation.suggestion}"
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {validation && validation.status === 'inappropriate' && (
+                      <div className="byb-validation byb-validation-warning">
+                        {validation.message}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
-            <div className="byb-modal-body">
-              <ReactMarkdown>{bybContent}</ReactMarkdown>
+
+            <div className="byb-wizard-nav">
+              {bybStep > 0 && (
+                <button className="byb-wizard-back" onClick={() => setBybStep(s => s - 1)}>Back</button>
+              )}
+              <div className="byb-wizard-spacer" />
+              {isLast ? (
+                <button className="byb-modal-ready" onClick={handleBybFinish} disabled={!canAdvance}>Ready</button>
+              ) : (
+                <button className="byb-modal-ready" onClick={() => setBybStep(s => s + 1)} disabled={!canAdvance}>Next</button>
+              )}
             </div>
-            <button className="byb-modal-ready" onClick={() => {
-              setShowByb(false);
-              const stageToPlay = pendingStageRef.current;
-              pendingStageRef.current = null;
-              if (stageToPlay != null) {
-                setTimeout(() => { if (handlePlayFromRef.current) handlePlayFromRef.current(stageToPlay); }, 0);
-              }
-            }}>Ready</button>
           </div>
         </div>
-      )}
+        );
+      })()}
       <Link to={`/programme/${name}`} className="ep-back">&#x2190; {practice.display_name}</Link>
 
       <div className="player-card">

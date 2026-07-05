@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { extractInstruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item';
-import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, fetchBeforeYouBegin, saveBeforeYouBegin, assembleStage, generateAllAudio } from '../api';
+import { fetchStageScript, saveStageScript, fetchStageComponents, fetchStageVariables, saveStageVariables, fetchBeforeYouBegin, saveBeforeYouBegin, fetchBeforeYouBeginBlocks, saveBeforeYouBeginBlocks, assembleStage, generateAllAudio } from '../api';
 import MarkdownField from './MarkdownField';
 import { flattenScript, playSeg, playSegFromWord, stopPlayback, setMeditation, setScriptAndComponents, setPlaybackVariables, computeMarkerDuration, registerExternalStop, unregisterExternalStop, unlockAudio } from '../playback';
 import { getClipboard, setClipboard } from '../clipboard';
@@ -13,6 +13,52 @@ import Timeline from './Timeline';
 import AddMenu from './AddMenu';
 import ContextMenu from './ContextMenu';
 import TimelineGuide from './TimelineGuide';
+
+function VarAddMenu({ onAddNumber, onAddChoice }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    function close(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  return (
+    <div className="add-menu-wrapper" ref={ref}>
+      <button className="btn-add" onClick={() => setOpen(!open)}>+ Add</button>
+      {open && (
+        <div className="kebab-dropdown">
+          <div className="kebab-item" onClick={() => { onAddNumber(); setOpen(false); }}>Number</div>
+          <div className="kebab-divider" />
+          <div className="kebab-item" onClick={() => { onAddChoice(); setOpen(false); }}>Choice</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BybAddMenu({ onAddText, onAddPrompt }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    function close(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  return (
+    <div className="add-menu-wrapper" ref={ref}>
+      <button className="btn-add" onClick={() => setOpen(!open)}>+ Add</button>
+      {open && (
+        <div className="kebab-dropdown">
+          <div className="kebab-item" onClick={() => { onAddText(); setOpen(false); }}>Text</div>
+          <div className="kebab-divider" />
+          <div className="kebab-item" onClick={() => { onAddPrompt(); setOpen(false); }}>Prompt</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function StageEditor({ stageName, stageId, meditationName, readOnly }) {
   const [script, setScript] = useState([]);
@@ -43,6 +89,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
   useEffect(() => { setPlaybackVariables(variables); }, [variables]);
 
   const [beforeYouBegin, setBeforeYouBegin] = useState('');
+  const [bybBlocks, setBybBlocks] = useState([]);
   const [bybCollapsed, setBybCollapsed] = useLocalState(`byb-collapsed-${meditationName}-${stageId}`, true);
   const bybTimerRef = useRef(null);
   function handleBybChange(text) {
@@ -51,6 +98,46 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
     bybTimerRef.current = setTimeout(() => {
       saveBeforeYouBegin(meditationName, stageId, text);
     }, 800);
+  }
+  function saveBybBlocks(blocks) {
+    setBybBlocks(blocks);
+    saveBeforeYouBeginBlocks(meditationName, stageId, blocks);
+  }
+  function addBybBlock(type) {
+    if (type === 'text') {
+      saveBybBlocks([...bybBlocks, { type: 'text', content: '' }]);
+    } else if (type === 'prompt') {
+      // Pick first choice variable not already used, or create one
+      const choiceVars = Object.entries(variables).filter(([k, v]) => v.type === 'choice');
+      const usedVars = new Set(bybBlocks.filter(b => b.type === 'prompt').map(b => b.variable));
+      const available = choiceVars.filter(([k]) => !usedVars.has(k));
+      let varName;
+      if (available.length > 0) {
+        varName = available[0][0];
+      } else {
+        // Auto-create a new choice variable
+        let name = 'choice';
+        let i = 1;
+        while (name in variables) name = `choice${i++}`;
+        varName = name;
+        saveVars({ ...variables, [varName]: { type: 'choice', displayName: 'Choose an option', options: ['Option 1', 'Option 2'], value: 'Option 1', allowCustom: false } });
+      }
+      saveBybBlocks([...bybBlocks, { type: 'prompt', variable: varName, label: '' }]);
+    }
+  }
+  function updateBybBlock(idx, updates) {
+    const blocks = bybBlocks.map((b, i) => i === idx ? { ...b, ...updates } : b);
+    saveBybBlocks(blocks);
+  }
+  function removeBybBlock(idx) {
+    saveBybBlocks(bybBlocks.filter((_, i) => i !== idx));
+  }
+  function moveBybBlock(idx, dir) {
+    const target = idx + dir;
+    if (target < 0 || target >= bybBlocks.length) return;
+    const blocks = [...bybBlocks];
+    [blocks[idx], blocks[target]] = [blocks[target], blocks[idx]];
+    saveBybBlocks(blocks);
   }
 
   // Variable error detection — derived from variables state
@@ -322,6 +409,7 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
     fetchStageComponents(meditationName, stageId).then(setComponents);
     fetchStageVariables(meditationName, stageId).then(setVariables).finally(() => setLoadingVars(false));
     fetchBeforeYouBegin(meditationName, stageId).then(setBeforeYouBegin);
+    fetchBeforeYouBeginBlocks(meditationName, stageId).then(setBybBlocks);
   }, [meditationName, stageId]);
 
   const save = useCallback(async (newScript) => {
@@ -423,6 +511,28 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
     saveVars({ ...variables, [name]: { value: 1, displayName: name } });
   }
 
+  function addChoiceVariable() {
+    let name = 'choice';
+    let i = 1;
+    while (name in variables) name = `choice${i++}`;
+    saveVars({ ...variables, [name]: { type: 'choice', displayName: 'Choose an option', options: ['Option 1', 'Option 2'], value: 'Option 1', allowCustom: false } });
+  }
+
+  function updateChoiceOptions(varName, options) {
+    const updated = { ...variables, [varName]: { ...variables[varName], options } };
+    // Keep value in sync — if current value isn't in options, reset to first
+    if (options.length > 0 && !options.includes(updated[varName].value)) {
+      updated[varName].value = options[0];
+    }
+    saveVars(updated);
+  }
+
+  function toggleAllowCustom(varName) {
+    const cur = variables[varName];
+    saveVars({ ...variables, [varName]: { ...cur, allowCustom: !cur.allowCustom } });
+  }
+
+
   function renameVariable(oldName, newName) {
     if (!newName || newName === oldName) return;
     if (!/^[A-Za-z][A-Za-z0-9]*$/.test(newName)) {
@@ -464,12 +574,41 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
     saveVars(updated);
   }
 
+  // Walk script and update/remove condition references on segments
+  function updateConditionRefs(oldName, newName) {
+    const newScript = JSON.parse(JSON.stringify(scriptRef.current));
+    let changed = false;
+    function walk(segs) {
+      for (const seg of segs) {
+        if (seg.condition === oldName) {
+          if (newName) { seg.condition = newName; } else { delete seg.condition; }
+          changed = true;
+        }
+        if (seg.segments) walk(seg.segments);
+      }
+    }
+    walk(newScript);
+    if (changed) save(newScript);
+  }
+
+  function renameCondition(oldName, newName) {
+    if (!newName || newName === oldName) return;
+    if (newName in conditions) { alert(`A condition named "${newName}" already exists.`); return; }
+    const newConds = {};
+    for (const [k, v] of Object.entries(conditions)) {
+      newConds[k === oldName ? newName : k] = v;
+    }
+    saveVars({ ...variables, _conditions: newConds });
+    updateConditionRefs(oldName, newName);
+  }
+
   function deleteCondition(condName) {
     if (!confirm(`Delete condition "${conditions[condName]?.displayName || condName}"?`)) return;
     const newConds = { ...conditions };
     delete newConds[condName];
     const updated = { ...variables, _conditions: newConds };
     saveVars(updated);
+    updateConditionRefs(condName, null);
   }
 
   // --- Mutations ---
@@ -665,95 +804,167 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
             <span className={`chevron ${varsCollapsed ? 'collapsed' : ''}`}>▼</span> Variables
           </div>
           <span className="guide-link-inline" onClick={() => setShowGuide(4)}>?</span>
-          {!readOnly && <button className="btn-add" onClick={addVariable}>+ Add</button>}
+          {!readOnly && <VarAddMenu onAddNumber={addVariable} onAddChoice={addChoiceVariable} />}
         </div>
         {!varsCollapsed && (loadingVars ? (
           <div className="loading-page" style={{ minHeight: 40 }}><div className="loading-spinner" /><span>Loading variables...</span></div>
         ) : varNames.length > 0 ? (<>
-          <table className="variables-table">
-            <thead>
-              <tr>
-                <th>Min</th>
-                <th>Current</th>
-                <th>Max</th>
-                <th>Unit</th>
-                <th>Variable Name</th>
-                <th>Display Name</th>
-                {!readOnly && <th></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(variables).filter(([k]) => k !== '_conditions').map(([varName, { value, displayName, unit, min, max, computed_min }]) => {
-                const numVal = Number(value) || 1;
-                const err = varErrors[varName];
-                const hasErr = !!err;
-                return (
-                  <tr key={varName} className={hasErr ? 'variable-mismatch' : ''}>
-                    <td>
-                      <input className={`variable-input${err?.minBelowFloor ? ' variable-input-error' : ''}`}
-                        type="number" key={`min-${varName}-${varRevision}`} defaultValue={min != null ? min : ''}
-                        placeholder="—" readOnly={readOnly}
-                        onBlur={e => {
-                          const v = e.target.value === '' ? undefined : Number(e.target.value);
-                          updateVarMin(varName, v != null ? v : '');
-                          if (v != null && numVal < v) updateVariable(varName, v);
-                        }}
+          <div className="var-cards">
+            {Object.entries(variables).filter(([k]) => k !== '_conditions' && k !== 'computed_min').map(([varName, varData]) => {
+              const isChoice = varData.type === 'choice';
+              const err = varErrors[varName];
+              return (
+                <div key={varName} className={`var-card${err ? ' var-card-error' : ''}`}>
+                  <div className="var-card-drag-handle">⋮⋮</div>
+                  <div className="var-card-top">
+                    {readOnly ? (
+                      <span className="var-card-question">{varData.displayName || varName}</span>
+                    ) : (
+                      <input className="var-card-question-input" type="text"
+                        defaultValue={varData.displayName || varName}
+                        placeholder={isChoice ? 'Question' : 'Display name'}
+                        onBlur={e => updateDisplayName(varName, e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
-                    </td>
-                    <td>
-                      <input className={`variable-input${err?.valueBelowFloor ? ' variable-input-error' : ''}`}
-                        type="number" step="1" value={value}
-                        readOnly={readOnly}
-                        onChange={readOnly ? undefined : e => updateVariable(varName, e.target.value)} />
-                    </td>
-                    <td>
-                      <input className="variable-input" type="number"
-                        key={`max-${varName}-${varRevision}`} defaultValue={max != null ? max : ''}
-                        placeholder="—" readOnly={readOnly}
-                        onBlur={e => {
-                          const v = e.target.value === '' ? undefined : Number(e.target.value);
-                          updateVarMax(varName, v != null ? v : '');
-                        }}
-                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
-                    </td>
-                    <td>
-                      {readOnly ? (
-                        <span className="variable-unit-select" style={{ border: 'none' }}>{unit === 'seconds' ? 'sec' : unit === 'minutes' ? 'min' : unit === 'hours' ? 'hr' : 'times'}</span>
-                      ) : (
-                        <select className="variable-unit-select" value={unit || ''} onChange={e => updateUnit(varName, e.target.value)}>
-                          <option value="">times</option>
-                          <option value="seconds">sec</option>
-                          <option value="minutes">min</option>
-                          <option value="hours">hr</option>
-                        </select>
-                      )}
-                    </td>
-                    <td>
-                      {readOnly ? (
-                        <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{varName}</span>
-                      ) : (
-                        <input className="variable-name-input" type="text" defaultValue={varName}
+                    )}
+                    {!readOnly ? (
+                      <select className="var-card-type-select" value={isChoice ? 'choice' : 'number'}
+                        onChange={e => {
+                          if (e.target.value === 'choice' && !isChoice) {
+                            saveVars({ ...variables, [varName]: { ...varData, type: 'choice', options: ['Option 1', 'Option 2'], value: 'Option 1', allowCustom: false } });
+                          } else if (e.target.value === 'number' && isChoice) {
+                            const { options, allowCustom, ...rest } = varData;
+                            saveVars({ ...variables, [varName]: { ...rest, type: undefined, value: 1 } });
+                          }
+                        }}>
+                        <option value="number">Number</option>
+                        <option value="choice">Multiple choice</option>
+                      </select>
+                    ) : (
+                      <span className="var-card-type-badge">{isChoice ? 'Multiple choice' : 'Number'}</span>
+                    )}
+                  </div>
+
+                  <div className="var-card-body">
+                    {isChoice ? (
+                      <div className="var-card-options">
+                        {(varData.options || []).map((opt, i) => (
+                          <div key={i} className="var-card-option-row">
+                            <span className={`var-card-radio${varData.value === opt ? ' var-card-radio-selected' : ''}`}
+                              onClick={() => saveVars({ ...variables, [varName]: { ...varData, value: opt } })}
+                              title="Set as default for script preview" />
+                            {readOnly ? (
+                              <span className="var-card-option-text">{opt}</span>
+                            ) : (
+                              <input className="var-card-option-input" type="text" value={opt}
+                                placeholder={`Option ${i + 1}`}
+                                onChange={e => {
+                                  const opts = [...(varData.options || [])];
+                                  opts[i] = e.target.value;
+                                  updateChoiceOptions(varName, opts);
+                                }}
+                                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
+                            )}
+                            {!readOnly && (varData.options || []).length > 1 && (
+                              <button className="var-card-option-remove" onClick={() => {
+                                updateChoiceOptions(varName, (varData.options || []).filter((_, j) => j !== i));
+                              }}>✕</button>
+                            )}
+                          </div>
+                        ))}
+                        {varData.allowCustom && (
+                          <div className="var-card-option-row var-card-other-row">
+                            <span className="var-card-radio" />
+                            <span className="var-card-other-label">Other...</span>
+                            {!readOnly && (
+                              <button className="var-card-option-remove" onClick={() => toggleAllowCustom(varName)}>✕</button>
+                            )}
+                          </div>
+                        )}
+                        {!readOnly && (
+                          <div className="var-card-add-row">
+                            <span className="var-card-add-link" onClick={() => {
+                              updateChoiceOptions(varName, [...(varData.options || []), '']);
+                            }}>Add option</span>
+                            {!varData.allowCustom && (
+                              <>
+                                <span className="var-card-add-or">or</span>
+                                <span className="var-card-add-link var-card-add-other" onClick={() => toggleAllowCustom(varName)}>
+                                  Add "Other"
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="var-card-number-fields">
+                        <div className="var-card-field">
+                          <label>Min</label>
+                          <input className={`var-card-num${err?.minBelowFloor ? ' var-card-num-error' : ''}`}
+                            type="number" key={`min-${varName}-${varRevision}`} defaultValue={varData.min != null ? varData.min : ''}
+                            placeholder="—" readOnly={readOnly}
+                            onBlur={e => {
+                              const v = e.target.value === '' ? undefined : Number(e.target.value);
+                              updateVarMin(varName, v != null ? v : '');
+                              if (v != null && (Number(varData.value) || 1) < v) updateVariable(varName, v);
+                            }}
+                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
+                        </div>
+                        <div className="var-card-field">
+                          <label>Value</label>
+                          <input className={`var-card-num${err?.valueBelowFloor ? ' var-card-num-error' : ''}`}
+                            type="number" step="1" value={varData.value}
+                            readOnly={readOnly}
+                            onChange={readOnly ? undefined : e => updateVariable(varName, e.target.value)} />
+                        </div>
+                        <div className="var-card-field">
+                          <label>Max</label>
+                          <input className="var-card-num"
+                            type="number" key={`max-${varName}-${varRevision}`} defaultValue={varData.max != null ? varData.max : ''}
+                            placeholder="—" readOnly={readOnly}
+                            onBlur={e => {
+                              const v = e.target.value === '' ? undefined : Number(e.target.value);
+                              updateVarMax(varName, v != null ? v : '');
+                            }}
+                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
+                        </div>
+                        <div className="var-card-field">
+                          <label>Unit</label>
+                          {readOnly ? (
+                            <span>{varData.unit === 'seconds' ? 'sec' : varData.unit === 'minutes' ? 'min' : varData.unit === 'hours' ? 'hr' : 'times'}</span>
+                          ) : (
+                            <select value={varData.unit || ''} onChange={e => updateUnit(varName, e.target.value)}>
+                              <option value="">Times</option>
+                              <option value="seconds">Sec</option>
+                              <option value="minutes">Min</option>
+                              <option value="hours">Hr</option>
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="var-card-toolbar">
+                    {!readOnly && (
+                      <div className="var-card-varname">
+                        <input type="text" defaultValue={varName}
                           onBlur={e => renameVariable(varName, e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
-                      )}
-                    </td>
-                    <td>
-                      {readOnly ? (
-                        <span className="variable-name-input" style={{ borderBottom: 'none', cursor: 'default' }}>{displayName || varName}</span>
-                      ) : (
-                        <input className="variable-name-input" type="text" defaultValue={displayName || varName}
-                          onBlur={e => updateDisplayName(varName, e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
-                      )}
-                    </td>
-                    {!readOnly && <td className="var-delete-cell">
-                      <button className="var-delete-btn" onClick={() => deleteVariable(varName)}>✕</button>
-                    </td>}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </div>
+                    )}
+                    {readOnly && <span className="var-card-ref">{`{${varName}}`}</span>}
+                    <div className="var-card-toolbar-spacer" />
+                    {!readOnly && (
+                      <button className="var-card-delete" onClick={() => deleteVariable(varName)} title="Delete">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" /></svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
           {hasErrors && (
             <div className="variable-mismatch-banner">
               {Object.entries(varErrors).map(([varName, err]) => (
@@ -771,83 +982,69 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
       </div>
 
       {varNames.length > 0 && (
-      <div className="stage-subsection">
-        <div className="section-header-row">
-          <div className="editor-section-label">Conditions</div>
-          {!readOnly && <button className="btn-add" onClick={addCondition}>+ Add</button>}
-        </div>
-        {Object.keys(conditions).length > 0 ? (
-          <table className="variables-table">
-            <thead>
-              <tr>
-                <th>Include if</th>
-                <th></th>
-                <th></th>
-                {!readOnly && <th></th>}
-              </tr>
-            </thead>
-            <tbody>
+        <div className="stage-subsection">
+          <div className="section-header-row">
+            <div className="editor-section-label">Conditions</div>
+            {!readOnly && <button className="btn-add" onClick={addCondition}>+ Add</button>}
+          </div>
+          {Object.keys(conditions).length > 0 ? (
+            <div className="var-cards">
               {Object.entries(conditions).map(([condName, cond]) => (
-                <tr key={condName}>
-                  <td>
-                    {readOnly ? (
-                      <span>{variables[cond.variable]?.displayName || cond.variable}</span>
-                    ) : (
-                      <select className="variable-unit-select" value={cond.variable || ''}
-                        onChange={e => updateCondition(condName, 'variable', e.target.value)}>
-                        <option value="">—</option>
-                        {varNames.map(v => <option key={v} value={v}>{variables[v]?.displayName || v}</option>)}
-                      </select>
-                    )}
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    {readOnly ? (
-                      <span>{cond.operator}</span>
-                    ) : (
-                      <select className="variable-unit-select" value={cond.operator || '>='}
-                        onChange={e => updateCondition(condName, 'operator', e.target.value)}>
-                        <option value=">">&gt;</option>
-                        <option value="<">&lt;</option>
-                        <option value=">=">{'\u2265'}</option>
-                        <option value="<=">{'\u2264'}</option>
-                        <option value="==">=</option>
-                        <option value="!=">{'\u2260'}</option>
-                        <option value="between">between</option>
-                      </select>
-                    )}
-                  </td>
-                  <td>
-                    {readOnly ? (
-                      <span>{cond.value}{cond.operator === 'between' && ` – ${cond.value2}`}</span>
-                    ) : (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <input className="variable-input" type="number"
+                <div key={condName} className="var-card">
+                  <div className="var-card-top">
+                    <span className="var-card-question" style={{ fontSize: 13, color: 'var(--text-muted)' }}>Include segments if</span>
+                  </div>
+                  <div className="var-card-body">
+                    <div className="cond-card-row">
+                      {readOnly ? (
+                        <span className="cond-card-value">{variables[cond.variable]?.displayName || cond.variable} {cond.operator} {cond.value}{cond.operator === 'between' ? ` – ${cond.value2}` : ''}</span>
+                      ) : (<>
+                        <select className="cond-card-select" value={cond.variable || ''}
+                          onChange={e => updateCondition(condName, 'variable', e.target.value)}>
+                          <option value="">—</option>
+                          {varNames.map(v => <option key={v} value={v}>{variables[v]?.displayName || v}</option>)}
+                        </select>
+                        <select className="cond-card-select cond-card-op" value={cond.operator || '>='}
+                          onChange={e => updateCondition(condName, 'operator', e.target.value)}>
+                          <option value=">">&gt;</option>
+                          <option value="<">&lt;</option>
+                          <option value=">=">{'\u2265'}</option>
+                          <option value="<=">{'\u2264'}</option>
+                          <option value="==">=</option>
+                          <option value="!=">{'\u2260'}</option>
+                          <option value="between">between</option>
+                        </select>
+                        <input className="cond-card-num" type="number"
                           key={`cond-val-${condName}-${varRevision}`}
                           defaultValue={cond.value}
                           onBlur={e => updateCondition(condName, 'value', Number(e.target.value))}
                           onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
                         {cond.operator === 'between' && <>
-                          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>–</span>
-                          <input className="variable-input" type="number"
+                          <span className="cond-card-sep">–</span>
+                          <input className="cond-card-num" type="number"
                             key={`cond-val2-${condName}-${varRevision}`}
                             defaultValue={cond.value2}
                             onBlur={e => updateCondition(condName, 'value2', Number(e.target.value))}
                             onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }} />
                         </>}
-                      </span>
-                    )}
-                  </td>
-                  {!readOnly && <td className="var-delete-cell">
-                    <button className="var-delete-btn" onClick={() => deleteCondition(condName)}>✕</button>
-                  </td>}
-                </tr>
+                      </>)}
+                    </div>
+                  </div>
+                  {!readOnly && (
+                    <div className="var-card-toolbar">
+                      <div className="var-card-toolbar-spacer" />
+                      <button className="var-card-delete" onClick={() => deleteCondition(condName)} title="Delete">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" /></svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
               ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="empty-hint">No conditions yet. {!readOnly && <span className="empty-hint-link" onClick={addCondition}>Add one</span>} to conditionally include segments.</p>
-        )}
-      </div>
+            </div>
+          ) : (
+            <p className="empty-hint">No conditions yet. {!readOnly && <span className="empty-hint-link" onClick={addCondition}>Add one</span>} to conditionally include segments.</p>
+          )}
+        </div>
       )}
 
       <div className="stage-subsection">
@@ -855,14 +1052,89 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
           <div className="editor-section-label collapsible" onClick={() => setBybCollapsed(!bybCollapsed)}>
             <span className={`chevron ${bybCollapsed ? 'collapsed' : ''}`}>▼</span> Before You Begin
           </div>
+          {!bybCollapsed && !readOnly && <BybAddMenu onAddText={() => addBybBlock('text')} onAddPrompt={() => addBybBlock('prompt')} />}
         </div>
         {!bybCollapsed && (
-          <MarkdownField
-            value={beforeYouBegin}
-            onChange={handleBybChange}
-            placeholder="Add setup instructions shown before playback..."
-            readOnly={readOnly}
-          />
+          bybBlocks.length > 0 ? (
+            <div className="var-cards">
+              {bybBlocks.map((block, i) => (
+                <div key={i} className="var-card">
+                  <div className="var-card-drag-handle">⋮⋮</div>
+                  <div className="var-card-top">
+                    {block.type === 'text' ? (
+                      <span className="var-card-question">Text</span>
+                    ) : (
+                      <span className="var-card-question">{block.label || variables[block.variable]?.displayName || 'Prompt'}</span>
+                    )}
+                    <span className="var-card-type-badge">{block.type === 'text' ? 'Text' : 'Prompt'}</span>
+                  </div>
+                  <div className="var-card-body">
+                    {block.type === 'text' ? (
+                      <MarkdownField
+                        value={block.content || ''}
+                        onChange={val => updateBybBlock(i, { content: val })}
+                        placeholder="Instructions or guidance text..."
+                        readOnly={readOnly}
+                      />
+                    ) : block.type === 'prompt' ? (
+                      <div className="byb-editor-prompt">
+                        <div className="byb-editor-prompt-row">
+                          <label>Variable</label>
+                          {readOnly ? (
+                            <span>{block.variable}</span>
+                          ) : (
+                            <select value={block.variable || ''}
+                              onChange={e => updateBybBlock(i, { variable: e.target.value })}>
+                              {Object.entries(variables).filter(([k, v]) => v.type === 'choice').map(([k, v]) => (
+                                <option key={k} value={k}>{v.displayName || k}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                        <div className="byb-editor-prompt-row">
+                          <label>Label</label>
+                          {readOnly ? (
+                            <span>{block.label || variables[block.variable]?.displayName || block.variable}</span>
+                          ) : (
+                            <input type="text" value={block.label || ''}
+                              placeholder={variables[block.variable]?.displayName || 'Question shown to user...'}
+                              onChange={e => updateBybBlock(i, { label: e.target.value })} />
+                          )}
+                        </div>
+                        {block.variable && variables[block.variable] && (
+                          <div className="byb-editor-prompt-preview">
+                            {(variables[block.variable].options || []).map((opt, oi) => (
+                              <span key={oi} className="byb-editor-prompt-chip">{opt}</span>
+                            ))}
+                            {variables[block.variable].allowCustom && <span className="byb-editor-prompt-chip byb-editor-prompt-chip-other">Other</span>}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                  {!readOnly && (
+                    <div className="var-card-toolbar">
+                      <button className="var-card-toolbar-btn" disabled={i === 0} onClick={() => moveBybBlock(i, -1)} title="Move up">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6" /></svg>
+                      </button>
+                      <button className="var-card-toolbar-btn" disabled={i === bybBlocks.length - 1} onClick={() => moveBybBlock(i, 1)} title="Move down">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                      </button>
+                      <div className="var-card-toolbar-spacer" />
+                      <button className="var-card-delete" onClick={() => removeBybBlock(i)} title="Delete">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" /></svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-hint">
+              No before-you-begin content yet.
+              {!readOnly && <> Add a <span className="empty-hint-link" onClick={() => addBybBlock('text')}>text block</span> or <span className="empty-hint-link" onClick={() => addBybBlock('prompt')}>prompt</span>.</>}
+            </p>
+          )
         )}
       </div>
 
