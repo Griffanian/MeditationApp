@@ -22,14 +22,11 @@ export default function PlaybackCard({
   const wordsRef = useRef(null);
   const measuredRef = useRef(false);
   const ambientRef = useRef(null); // { ctx, gainNode, source }
+  const ambientLoadingRef = useRef(false);
 
   function startAmbient() {
-    const amb = ambientRef.current;
-    if (amb) {
-      if (amb.ctx.state === 'suspended') amb.ctx.resume();
-      amb.gainNode.gain.setTargetAtTime(AMBIENT_VOLUME, amb.ctx.currentTime, 0.1);
-      return;
-    }
+    if (ambientRef.current || ambientLoadingRef.current) return;
+    ambientLoadingRef.current = true;
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const gainNode = ctx.createGain();
     gainNode.gain.value = AMBIENT_VOLUME;
@@ -44,19 +41,33 @@ export default function PlaybackCard({
         source.connect(gainNode);
         source.start();
         ambientRef.current = { ctx, gainNode, source };
+        ambientLoadingRef.current = false;
         console.log('[ambient] started, duration:', audioBuffer.duration.toFixed(1) + 's');
       })
-      .catch(err => console.warn('[ambient] failed to start:', err));
+      .catch(err => {
+        ambientLoadingRef.current = false;
+        ctx.close();
+        console.warn('[ambient] failed to start:', err);
+      });
   }
 
-  // Start ambient automatically when playback begins (handles all play paths)
+  // Start/pause/resume ambient in sync with playback status
   useEffect(() => {
     const shouldPlay = status === 'playing' || status === 'assembling' || status === 'between';
-    if (shouldPlay && !ambientRef.current) {
+    const amb = ambientRef.current;
+    console.log('[ambient] status changed:', status, 'shouldPlay:', shouldPlay, 'hasAmb:', !!amb, 'ctxState:', amb?.ctx?.state);
+    if (shouldPlay && !amb) {
       startAmbient();
-    } else if (ambientRef.current) {
-      const target = shouldPlay ? AMBIENT_VOLUME : 0;
-      ambientRef.current.gainNode.gain.setTargetAtTime(target, ambientRef.current.ctx.currentTime, 0.3);
+    } else if (shouldPlay && amb) {
+      if (amb.ctx.state === 'suspended') amb.ctx.resume();
+      amb.gainNode.gain.value = AMBIENT_VOLUME;
+    } else if (status === 'paused' && amb) {
+      console.log('[ambient] suspending AudioContext');
+      amb.ctx.suspend();
+    } else if ((status === 'idle' || status === 'ready') && amb) {
+      amb.source.stop();
+      amb.ctx.close();
+      ambientRef.current = null;
     }
   }, [status]);
 
@@ -97,7 +108,7 @@ export default function PlaybackCard({
       {/* Play controls */}
       <div className="ep-controls">
         {(status === 'idle' || status === 'ready') && (
-          <button className="ep-play-btn" onClick={() => { startAmbient(); onPlay(); }}>
+          <button className="ep-play-btn" onClick={onPlay}>
             <span className="ep-play-icon">&#x25B6;</span>
           </button>
         )}
@@ -112,7 +123,7 @@ export default function PlaybackCard({
           </button>
         )}
         {status === 'paused' && (
-          <button className="ep-play-btn" onClick={() => { startAmbient(); onPlay(); }}>
+          <button className="ep-play-btn" onClick={onPlay}>
             <span className="ep-play-icon">&#x25B6;</span>
           </button>
         )}
