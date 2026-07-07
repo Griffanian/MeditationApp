@@ -65,6 +65,7 @@ Rules:
 - Variables exist to enable PROGRESSION — letting the coach increase difficulty over a programme (e.g. more rounds, longer holds). Be minimal: only create a variable when there is a clear knob the coach would turn between weeks. Do not create variables for things that stay fixed.
 - Variable format: {"value": 5, "displayName": "Rounds", "unit": "minutes"}. The "unit" field is optional: "minutes" (value × 60 for seconds), "seconds" (value used as-is), or omit for unitless (rounds, repetitions). Use "minutes" for duration variables so users can set values like 5 instead of 300. Optional "min" and "max" fields constrain the allowed range.
 - Variables are defined in the stage's "variables" object and referenced in loops via the "variable" key or in targetDuration via "{varName}" syntax. You can also reference variables in speech text using {varName} and in pause duration_seconds using "{varName}".
+- Pluralisation in speech text: use {varName:s} to output "s" when the variable value is not 1, or nothing when it is 1. Example: "We will do {rounds} round{rounds:s}" → "We will do one round" (rounds=1) or "We will do three rounds" (rounds=3). Use this whenever a unit word follows a variable reference.
 - You can create new variables and set targetDuration on sections as part of mutations. Always include the full variables object for the stage when adding or modifying variables.
 
 Conditions:

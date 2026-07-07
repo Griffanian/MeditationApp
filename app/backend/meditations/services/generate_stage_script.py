@@ -35,6 +35,7 @@ Variables:
 - Each variable has a numeric "value" (the default) and a "displayName" for the UI. Optional "unit" field: "minutes" (value × 60 for seconds), "seconds" (value as-is), or omit for unitless (rounds, reps). Optional "min" and "max" for range constraints.
 - Reference variables in loops via the "variable" field — the loop's "repeat" should match the variable's default value
 - Variables can also be referenced in speech text using {varName} and in pause duration_seconds using "{varName}"
+- Pluralisation in speech text: use {varName:s} to output "s" when the value is not 1, or nothing when it is 1. Example: "We will do {rounds} round{rounds:s}" → "one round" or "three rounds". Use this whenever a unit word follows a variable.
 
 Conditions:
 - Conditions let segments be included or excluded based on variable values, so a single script can handle different configurations (e.g. skip the "hold" section when hold duration is 0).

@@ -122,8 +122,16 @@ def _collect_variables(segments: list[dict]) -> dict:
 def _substitute_variables(text: str, variables: dict) -> str:
     def replace(match):
         var_name = match.group(1)
+        suffix = match.group(2)
         if var_name in variables:
             val = variables[var_name]
+            if suffix == 's':
+                # Pluralisation suffix: output "s" unless value == 1
+                raw = val.get("value", 0) if isinstance(val, dict) else val
+                try:
+                    return '' if int(float(raw)) == 1 else 's'
+                except (ValueError, TypeError):
+                    return 's'
             if isinstance(val, dict):
                 raw = val.get("value", 0)
                 try:
@@ -136,7 +144,7 @@ def _substitute_variables(text: str, variables: dict) -> str:
             return str(val)
         return match.group(0)
 
-    return re.sub(r"\{(\w+)\}", replace, text)
+    return re.sub(r"\{(\w+)(?::(\w+))?\}", replace, text)
 
 
 def _collect_speech_segments(segments: list[dict]) -> dict:
@@ -160,7 +168,7 @@ def _get_stage_var_refs(text: str, stage_variables: dict) -> list[str]:
     """Ordered list of variable names in text that are defined as stage variables."""
     seen = set()
     result = []
-    for m in re.finditer(r"\{(\w+)\}", text):
+    for m in re.finditer(r"\{(\w+)(?::\w+)?\}", text):
         name = m.group(1)
         if name in stage_variables and name not in seen:
             seen.add(name)

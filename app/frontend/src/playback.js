@@ -204,10 +204,10 @@ export function setPlaybackVariables(variables) {
 }
 
 function _varKeyForSeg(seg, variables) {
-  if (!seg.text || !/\{\w+\}/.test(seg.text)) return null;
+  if (!seg.text || !/\{\w+(?::\w+)?\}/.test(seg.text)) return null;
   const entries = [];
   const seen = new Set();
-  for (const m of seg.text.matchAll(/\{(\w+)\}/g)) {
+  for (const m of seg.text.matchAll(/\{(\w+)(?::\w+)?\}/g)) {
     const name = m[1];
     if (!seen.has(name) && variables[name] !== undefined) {
       seen.add(name);

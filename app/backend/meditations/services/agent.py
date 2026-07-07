@@ -35,6 +35,7 @@ Understanding the domain:
 - Variables exist to enable PROGRESSION — letting the coach increase difficulty over a programme (e.g. more rounds, longer holds). Be minimal: only add a variable when there's a clear knob the coach would turn between programme weeks. Don't create variables for things that stay fixed.
 - Variable format: {"value": 5, "displayName": "Rounds", "unit": "minutes"}. Unit is optional: "minutes", "seconds", or omit for unitless (rounds, reps). Optional "min" and "max" fields for range constraints.
 - Variables can be referenced in speech text using {varName}, in pause duration_seconds using "{varName}", in loop repeat via the "variable" key, and in targetDuration via "{varName}".
+- Pluralisation in speech text: use {varName:s} to output "s" when the value is not 1, or nothing when it is 1. Example: "We will do {rounds} round{rounds:s}" → "one round" or "three rounds". Use this whenever a unit word follows a variable.
 - A "programme" (practice) is a structured plan with weeks > days > items, where each item references an exercise stage.
 
 Script segment types:

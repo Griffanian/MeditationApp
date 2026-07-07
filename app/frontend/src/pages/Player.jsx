@@ -48,9 +48,13 @@ function collectLoops(segments, map = {}) {
 }
 
 function resolveWordVars(word, variables) {
-  return word.replace(/\{(\w+)\}/g, (_, varName) => {
+  return word.replace(/\{(\w+)(?::(\w+))?\}/g, (_, varName, suffix) => {
     const v = variables[varName];
-    if (v == null) return `{${varName}}`;
+    if (v == null) return `{${varName}${suffix ? ':' + suffix : ''}}`;
+    if (suffix === 's') {
+      const val = typeof v === 'object' ? v.value : v;
+      return Number(val) === 1 ? '' : 's';
+    }
     return typeof v === 'object' ? (v.value ?? `{${varName}}`) : v;
   });
 }

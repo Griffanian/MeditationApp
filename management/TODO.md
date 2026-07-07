@@ -11,3 +11,5 @@
 - [ ]  still too big on iphone with progames as well.
 - [ ] Identify speakers in [[meetings/2026-06-30_therapy-session-body-acceptance-mindfulness-practice-and-self-compassion-with-th]]: `speaker`
 - [ ] Identify speakers in [[meetings/2026-07-02_meditation-practice-check-in-and-body-awareness-with-embodiment-coach]]: `speaker`
+- [ ] Identify speakers in [[meetings/2026-07-05_sefer-yetzirah-study-spheres-letters-and-creation-with-hebrew-text]]: `speaker`
+- [ ] Identify speakers in [[meetings/2026-07-06_untitled]]: `speaker`

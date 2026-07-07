@@ -114,7 +114,7 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
 
   if (seg.type === 'speech') {
     icon = '🤖';
-    const hasVars = /\{\w+\}/.test(seg.text);
+    const hasVars = /\{\w+(?::\w+)?\}/.test(seg.text);
     if (editing) {
       label = (
         <textarea
@@ -131,7 +131,7 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
       );
     } else {
       const words = seg.text.split(' ').map((w, wi) => {
-        const isVar = /\{\w+\}/.test(w);
+        const isVar = /\{\w+(?::\w+)?\}/.test(w);
         const parts = w.split('\n');
         return (
           <span
@@ -250,7 +250,7 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
   let readOnlyLabel;
   if (seg.type === 'speech') {
     const words = seg.text.split(' ').map((w, wi) => {
-      const isVar = /\{\w+\}/.test(w);
+      const isVar = /\{\w+(?::\w+)?\}/.test(w);
       const parts = w.split('\n');
       return <span key={wi} className={`word ${isVar ? 'var-ref' : ''}`}>{parts.length > 1 ? parts.map((p, pi) => <span key={pi}>{pi > 0 && <br />}{p}</span>) : w}{' '}</span>;
     });
@@ -270,7 +270,7 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
     <div
       ref={elementRef}
       style={style}
-      className={`segment ${seg.type.replace('_', '-')}${isPlaying ? ' playing' : ''}${selected ? ' selected' : ''}${seg.type === 'speech' && !hasAudio ? ' no-audio' : ''}${isStale ? ' stale' : ''}${seg.type === 'speech' && /\{\w+\}/.test(seg.text) ? ' has-variables' : ''}${seg.condition && !evaluateCondition(seg.condition, variables) ? ' condition-excluded' : ''}`}
+      className={`segment ${seg.type.replace('_', '-')}${isPlaying ? ' playing' : ''}${selected ? ' selected' : ''}${seg.type === 'speech' && !hasAudio ? ' no-audio' : ''}${isStale ? ' stale' : ''}${seg.type === 'speech' && /\{\w+(?::\w+)?\}/.test(seg.text) ? ' has-variables' : ''}${seg.condition && !evaluateCondition(seg.condition, variables) ? ' condition-excluded' : ''}`}
       onContextMenu={readOnly ? undefined : e => onContextMenu(e, seg.id)}
       onClick={e => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.closest('.kebab-wrapper')) return;
@@ -321,7 +321,7 @@ export default function Segment({ seg, playingId, isPaused, onPlay, onWordClick,
         />}
       </span>
       {!readOnly && showModal && (
-        seg.type === 'speech' && /\{\w+\}/.test(seg.text) ? (
+        seg.type === 'speech' && /\{\w+(?::\w+)?\}/.test(seg.text) ? (
           <VariableRecordingsModal
             seg={seg}
             meditationName={meditationName}
