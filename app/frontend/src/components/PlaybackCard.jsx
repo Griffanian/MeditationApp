@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+import { BASE } from '../api';
 
 const AMBIENT_VOLUME = 0.3;
-const AMBIENT_SRC = '/ambient/fire-crackle-loop.wav';
+const AMBIENT_SRC = `${BASE}/audio/asset/fire-crackle-loop.wav`;
 
 function formatTime(seconds) {
   if (!seconds || !isFinite(seconds)) return '0:00';
