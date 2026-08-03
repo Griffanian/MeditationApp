@@ -548,6 +548,13 @@ export default function StageEditor({ stageName, stageId, meditationName, readOn
       updated[k === oldName ? newName : k] = v;
     }
     saveVars(updated);
+    // Update any BYB blocks that reference the old variable name
+    const updatedBlocks = bybBlocks.map(b =>
+      b.variable === oldName ? { ...b, variable: newName } : b
+    );
+    if (updatedBlocks.some((b, i) => b !== bybBlocks[i])) {
+      saveBybBlocks(updatedBlocks);
+    }
   }
 
   function deleteVariable(varName) {

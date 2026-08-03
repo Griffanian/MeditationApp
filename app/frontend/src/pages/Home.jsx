@@ -712,10 +712,19 @@ export default function Home() {
       wi++;
       di = 0;
     }
-    // If past end of programme, stay at last day
-    if (wi >= weeks.length) {
-      wi = progress.current_week;
-      di = progress.current_day;
+    // End of programme — nothing but empty days (or nothing at all) ahead:
+    // loop the current day instead of advancing
+    const hasContentAhead = (() => {
+      for (let w = wi, d = di; w < weeks.length; w++, d = 0) {
+        const days = weeks[w]?.days || [];
+        for (; d < days.length; d++) {
+          if ((days[d]?.items || []).length > 0) return true;
+        }
+      }
+      return false;
+    })();
+    if (!hasContentAhead) {
+      return { week: progress.current_week, day: progress.current_day };
     }
     return { week: wi, day: di };
   })() : null;

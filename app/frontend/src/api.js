@@ -265,6 +265,15 @@ export async function fetchBeforeYouBegin(name, stageId) {
   return data.before_you_begin || '';
 }
 
+export async function fetchStageInfoBatch(items) {
+  const res = await apiFetch(`${BASE}/api/stage-info-batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  return safeJson(res, {});
+}
+
 export async function fetchBeforeYouBeginBlocks(name, stageId) {
   const res = await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/before-you-begin`);
   const data = await safeJson(res, {});
@@ -312,6 +321,14 @@ export async function saveStageScript(name, stageId, script) {
 export async function fetchStageComponents(name, stageId) {
   const res = await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/components`);
   return safeJson(res, {});
+}
+
+export async function fetchPlaybackClips(name, stageId, variables) {
+  const opts = variables
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ variables }) }
+    : {};
+  const res = await apiFetch(`${BASE}/api/meditations/${name}/stages/${stageId}/playback-clips`, opts);
+  return safeJson(res, { clips: {}, assets: {} });
 }
 
 export async function fetchStageTimestamps(name, stageId, segId) {

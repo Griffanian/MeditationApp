@@ -14,6 +14,7 @@ function formatTime(seconds) {
 export default function PlaybackCard({
   status, elapsed, duration,
   activeEntry, activeWordIdx, countdown, contextLabel,
+  bufferProgress, // { loaded, total } — clip download progress while buffering
   error, errorLabel,
   onPlay, onPause, onSeek, onDismissError,
   children,
@@ -160,7 +161,18 @@ export default function PlaybackCard({
         </div>
       ) : (
         <div className="ep-script-box">
-          {isActive && activeEntry ? (
+          {bufferProgress && (status === 'assembling' || status === 'loading') ? (
+            <div className="ep-buffering">
+              <span className="ep-buffering-label">Preparing audio&hellip;</span>
+              <div className="ep-buffer-bar">
+                <div
+                  className="ep-buffer-fill"
+                  style={{ width: `${bufferProgress.total > 0 ? Math.round((bufferProgress.loaded / bufferProgress.total) * 100) : 0}%` }}
+                />
+              </div>
+              <span className="ep-buffering-count">{bufferProgress.loaded}/{bufferProgress.total}</span>
+            </div>
+          ) : isActive && activeEntry ? (
             <>
               {contextLabel && <div className="ep-script-context">{contextLabel}</div>}
               {(activeEntry.type === 'pause' || activeEntry.type === 'split_marker') && (

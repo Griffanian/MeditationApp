@@ -8,6 +8,19 @@ function genId() {
   return 'item-' + Math.random().toString(36).slice(2, 10);
 }
 
+// Cross-programme day clipboard — localStorage so a copied day survives
+// navigating to another programme's builder (or another tab)
+const DAY_CLIPBOARD_KEY = 'programmeDayClipboard';
+
+function readDayClipboard() {
+  try {
+    const data = JSON.parse(localStorage.getItem(DAY_CLIPBOARD_KEY));
+    return data?.items?.length ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 function migrateToWeeks(items) {
   let weeks;
   if (!items || items.length === 0) {
@@ -84,6 +97,10 @@ export default function PracticeBuilder() {
   // Stage durations
   const [itemDurations, setItemDurations] = useState({});
 
+  // Day clipboard (copy day → paste in this or another programme)
+  const [dayClipboard, setDayClipboard] = useState(readDayClipboard);
+  const [copiedFlash, setCopiedFlash] = useState(null); // { wi, di }
+
 
   useEffect(() => {
     fetchPractice(name).then(p => {
@@ -107,6 +124,15 @@ export default function PracticeBuilder() {
     window.addEventListener('assistant-data-changed', handler);
     return () => window.removeEventListener('assistant-data-changed', handler);
   }, [name]);
+
+  // Pick up day-clipboard changes from other tabs/windows
+  useEffect(() => {
+    const onStorage = e => {
+      if (e.key === DAY_CLIPBOARD_KEY) setDayClipboard(readDayClipboard());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const save = useCallback(async (weeks) => {
     await savePractice(name, { items: weeks });
@@ -211,11 +237,25 @@ export default function PracticeBuilder() {
 
   function copyDay(wi, di) {
     const source = weeks[wi]?.days?.[di];
-    if (!source || source.items.length === 0) return;
-    const targetDi = weeks[wi].days.findIndex((d, j) => j > di && d.items.length === 0);
-    if (targetDi === -1) return;
-    const copiedItems = JSON.parse(JSON.stringify(source.items)).map(it => ({ ...it, id: genId() }));
-    updateDayItems(wi, targetDi, copiedItems);
+    if (!source || (source.items || []).length === 0) return;
+    const payload = {
+      items: JSON.parse(JSON.stringify(source.items)),
+      label: source.label,
+      source: practice.display_name,
+      copiedAt: Date.now(),
+    };
+    localStorage.setItem(DAY_CLIPBOARD_KEY, JSON.stringify(payload));
+    setDayClipboard(payload);
+    setCopiedFlash({ wi, di });
+    setTimeout(() => setCopiedFlash(null), 1500);
+  }
+
+  function pasteDay(wi, di) {
+    const clip = dayClipboard || readDayClipboard();
+    if (!clip?.items?.length) return;
+    const pasted = clip.items.map(it => ({ ...it, id: genId() }));
+    const dayItems = weeks[wi]?.days?.[di]?.items || [];
+    updateDayItems(wi, di, [...dayItems, ...pasted]);
   }
 
   // --- Grid drag (cross-day) ---
@@ -417,12 +457,19 @@ export default function PracticeBuilder() {
 
                         <div className="prog-cal-day-cell-header">
                           <span className="prog-cal-day-count">
-                            {dayItems.length > 0 ? `${dayItems.length} stage${dayItems.length !== 1 ? 's' : ''}` : ''}
+                            {copiedFlash?.wi === absWi && copiedFlash?.di === di
+                              ? 'Copied!'
+                              : dayItems.length > 0 ? `${dayItems.length} stage${dayItems.length !== 1 ? 's' : ''}` : ''}
                           </span>
                           {dayItems.length > 0 && (
-                            <button className="prog-cal-day-play"
-                              onClick={e => { e.stopPropagation(); navigate(`/play/${name}?week=${absWi}&day=${di}`); }}
-                              title="Open in Player">▶</button>
+                            <>
+                              <button className="prog-cal-day-copy"
+                                onClick={e => { e.stopPropagation(); copyDay(absWi, di); }}
+                                title="Copy day (paste in any programme)">⧉</button>
+                              <button className="prog-cal-day-play"
+                                onClick={e => { e.stopPropagation(); navigate(`/play/${name}?week=${absWi}&day=${di}`); }}
+                                title="Open in Player">▶</button>
+                            </>
                           )}
                         </div>
 
@@ -449,8 +496,17 @@ export default function PracticeBuilder() {
 
                         {isEmpty && <div className="prog-cal-day-empty-label">Empty</div>}
 
-                        <button className="prog-cal-day-add"
-                          onClick={e => { e.stopPropagation(); setPickerTarget({ wi: absWi, di }); }}>+</button>
+                        <div className="prog-cal-day-actions">
+                          <button className="prog-cal-day-add"
+                            onClick={e => { e.stopPropagation(); setPickerTarget({ wi: absWi, di }); }}>+</button>
+                          {dayClipboard && (
+                            <button className="prog-cal-day-paste"
+                              onClick={e => { e.stopPropagation(); pasteDay(absWi, di); }}
+                              title={`Paste ${dayClipboard.items.length} stage${dayClipboard.items.length !== 1 ? 's' : ''} (${dayClipboard.label || 'day'} from ${dayClipboard.source})`}>
+                              ⎘ Paste
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -496,6 +552,12 @@ export default function PracticeBuilder() {
                   onClick={() => navigate(`/play/${name}?week=${editingDay.wi}&day=${editingDay.di}&autoplay=1`)}
                   disabled={editDayItems.length === 0}>
                   ▶ Play All
+                </button>
+                <button className="day-edit-modal-copy"
+                  onClick={() => copyDay(editingDay.wi, editingDay.di)}
+                  disabled={editDayItems.length === 0}
+                  title="Copy day (paste in any programme)">
+                  {copiedFlash?.wi === editingDay.wi && copiedFlash?.di === editingDay.di ? 'Copied!' : '⧉ Copy Day'}
                 </button>
               </div>
             </div>

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "app/backend/venv/bin/python",
+      "runtimeArgs": ["app/backend/manage.py", "runserver", "5555"],
+      "port": 5555
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "app/frontend"],
+      "port": 3000
+    }
+  ]
+}

@@ -92,6 +92,65 @@ class BeforeYouBeginView(APIView):
         return Response({"status": "ok"})
 
 
+class StageInfoBatchView(APIView):
+    """Batch-fetch Before You Begin blocks + variables for several stages at once.
+
+    One round trip for the setup wizard instead of two requests per stage.
+    Variables are returned raw — no computed_min enrichment, which the wizard
+    doesn't use and which makes the per-stage variables endpoint slow.
+    """
+
+    def post(self, request):
+        items = request.data.get("items", [])
+        unique = []
+        seen = set()
+        for item in items:
+            med = item.get("meditation")
+            sid = item.get("stage_id")
+            if med and sid and (med, sid) not in seen:
+                seen.add((med, sid))
+                unique.append((med, sid))
+        if not unique:
+            return Response({})
+
+        meds = {
+            m.name: m
+            for m in Meditation.objects.filter(name__in={med for med, _ in unique})
+        }
+        perm = CanViewContent()
+        allowed = {
+            name for name, m in meds.items()
+            if perm.has_object_permission(request, None, m)
+        }
+
+        from django.db.models import Q
+        stage_q = Q()
+        for med, sid in unique:
+            if med in allowed:
+                stage_q |= Q(meditation_id=med, stage_id=sid)
+        stage_map = {}
+        if stage_q:
+            for s in Stage.objects.filter(stage_q):
+                stage_map[(s.meditation_id, s.stage_id)] = s
+
+        results = {}
+        for med, sid in unique:
+            if med not in allowed:
+                continue
+            stage = stage_map.get((med, sid))
+            if not stage:
+                results[f"{med}/{sid}"] = {"blocks": [], "variables": {}}
+                continue
+            blocks = stage.before_you_begin_blocks or []
+            if not blocks and stage.before_you_begin:
+                blocks = [{"type": "text", "content": stage.before_you_begin}]
+            results[f"{med}/{sid}"] = {
+                "blocks": blocks,
+                "variables": stage.variables or {},
+            }
+        return Response(results)
+
+
 class GenerateStageScriptView(APIView):
     throttle_scope = "ai-generation"
 

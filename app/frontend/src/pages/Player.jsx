@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { fetchPractice, saveStageVariables, assembleStage, computeDurations, savePracticeProgress, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, fetchBeforeYouBegin, fetchBeforeYouBeginBlocks, checkCachedOutputs, validatePrompt, BASE } from '../api';
+import { fetchPractice, saveStageVariables, computeDurations, savePracticeProgress, fetchStageScript, fetchStageVariables, fetchStageInfoBatch, fetchPlaybackClips, validatePrompt } from '../api';
 import ReactMarkdown from 'react-markdown';
-import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration, unlockAudio } from '../playback';
+import { formatDuration } from '../playback';
+import { buildTimeline, buildComponentsMap, loadClipBuffers, scheduleTimeline } from '../clipEngine';
 import PlaybackCard from '../components/PlaybackCard';
 
 function migrateToWeeks(items) {
@@ -37,73 +38,6 @@ function itemDurationMinutes(item) {
   return null;
 }
 
-function collectLoops(segments, map = {}) {
-  for (const seg of segments) {
-    if (seg.type === 'loop') {
-      map[seg.id] = seg;
-      collectLoops(seg.segments, map);
-    }
-  }
-  return map;
-}
-
-function resolveWordVars(word, variables) {
-  return word.replace(/\{(\w+)(?::(\w+))?\}/g, (_, varName, suffix) => {
-    const v = variables[varName];
-    if (v == null) return `{${varName}${suffix ? ':' + suffix : ''}}`;
-    if (suffix === 's') {
-      const val = typeof v === 'object' ? v.value : v;
-      return Number(val) === 1 ? '' : 's';
-    }
-    return typeof v === 'object' ? (v.value ?? `{${varName}}`) : v;
-  });
-}
-
-function buildTimeline(script, variables, components) {
-  const flat = flattenScript(script, variables, components);
-  const loops = collectLoops(script);
-  const timeline = [];
-  let cursor = 0;
-
-  for (const item of flat) {
-    const { seg } = item;
-    let dur = 0;
-
-    if (seg.type === 'speech') {
-      const comp = components[seg.id];
-      dur = comp?.duration || 0;
-    } else if (seg.type === 'pause') {
-      dur = resolvePauseDuration(seg.duration_seconds, variables);
-    } else if (seg.type === 'asset') {
-      const comp = components[seg.id];
-      dur = comp?.duration || 1;
-    } else if (seg.type === 'split_marker') {
-      const markerDur = computeMarkerDuration(script, seg.id, variables, components);
-      dur = markerDur != null ? markerDur * (seg.multiplier || 1) : 1;
-    }
-
-    if (dur > 0) {
-      const loopSeg = item.loopId ? loops[item.loopId] : null;
-      const rawWords = seg.type === 'speech' ? (seg.text || '').split(' ') : [];
-      timeline.push({
-        start: cursor,
-        end: cursor + dur,
-        dur,
-        type: seg.type,
-        segId: seg.id,
-        file: seg.file,
-        words: rawWords.map(w => resolveWordVars(w, variables)),
-        loopLabel: loopSeg?.label || '',
-        loopIteration: item.loopIteration || null,
-        loopTotal: item.loopTotal || null,
-      });
-      cursor += dur;
-    }
-  }
-
-  return timeline;
-}
-
 export function ProgrammeView() {
   const { name } = useParams();
   const navigate = useNavigate();
@@ -129,11 +63,12 @@ export function ProgrammeView() {
   const weeks = practice.items || [];
   if (weeks.length === 0) return <div className="player-empty">This programme has no content yet.</div>;
 
+  // Only days with content count — empty padding slots are just "Rest" fillers
   const allDays = [];
   for (let wi = 0; wi < weeks.length; wi++) {
     const wDays = weeks[wi]?.days || [];
     for (let di = 0; di < wDays.length; di++) {
-      allDays.push({ wi, di });
+      if ((wDays[di]?.items || []).length > 0) allDays.push({ wi, di });
     }
   }
 
@@ -268,8 +203,7 @@ export default function Player() {
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState(null);
   const [itemDurations, setItemDurations] = useState({});
-  const [singleMode, setSingleMode] = useState(false);
-  const [prepareStatus, setPrepareStatus] = useState('idle');
+  const [bufferProgress, setBufferProgress] = useState(null); // { idx, loaded, total }
 
   // Script display state (ExercisePlayer-style)
   const [activeEntry, setActiveEntry] = useState(null);
@@ -277,18 +211,25 @@ export default function Player() {
   const [countdown, setCountdown] = useState('');
   const pendingStageRef = useRef(null);
 
-  const audioRef = useRef(null);
-  const nextAudioRef = useRef(null);
   const timerRef = useRef(null);
   const stopRef = useRef(false);
   const gapTimerRef = useRef(null);
   const playIdxRef = useRef(-1);
+  const singleRef = useRef(false);
   const playedStagesRef = useRef(new Set());
   const sessionStartRef = useRef(null);
   const cumulativeDurationRef = useRef(0);
-  const preparedUrls = useRef({});
   const autoplayPending = useRef(false);
   const handlePlayRef = useRef(null);
+
+  // Client-side clip playback (AudioContext) — same engine as ExercisePlayer
+  const audioCtxRef = useRef(null);
+  const keepAliveRef = useRef(null);   // silent Audio element keeps the mobile session alive
+  const scheduledRef = useRef([]);     // scheduled AudioBufferSourceNodes for the current stage
+  const playOriginRef = useRef({ ctxTime: 0, offset: 0 });
+  const currentDurRef = useRef(0);     // duration of the currently playing stage
+  const stageDataRef = useRef({});     // idx → { timeline, duration, clipBuffers, assetBuffers, wordTs }
+  const stageLoadRef = useRef({});     // idx → in-flight load promise
 
   // Per-stage timeline and word timestamps for script display
   const timelineRef = useRef(null); // { idx, timeline }
@@ -310,8 +251,12 @@ export default function Player() {
   }
 
   useEffect(() => {
+    // Cancel guard: StrictMode double-mounts in dev — without this, two fetches
+    // produce two `practice` identities and the day-setup effect (BYB wizard) runs twice.
+    let cancelled = false;
     const hasUrlPos = urlParamsRef.current.week !== null || urlParamsRef.current.day !== null;
     fetchPractice(name).then(p => {
+      if (cancelled) return;
       p.items = migrateToWeeks(p.items);
       setPractice(p);
       if (urlParamsRef.current.autoplay) setAutoplay(true);
@@ -339,14 +284,18 @@ export default function Player() {
         }
       }
       if (allItems.length > 0) {
-        computeDurations(allItems).then(setItemDurations);
+        computeDurations(allItems).then(durs => { if (!cancelled) setItemDurations(durs); });
       }
     });
+    return () => { cancelled = true; };
   }, [name]);
 
   useEffect(() => {
     return () => {
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      for (const s of scheduledRef.current) { try { s.stop(); } catch {} }
+      scheduledRef.current = [];
+      audioCtxRef.current?.close();
+      if (keepAliveRef.current) { keepAliveRef.current.pause(); keepAliveRef.current = null; }
       if (timerRef.current) clearInterval(timerRef.current);
       if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
     };
@@ -357,20 +306,23 @@ export default function Player() {
   autoplayRef.current = autoplay;
   useEffect(() => {
     playedStagesRef.current = new Set();
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    if (nextAudioRef.current) { nextAudioRef.current = null; }
+    for (const s of scheduledRef.current) { try { s.stop(); } catch {} }
+    scheduledRef.current = [];
+    if (audioCtxRef.current?.state === 'running') audioCtxRef.current.suspend();
+    if (keepAliveRef.current) keepAliveRef.current.pause();
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
     stopRef.current = true;
     setStatus('idle');
     setPlayIdx(-1);
     playIdxRef.current = -1;
-    setSingleMode(false);
+    singleRef.current = false;
     setElapsed(0);
     setDuration(0);
     setError(null);
-    preparedUrls.current = {};
-    setPrepareStatus('idle');
+    stageDataRef.current = {};
+    stageLoadRef.current = {};
+    currentDurRef.current = 0;
     timelineRef.current = null;
     setActiveEntry(null);
     setActiveWordIdx(-1);
@@ -378,40 +330,23 @@ export default function Player() {
     setBybLoading(true);
     const stageToPlay = pendingStageRef.current;
     pendingStageRef.current = null;
-    // Check for pre-assembled cached audio on day load
     if (practice) {
       const week = (practice.items || [])[currentWeek];
       const dayData = week?.days?.[currentDay];
       const dayItems = dayData?.items || [];
+      // Prefetch the first stage's clips immediately (overlaps with the BYB wizard)
+      // so pressing Play doesn't wait on downloads
       if (dayItems.length > 0) {
-        checkCachedOutputs(dayItems.map(i => ({
-          meditation: i.meditation,
-          stage_id: i.stage_id,
-          variables: i.variables,
-        }))).then(cached => {
-          for (const [idx, data] of Object.entries(cached)) {
-            const i = parseInt(idx);
-            const item = dayItems[i];
-            if (item && data.filename) {
-              preparedUrls.current[i] = `${BASE}/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`;
-            }
-          }
-          const n = Object.keys(cached).length;
-          if (n > 0) console.log(`[playback] ${n}/${dayItems.length} stages pre-cached`);
-        }).catch(() => {});
+        loadStage(0).catch(() => {});
       }
       const uniqueStages = [...new Set(dayItems.map(i => `${i.meditation}/${i.stage_id}`))];
-      // Fetch BYB blocks and stage variables in parallel
-      Promise.all([
-        Promise.all(uniqueStages.map(key => {
-          const [med, sid] = key.split('/');
-          return fetchBeforeYouBeginBlocks(med, sid).catch(() => []);
-        })),
-        Promise.all(uniqueStages.map(key => {
-          const [med, sid] = key.split('/');
-          return fetchStageVariables(med, sid).catch(() => ({}));
-        })),
-      ]).then(([blockResults, varResults]) => {
+      // One batched request for BYB blocks + variables (instead of two per stage)
+      fetchStageInfoBatch(uniqueStages.map(key => {
+        const [med, sid] = key.split('/');
+        return { meditation: med, stage_id: sid };
+      })).then(info => {
+        const blockResults = uniqueStages.map(key => info[key]?.blocks || []);
+        const varResults = uniqueStages.map(key => info[key]?.variables || {});
         // Build a merged variable definitions map across all stages
         const varDefs = {};
         for (const vars of varResults) {
@@ -509,10 +444,8 @@ export default function Player() {
     logPartialSession();
   }
 
-  function logPartialSession() {
+  function logPartialSession(currentElapsed = 0) {
     if (!sessionStartRef.current) return;
-    // Include current track's elapsed time if still playing
-    const currentElapsed = audioRef.current?.currentTime || 0;
     const totalDuration = cumulativeDurationRef.current + currentElapsed;
     if (totalDuration <= 0) return;
     const endedAt = new Date().toISOString();
@@ -559,352 +492,277 @@ export default function Player() {
     }
   }
 
-  async function loadStageTimeline(idx) {
-    const item = items[idx];
-    if (!item) return;
-    // Don't reload if already loaded for this idx
-    if (timelineRef.current && timelineRef.current.idx === idx) return;
+  // --- Client-side clip playback (AudioContext) ---
+  // Same engine as ExercisePlayer: fetch each stage's clips, decode to AudioBuffers,
+  // schedule them at their timeline offsets. No server-side assembly.
 
-    try {
-      const [script, components, variables] = await Promise.all([
-        fetchStageScript(item.meditation, item.stage_id),
-        fetchStageComponents(item.meditation, item.stage_id),
-        fetchStageVariables(item.meditation, item.stage_id),
-      ]);
-
-      const tl = buildTimeline(script, variables, components);
-      timelineRef.current = { idx, timeline: tl };
-
-      // Fetch word timestamps for speech segments
-      const speechIds = [...new Set(tl.filter(e => e.type === 'speech').map(e => e.segId))];
-      const tsResults = await Promise.all(
-        speechIds.map(segId =>
-          fetchStageTimestamps(item.meditation, item.stage_id, segId)
-            .then(ts => ({ segId, ts }))
-            .catch(() => ({ segId, ts: [] }))
-        )
-      );
-      wordTimestampsRef.current = {};
-      for (const { segId, ts } of tsResults) {
-        wordTimestampsRef.current[segId] = ts;
-      }
-    } catch {
-      timelineRef.current = null;
+  function ensureCtx() {
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
     }
+    return audioCtxRef.current;
+  }
+
+  function stopAllSources() {
+    for (const s of scheduledRef.current) {
+      try { s.stop(); } catch {}
+    }
+    scheduledRef.current = [];
+  }
+
+  function getCurrentTime() {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return 0;
+    const origin = playOriginRef.current;
+    return origin.offset + (ctx.currentTime - origin.ctxTime);
+  }
+
+  // Fetch script + clips for a stage and decode into AudioBuffers.
+  // Cached per idx with in-flight dedupe so prefetch and play never double-load.
+  function loadStage(idx) {
+    if (stageDataRef.current[idx]) return Promise.resolve(stageDataRef.current[idx]);
+    if (stageLoadRef.current[idx]) return stageLoadRef.current[idx];
+    const item = items[idx];
+    if (!item) return Promise.resolve(null);
+    const ctx = ensureCtx();
+    const t0 = performance.now();
+    const promise = (async () => {
+      const hasVars = Object.keys(item.variables || {}).length > 0;
+      const [script, stageVars, clipData] = await Promise.all([
+        fetchStageScript(item.meditation, item.stage_id),
+        fetchStageVariables(item.meditation, item.stage_id),
+        fetchPlaybackClips(item.meditation, item.stage_id, hasVars ? item.variables : undefined),
+      ]);
+      const variables = { ...stageVars, ...(item.variables || {}) };
+      const components = buildComponentsMap(script, clipData);
+      const timeline = buildTimeline(script, variables, components);
+      const wordTs = {};
+      for (const [segId, clip] of Object.entries(clipData.clips || {})) {
+        if (clip.timestamps) wordTs[segId] = clip.timestamps;
+      }
+      const { clipBuffers, assetBuffers } = await loadClipBuffers(ctx, clipData,
+        (loaded, total) => setBufferProgress({ idx, loaded, total }));
+      const data = {
+        timeline,
+        duration: timeline.length ? timeline[timeline.length - 1].end : 0,
+        clipBuffers,
+        assetBuffers,
+        wordTs,
+      };
+      stageDataRef.current[idx] = data;
+      delete stageLoadRef.current[idx];
+      console.log(`[playback] loadStage(${idx}): ${Object.keys(clipBuffers).length} clips in ${Math.round(performance.now() - t0)}ms`);
+      return data;
+    })();
+    promise.catch(() => { delete stageLoadRef.current[idx]; });
+    stageLoadRef.current[idx] = promise;
+    return promise;
+  }
+
+  function scheduleStage(idx, fromTime) {
+    stopAllSources();
+    const ctx = audioCtxRef.current;
+    const data = stageDataRef.current[idx];
+    if (!ctx || !data) return;
+    playOriginRef.current = { ctxTime: ctx.currentTime, offset: fromTime };
+    scheduledRef.current = scheduleTimeline(ctx, data.timeline, data.clipBuffers, data.assetBuffers, fromTime);
   }
 
   // --- Timer ---
 
-  function startTimer() {
+  function startTick() {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
-      if (audioRef.current && !audioRef.current.paused) {
-        const t = audioRef.current.currentTime;
-        setElapsed(t);
-        setDuration(audioRef.current.duration || 0);
-        updateScriptDisplay(t);
-      }
+      const ctx = audioCtxRef.current;
+      if (!ctx || ctx.state !== 'running') return;
+      const t = getCurrentTime();
+      setElapsed(t);
+      updateScriptDisplay(t);
+      const dur = currentDurRef.current;
+      if (dur > 0 && t >= dur) onStageEnd();
     }, 100);
   }
 
-  function stopTimer() {
+  function stopTick() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }
 
-  // --- Background drone (barely perceptible "still playing" signal) ---
+  // --- Session flow ---
 
-  // --- Prepare / play ---
-
-  async function prepareOne(idx) {
-    if (preparedUrls.current[idx]) return preparedUrls.current[idx];
-    const item = items[idx];
-    const vars = Object.keys(item.variables || {}).length > 0 ? item.variables : undefined;
-    const t0 = performance.now();
-    let data;
-    try {
-      data = await assembleStage(item.meditation, item.stage_id, vars);
-    } catch (err) {
-      // If assembly fails with overrides, retry without them (uses stage defaults)
-      if (vars) {
-        data = await assembleStage(item.meditation, item.stage_id);
-      } else {
-        throw err;
-      }
-    }
-    console.log(`[playback] prepareOne(${idx}) assemble: ${Math.round(performance.now() - t0)}ms`, data.timings_ms || {});
-    const url = `${BASE}/audio/meditation/${item.meditation}/stage/${item.stage_id}/output/${data.filename}?t=${Date.now()}`;
-    preparedUrls.current[idx] = url;
-    return url;
-  }
-
-  async function prepareAll() {
-    setPrepareStatus('preparing');
-    for (let i = 0; i < items.length; i++) {
-      if (stopRef.current) return;
-      try {
-        await prepareOne(i);
-      } catch (err) {
-        console.warn(`[playback] prepareOne(${i}) failed:`, err);
-      }
-    }
-    setPrepareStatus('ready');
-  }
-
-  function preloadNext(idx) {
-    const nextIdx = idx + 1;
-    if (nextIdx >= items.length) return;
-    const url = preparedUrls.current[nextIdx];
-    if (!url) return;
-    const next = new Audio(url);
-    next.crossOrigin = 'anonymous';
-    next.preload = 'auto';
-    next.load();
-    nextAudioRef.current = { idx: nextIdx, audio: next };
-  }
-
-  async function playFromUrl(idx, single = false) {
-    if (idx >= items.length || (single && idx !== playIdxRef.current)) {
-      setStatus('idle');
-      setPlayIdx(-1);
-      setSingleMode(false);
-      stopTimer();
-
-      timelineRef.current = null;
-      setActiveEntry(null);
-      setActiveWordIdx(-1);
-      setCountdown('');
-      return;
-    }
-    if (stopRef.current) return;
-
-    playIdxRef.current = idx;
-    setPlayIdx(idx);
+  function endSession() {
+    stopTick();
+    stopAllSources();
+    logPartialSession();
+    if (audioCtxRef.current?.state === 'running') audioCtxRef.current.suspend();
+    if (keepAliveRef.current) keepAliveRef.current.pause();
+    setStatus('idle');
+    setPlayIdx(-1);
+    playIdxRef.current = -1;
+    singleRef.current = false;
     setElapsed(0);
     setDuration(0);
-    setStatus('playing');
-
-    // Clear old timeline immediately, load new one in parallel (non-blocking)
     timelineRef.current = null;
     setActiveEntry(null);
     setActiveWordIdx(-1);
     setCountdown('');
-    wordTimestampsRef.current = {};
-    loadStageTimeline(idx);
-
-    let audio;
-    if (nextAudioRef.current && nextAudioRef.current.idx === idx) {
-      audio = nextAudioRef.current.audio;
-      nextAudioRef.current = null;
-    } else {
-      let url = preparedUrls.current[idx];
-      if (!url) {
-        // URL missing (background prep may have been suspended on mobile) — try assembling now
-        console.warn(`[playback] No audio URL for stage ${idx}, assembling on demand`);
-        setStatus('assembling');
-        try {
-          url = await prepareOne(idx);
-        } catch (err) {
-          console.warn(`[playback] On-demand assembly failed for stage ${idx}:`, err);
-          // Advance to next track without counting this one as played
-          if (!stopRef.current) {
-            setStatus('between');
-            stopTimer();
-            gapTimerRef.current = setTimeout(() => {
-              gapTimerRef.current = null;
-              if (!stopRef.current) {
-                playFromUrl(idx + 1, single);
-              }
-            }, 2000);
-          }
-          return;
-        }
-        if (stopRef.current) return;
-        setStatus('playing');
-      }
-      audio = new Audio(url);
-    }
-
-    audioRef.current = audio;
-    startTimer();
-    preloadNext(idx);
-
-    const onFinish = () => {
-      if (audio.duration && isFinite(audio.duration)) {
-        cumulativeDurationRef.current += audio.duration;
-      }
-      audioRef.current = null;
-      playedStagesRef.current.add(idx);
-      if (playedStagesRef.current.size >= items.length) {
-        markDayCompleted();
-      }
-      if (!stopRef.current) {
-        if (single && !autoplayRef.current) {
-          setStatus('idle');
-          setPlayIdx(-1);
-          setSingleMode(false);
-          stopTimer();
-
-          timelineRef.current = null;
-          setActiveEntry(null);
-        } else {
-          setStatus('between');
-          stopTimer();
-          gapTimerRef.current = setTimeout(() => {
-            gapTimerRef.current = null;
-            if (!stopRef.current) {
-              playFromUrl(idx + 1);
-            }
-          }, 2000);
-        }
-      }
-    };
-    audio.onended = onFinish;
-    audio.onerror = () => {
-      console.warn(`[playback] Audio error on stage ${idx}`);
-      audioRef.current = null;
-      stopTimer();
-      // Don't count errored playback as played — advance to next track
-      if (!stopRef.current) {
-        setStatus('between');
-        gapTimerRef.current = setTimeout(() => {
-          gapTimerRef.current = null;
-          if (!stopRef.current) {
-            playFromUrl(idx + 1, single);
-          }
-        }, 2000);
-      }
-    };
-    audio.play().catch(() => {
-      console.warn(`[playback] Failed to start playback for stage ${idx}`);
-      audioRef.current = null;
-      stopTimer();
-      if (!stopRef.current) {
-        setStatus('between');
-        gapTimerRef.current = setTimeout(() => {
-          gapTimerRef.current = null;
-          if (!stopRef.current) {
-            playFromUrl(idx + 1, single);
-          }
-        }, 2000);
-      }
-    });
   }
 
-  async function handlePlay() {
-    if (status === 'paused' && audioRef.current) {
-      audioRef.current.play();
-      setStatus('playing');
-      startTimer();
+  function onStageEnd() {
+    stopTick();
+    stopAllSources();
+    const idx = playIdxRef.current;
+    cumulativeDurationRef.current += currentDurRef.current;
+    playedStagesRef.current.add(idx);
+    if (playedStagesRef.current.size >= items.length) {
+      markDayCompleted();
+    }
+    if (stopRef.current) return;
+    const lastStage = idx + 1 >= items.length;
+    if (lastStage || (singleRef.current && !autoplayRef.current)) {
+      endSession();
       return;
     }
+    // Gap between stages — the ambient bed keeps playing so the session audibly continues
+    setStatus('between');
+    setActiveEntry(null);
+    setActiveWordIdx(-1);
+    setCountdown('');
+    gapTimerRef.current = setTimeout(() => {
+      gapTimerRef.current = null;
+      if (!stopRef.current) playStage(idx + 1);
+    }, 2000);
+  }
+
+  async function playStage(idx) {
+    playIdxRef.current = idx;
+    setPlayIdx(idx);
+    setElapsed(0);
+    let data = stageDataRef.current[idx];
+    if (!data) {
+      setStatus('assembling');
+      try {
+        data = await loadStage(idx);
+      } catch (err) {
+        console.warn(`[playback] Failed to load stage ${idx}:`, err);
+        if (stopRef.current) return;
+        // Skip to the next stage rather than stalling the session
+        if (idx + 1 < items.length && !(singleRef.current && !autoplayRef.current)) {
+          setStatus('between');
+          gapTimerRef.current = setTimeout(() => {
+            gapTimerRef.current = null;
+            if (!stopRef.current) playStage(idx + 1);
+          }, 2000);
+        } else {
+          setError({ idx, message: err.message });
+          endSession();
+        }
+        return;
+      }
+      if (stopRef.current) return;
+    }
+    if (!data) return;
+
+    currentDurRef.current = data.duration;
+    setDuration(data.duration);
+    timelineRef.current = { idx, timeline: data.timeline };
+    wordTimestampsRef.current = data.wordTs;
+
+    scheduleStage(idx, 0);
+    setBufferProgress(null);
+    setStatus('playing');
+    startTick();
+
+    // Prefetch the next stage's clips while this one plays
+    if (idx + 1 < items.length && !(singleRef.current && !autoplayRef.current)) {
+      loadStage(idx + 1).catch(() => {});
+    }
+  }
+
+  async function startSession(startIdx, single) {
     handleStop();
     stopRef.current = false;
-    setSingleMode(false);
-    unlockAudio();
+    singleRef.current = single;
+    setError(null);
     if (!sessionStartRef.current) {
       sessionStartRef.current = new Date().toISOString();
       cumulativeDurationRef.current = 0;
       playedStagesRef.current = new Set();
     }
 
-    setStatus('assembling');
-    setPlayIdx(0);
-    const t0 = performance.now();
-    try {
-      await prepareOne(0);
-    } catch (err) {
-      setError({ idx: 0, message: err.message });
-      setStatus('idle');
-      setPlayIdx(-1);
+    // Resume AudioContext inside the user gesture (required on iOS/mobile)
+    const ctx = ensureCtx();
+    if (ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch {}
+    }
+
+    // Silent looping <audio> keeps the mobile audio session alive
+    if (!keepAliveRef.current) {
+      keepAliveRef.current = new Audio();
+      keepAliveRef.current.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+      keepAliveRef.current.loop = true;
+      keepAliveRef.current.volume = 0;
+    }
+    keepAliveRef.current.play().catch(() => {});
+
+    playStage(startIdx);
+  }
+
+  async function handlePlay() {
+    if (bybLoading || showByb) return; // no playback until Before You Begin is done
+    if (status === 'paused') {
+      audioCtxRef.current?.resume();
+      if (keepAliveRef.current) keepAliveRef.current.play().catch(() => {});
+      setStatus('playing');
+      startTick();
       return;
     }
-    if (stopRef.current) return;
-
-    console.log(`[playback] handlePlay total-to-play: ${Math.round(performance.now() - t0)}ms`);
-    playFromUrl(0);
-    prepareAll();
+    startSession(0, false);
   }
   handlePlayRef.current = handlePlay;
 
   async function handlePlayFrom(startIdx) {
-    handleStop();
-    stopRef.current = false;
-    setSingleMode(false);
-    unlockAudio();
-    if (!sessionStartRef.current) {
-      sessionStartRef.current = new Date().toISOString();
-      cumulativeDurationRef.current = 0;
-      playedStagesRef.current = new Set();
-    }
-
-    setStatus('assembling');
-    setPlayIdx(startIdx);
-    try {
-      await prepareOne(startIdx);
-    } catch (err) {
-      setError({ idx: startIdx, message: err.message });
-      setStatus('idle');
-      setPlayIdx(-1);
-      return;
-    }
-    if (stopRef.current) return;
-
-    playFromUrl(startIdx);
-    prepareAll();
+    if (bybLoading || showByb) return;
+    startSession(startIdx, false);
   }
   handlePlayFromRef.current = handlePlayFrom;
 
   async function handlePlaySingle(idx) {
+    if (bybLoading || showByb) return;
     if (playIdx === idx && (status === 'playing' || status === 'assembling' || status === 'paused')) {
       handleStop();
       return;
     }
-    handleStop();
-    stopRef.current = false;
-    setSingleMode(true);
-    playIdxRef.current = idx;
-    setPlayIdx(idx);
-    unlockAudio();
-
-    let url = preparedUrls.current[idx];
-    if (!url) {
-      setStatus('assembling');
-      try {
-        url = await prepareOne(idx);
-      } catch (err) {
-        setError({ idx, message: err.message });
-        setStatus('idle');
-        setPlayIdx(-1);
-        return;
-      }
-    }
-    if (stopRef.current) return;
-    playFromUrl(idx, true);
+    startSession(idx, true);
   }
   handlePlaySingleRef.current = handlePlaySingle;
 
   function handlePause() {
-    if (audioRef.current && status === 'playing') {
-      audioRef.current.pause();
+    if (status === 'playing') {
+      audioCtxRef.current?.suspend();
+      if (keepAliveRef.current) keepAliveRef.current.pause();
       setStatus('paused');
-      stopTimer();
+      stopTick();
     }
   }
 
   function handleStop() {
     // Log partial session if any stages were played
-    if (playedStagesRef.current.size > 0 || (audioRef.current && audioRef.current.currentTime > 0)) {
-      logPartialSession();
+    const midStage = (status === 'playing' || status === 'paused') && playIdxRef.current >= 0
+      ? Math.max(0, Math.min(getCurrentTime(), currentDurRef.current || 0))
+      : 0;
+    if (playedStagesRef.current.size > 0 || midStage > 0) {
+      logPartialSession(midStage);
     }
     stopRef.current = true;
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    if (nextAudioRef.current) { nextAudioRef.current = null; }
+    stopAllSources();
     if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
-    stopTimer();
+    stopTick();
+    if (audioCtxRef.current?.state === 'running') audioCtxRef.current.suspend();
+    if (keepAliveRef.current) keepAliveRef.current.pause();
     setStatus('idle');
     setPlayIdx(-1);
     playIdxRef.current = -1;
-    setSingleMode(false);
+    singleRef.current = false;
     setElapsed(0);
     setDuration(0);
     setError(null);
@@ -915,14 +773,13 @@ export default function Player() {
   }
 
   function handleSkip() {
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    stopAllSources();
     if (gapTimerRef.current) { clearTimeout(gapTimerRef.current); gapTimerRef.current = null; }
-    stopTimer();
+    stopTick();
     if (playIdx >= 0 && playIdx < items.length - 1) {
-      playFromUrl(playIdx + 1);
+      playStage(playIdx + 1);
     } else {
-      setStatus('idle');
-      setPlayIdx(-1);
+      endSession();
     }
   }
 
@@ -944,17 +801,23 @@ export default function Player() {
     else if (stageLabel) contextLabel = stageLabel;
   }
 
-  // Compute flat list of all (weekIdx, dayIdx) pairs for prev/next navigation
+  // Flat list of days WITH content for prev/next navigation — empty padding
+  // days (trailing "Rest" slots) are not navigable
   const allDays = [];
   for (let wi = 0; wi < weeks.length; wi++) {
     const wDays = weeks[wi]?.days || [];
     for (let di = 0; di < wDays.length; di++) {
-      allDays.push({ wi, di });
+      if ((wDays[di]?.items || []).length > 0) allDays.push({ wi, di });
     }
   }
-  const currentFlatIdx = allDays.findIndex(d => d.wi === currentWeek && d.di === currentDay);
-  const hasPrevDay = currentFlatIdx > 0;
-  const hasNextDay = currentFlatIdx < allDays.length - 1;
+  // Order comparison instead of index equality so navigation still works if the
+  // current position somehow sits on an empty day
+  const dayOrd = (wi, di) => wi * 1000 + di;
+  const curOrd = dayOrd(currentWeek, currentDay);
+  const prevContentDays = allDays.filter(d => dayOrd(d.wi, d.di) < curOrd);
+  const nextContentDays = allDays.filter(d => dayOrd(d.wi, d.di) > curOrd);
+  const hasPrevDay = prevContentDays.length > 0;
+  const hasNextDay = nextContentDays.length > 0;
 
   function goToDay(wi, di) {
     setCurrentWeek(wi);
@@ -964,13 +827,13 @@ export default function Player() {
 
   function goPrevDay() {
     if (!hasPrevDay) return;
-    const prev = allDays[currentFlatIdx - 1];
+    const prev = prevContentDays[prevContentDays.length - 1];
     goToDay(prev.wi, prev.di);
   }
 
   function goNextDay() {
     if (!hasNextDay) return;
-    const next = allDays[currentFlatIdx + 1];
+    const next = nextContentDays[0];
     goToDay(next.wi, next.di);
   }
 
@@ -993,8 +856,12 @@ export default function Player() {
               item.variables[b.variable] = { ...item.variables[b.variable], value: val };
             }
           }
-          // Clear cached URLs since variables may have changed
-          if (hasChoiceBlocks) preparedUrls.current = {};
+          // Clear cached stage data since variables may have changed, then re-prefetch
+          if (hasChoiceBlocks) {
+            stageDataRef.current = {};
+            stageLoadRef.current = {};
+            loadStage(pendingStageRef.current ?? 0).catch(() => {});
+          }
           const stageToPlay = pendingStageRef.current;
           pendingStageRef.current = null;
           if (stageToPlay != null) {
@@ -1168,7 +1035,8 @@ export default function Player() {
         </div>
 
         <PlaybackCard
-          status={bybLoading && status === 'idle' ? 'loading' : status}
+          status={(bybLoading || showByb) && status === 'idle' ? 'loading' : status}
+          bufferProgress={status === 'assembling' && bufferProgress && bufferProgress.idx === playIdx ? bufferProgress : null}
           elapsed={elapsed}
           duration={duration}
           activeEntry={activeEntry}
@@ -1180,8 +1048,8 @@ export default function Player() {
           onPlay={handlePlay}
           onPause={handlePause}
           onSeek={t => {
-            if (audioRef.current) {
-              audioRef.current.currentTime = t;
+            if (playIdxRef.current >= 0 && stageDataRef.current[playIdxRef.current]) {
+              scheduleStage(playIdxRef.current, t);
               setElapsed(t);
               updateScriptDisplay(t);
             }
@@ -1228,13 +1096,15 @@ export default function Player() {
                     return dur ? <span className="player-stage-actual-dur">{formatTime(dur)}</span> : null;
                   })()}
                 </span>
-                {isCurrent && status === 'assembling' && <span className="player-stage-indicator">...</span>}
                 <button
                   className={`player-stage-play${isCurrent && (status === 'playing' || status === 'assembling') ? ' playing' : ''}`}
                   onClick={e => { e.stopPropagation(); handlePlaySingle(idx); }}
-                  disabled={isCurrent && status === 'assembling'}
+                  disabled={(isCurrent && status === 'assembling') || bybLoading || showByb}
+                  style={bybLoading || showByb ? { visibility: 'hidden' } : undefined}
                 >
-                  {isCurrent && (status === 'playing' || status === 'paused') ? '■' : '▶'}
+                  {isCurrent && status === 'assembling'
+                    ? <span className="player-stage-spinner">&#x25CC;</span>
+                    : isCurrent && (status === 'playing' || status === 'paused') ? '■' : '▶'}
                 </button>
               </div>
             );

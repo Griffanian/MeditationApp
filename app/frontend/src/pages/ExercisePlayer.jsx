@@ -1,76 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageComponents, fetchStageVariables, fetchStageTimestamps, fetchBeforeYouBegin, assembleStage, checkCachedOutputs, logSession, BASE } from '../api';
+import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageVariables, fetchBeforeYouBeginBlocks, logSession, validatePrompt, fetchPlaybackClips, BASE } from '../api';
 import ReactMarkdown from 'react-markdown';
-import { flattenScript, resolvePauseDuration, computeMarkerDuration, computeFixedDuration, formatDuration, unlockAudio } from '../playback';
+import { computeFixedDuration, formatDuration } from '../playback';
+import { buildTimeline, buildComponentsMap, loadClipBuffers, scheduleTimeline } from '../clipEngine';
 import PlaybackCard from '../components/PlaybackCard';
-
-function collectLoops(segments, map = {}) {
-  for (const seg of segments) {
-    if (seg.type === 'loop') {
-      map[seg.id] = seg;
-      collectLoops(seg.segments, map);
-    }
-  }
-  return map;
-}
-
-function resolveWordVars(word, variables) {
-  return word.replace(/\{(\w+)(?::(\w+))?\}/g, (_, varName, suffix) => {
-    const v = variables[varName];
-    if (v == null) return `{${varName}${suffix ? ':' + suffix : ''}}`;
-    if (suffix === 's') {
-      const val = typeof v === 'object' ? v.value : v;
-      return Number(val) === 1 ? '' : 's';
-    }
-    return typeof v === 'object' ? (v.value ?? `{${varName}}`) : v;
-  });
-}
-
-function buildTimeline(script, variables, components) {
-  const flat = flattenScript(script, variables, components);
-  const loops = collectLoops(script);
-  const timeline = [];
-  let cursor = 0;
-
-  for (const item of flat) {
-    const { seg } = item;
-    let dur = 0;
-
-    if (seg.type === 'speech') {
-      const comp = components[seg.id];
-      dur = comp?.duration || 0;
-    } else if (seg.type === 'pause') {
-      dur = resolvePauseDuration(seg.duration_seconds, variables);
-    } else if (seg.type === 'asset') {
-      const comp = components[seg.id];
-      dur = comp?.duration || 1;
-    } else if (seg.type === 'split_marker') {
-      const markerDur = computeMarkerDuration(script, seg.id, variables, components);
-      dur = markerDur != null ? markerDur * (seg.multiplier || 1) : 1;
-    }
-
-    if (dur > 0) {
-      const loopSeg = item.loopId ? loops[item.loopId] : null;
-      const rawWords = seg.type === 'speech' ? (seg.text || '').split(' ') : [];
-      timeline.push({
-        start: cursor,
-        end: cursor + dur,
-        dur,
-        type: seg.type,
-        segId: seg.id,
-        file: seg.file,
-        words: rawWords.map(w => resolveWordVars(w, variables)),
-        loopLabel: loopSeg?.label || '',
-        loopIteration: item.loopIteration || null,
-        loopTotal: item.loopTotal || null,
-      });
-      cursor += dur;
-    }
-  }
-
-  return timeline;
-}
 
 export default function ExercisePlayer() {
   const { name, stageId } = useParams();
@@ -80,42 +14,47 @@ export default function ExercisePlayer() {
   const [displayName, setDisplayName] = useState(location.state?.displayName || '');
   const [stageName, setStageName] = useState(location.state?.stageName || '');
 
-  const [status, setStatus] = useState('loading'); // loading, ready, assembling, playing, paused, error
+  const [status, setStatus] = useState('loading'); // loading, ready, playing, paused, error
   const [elapsed, setElapsed] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState(null);
+  const [bufferProgress, setBufferProgress] = useState(null); // { loaded, total }
 
   const [activeEntry, setActiveEntry] = useState(null);
   const [activeWordIdx, setActiveWordIdx] = useState(-1);
   const [countdown, setCountdown] = useState('');
-  const [beforeYouBegin, setBeforeYouBegin] = useState('');
+  const [bybBlocks, setBybBlocks] = useState([]);
+  const [bybStep, setBybStep] = useState(0);
+  const [bybResponses, setBybResponses] = useState({});
+  const [bybVarDefs, setBybVarDefs] = useState({});
+  const [bybValidation, setBybValidation] = useState({});
+  const [bybValidating, setBybValidating] = useState(false);
+  const bybValidationTimer = useRef(null);
   const [showByb, setShowByb] = useState(false);
 
-  const audioRef = useRef(null);
   const tickRef = useRef(null);
   const timelineRef = useRef([]);
   const wordTimestampsRef = useRef({});
-  const audioUrlRef = useRef(null);
 
-  // Load script, components, variables on mount
+  // AudioContext-based playback refs
+  const audioCtxRef = useRef(null);
+  const clipBuffersRef = useRef({});   // segId → { buffer, trimStart, trimEnd }
+  const assetBuffersRef = useRef({});  // filename → { buffer, trimStart, trimEnd }
+  const scheduledRef = useRef([]);     // currently scheduled AudioBufferSourceNodes
+  const playOriginRef = useRef({ ctxTime: 0, offset: 0 });
+  const keepAliveRef = useRef(null);   // silent Audio element to keep mobile session alive
+
+  // Load script, clips, variables on mount
   useEffect(() => {
     let cancelled = false;
 
     async function init() {
       try {
-        const [script, components, variables] = await Promise.all([
+        const results = await Promise.all([
           fetchStageScript(name, stageId),
-          fetchStageComponents(name, stageId),
           fetchStageVariables(name, stageId),
-          fetchBeforeYouBegin(name, stageId).then(byb => {
-            if (!cancelled && byb) { setBeforeYouBegin(byb); setShowByb(true); }
-          }),
-          checkCachedOutputs([{ meditation: name, stage_id: stageId }]).then(cached => {
-            if (!cancelled && cached["0"]) {
-              audioUrlRef.current = `${BASE}/audio/meditation/${name}/stage/${stageId}/output/${cached["0"].filename}?t=${Date.now()}`;
-              console.log('[playback] exercise pre-cached');
-            }
-          }).catch(() => {}),
+          fetchBeforeYouBeginBlocks(name, stageId).catch(() => []),
+          fetchPlaybackClips(name, stageId),
           ...(!displayName ? [fetchMeta(name).then(m => {
             if (!cancelled) setDisplayName(m.display_name || name);
           })] : []),
@@ -129,24 +68,60 @@ export default function ExercisePlayer() {
 
         if (cancelled) return;
 
+        const script = results[0];
+        const variables = results[1];
+        const blocks = results[2];
+        const clipData = results[3];
+
+        // Set up BYB wizard if blocks exist
+        if (blocks.length > 0) {
+          const varDefs = {};
+          for (const [k, v] of Object.entries(variables || {})) {
+            if (k !== '_conditions' && k !== 'computed_min') varDefs[k] = v;
+          }
+          const defaults = {};
+          for (const b of blocks) {
+            if (b.type === 'prompt' && b.variable && varDefs[b.variable]) {
+              const def = varDefs[b.variable];
+              defaults[b.variable] = def.value ?? def.options?.[0] ?? '';
+            }
+          }
+          setBybBlocks(blocks);
+          setBybStep(0);
+          setBybVarDefs(varDefs);
+          setBybResponses(defaults);
+          setShowByb(true);
+        }
+
+        // Build components map from clip data (for timeline building)
+        const components = buildComponentsMap(script, clipData);
+
+        // Store timestamps from clip data (replaces N individual timestamp fetches)
+        for (const [segId, clip] of Object.entries(clipData.clips || {})) {
+          if (clip.timestamps) {
+            wordTimestampsRef.current[segId] = clip.timestamps;
+          }
+        }
+
         const tl = buildTimeline(script, variables, components);
         timelineRef.current = tl;
         setDuration(computeFixedDuration(script, variables, components));
 
-        // Fetch word timestamps for speech segments
-        const speechIds = [...new Set(tl.filter(e => e.type === 'speech').map(e => e.segId))];
-        const tsResults = await Promise.all(
-          speechIds.map(segId =>
-            fetchStageTimestamps(name, stageId, segId)
-              .then(ts => ({ segId, ts }))
-              .catch(() => ({ segId, ts: [] }))
-          )
-        );
-        for (const { segId, ts } of tsResults) {
-          wordTimestampsRef.current[segId] = ts;
-        }
+        // Create AudioContext and pre-fetch all clip audio
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        audioCtxRef.current = ctx;
 
-        if (!cancelled) setStatus('ready');
+        const { clipBuffers, assetBuffers } = await loadClipBuffers(ctx, clipData,
+          (loaded, total) => { if (!cancelled) setBufferProgress({ loaded, total }); });
+
+        if (cancelled) { ctx.close(); return; }
+
+        clipBuffersRef.current = clipBuffers;
+        assetBuffersRef.current = assetBuffers;
+
+        console.log(`[playback] loaded ${Object.keys(clipBuffersRef.current).length} clips, ${Object.keys(assetBuffersRef.current).length} assets`);
+
+        if (!cancelled) { setBufferProgress(null); setStatus('ready'); }
       } catch (err) {
         if (!cancelled) {
           setStatus('error');
@@ -162,10 +137,33 @@ export default function ExercisePlayer() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      stopAllSources();
+      audioCtxRef.current?.close();
       if (tickRef.current) clearInterval(tickRef.current);
+      if (keepAliveRef.current) { keepAliveRef.current.pause(); keepAliveRef.current = null; }
     };
   }, []);
+
+  // --- AudioContext scheduling ---
+
+  function stopAllSources() {
+    for (const s of scheduledRef.current) {
+      try { s.stop(); } catch {}
+    }
+    scheduledRef.current = [];
+  }
+
+  function scheduleClips(fromTime) {
+    stopAllSources();
+
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+
+    playOriginRef.current = { ctxTime: ctx.currentTime, offset: fromTime };
+    scheduledRef.current = scheduleTimeline(
+      ctx, timelineRef.current, clipBuffersRef.current, assetBuffersRef.current, fromTime,
+    );
+  }
 
   // --- Display updates ---
 
@@ -193,13 +191,24 @@ export default function ExercisePlayer() {
     }
   }
 
+  function getCurrentTime() {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return 0;
+    const origin = playOriginRef.current;
+    return origin.offset + (ctx.currentTime - origin.ctxTime);
+  }
+
   function startTick() {
     if (tickRef.current) clearInterval(tickRef.current);
     tickRef.current = setInterval(() => {
-      if (audioRef.current && !audioRef.current.paused) {
-        const t = audioRef.current.currentTime;
+      const ctx = audioCtxRef.current;
+      if (ctx && ctx.state === 'running') {
+        const t = getCurrentTime();
         setElapsed(t);
         updateScriptDisplay(t);
+        if (t >= duration && duration > 0) {
+          handleComplete();
+        }
       }
     }, 100);
   }
@@ -209,7 +218,11 @@ export default function ExercisePlayer() {
   }
 
   function handleStop() {
-    if (audioRef.current) { audioRef.current.pause(); }
+    stopAllSources();
+    if (audioCtxRef.current?.state === 'running') {
+      audioCtxRef.current.suspend();
+    }
+    if (keepAliveRef.current) keepAliveRef.current.pause();
     stopTick();
     setStatus('ready');
     setElapsed(0);
@@ -219,7 +232,7 @@ export default function ExercisePlayer() {
   }
 
   function handleComplete() {
-    const dur = audioRef.current?.duration || 0;
+    const dur = duration;
     handleStop();
     logSession({
       meditation_name: name,
@@ -231,71 +244,70 @@ export default function ExercisePlayer() {
   }
 
   async function handlePlay() {
-    unlockAudio();
-
-    if (status === 'paused' && audioRef.current) {
-      audioRef.current.play();
+    if (status === 'paused' && audioCtxRef.current) {
+      audioCtxRef.current.resume();
+      if (keepAliveRef.current) keepAliveRef.current.play().catch(() => {});
       setStatus('playing');
       startTick();
       return;
     }
 
     handleStop();
-    const t0 = performance.now();
 
-    // Assemble if we don't have a URL yet
-    if (!audioUrlRef.current) {
-      setStatus('assembling');
-      try {
-        const data = await assembleStage(name, stageId);
-        const assembleMs = Math.round(performance.now() - t0);
-        console.log(`[playback] assemble API: ${assembleMs}ms`, data.timings_ms || {});
-        audioUrlRef.current = `${BASE}/audio/meditation/${name}/stage/${stageId}/output/${data.filename}?t=${Date.now()}`;
-      } catch (err) {
-        setStatus('error');
-        setError(err.message);
-        return;
-      }
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+
+    // Resume AudioContext (required for user gesture on iOS/mobile)
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
     }
 
-    const tLoad = performance.now();
-    const audio = audioRef.current || new Audio();
-    audioRef.current = audio;
-    audio.src = audioUrlRef.current;
-    audio.onloadedmetadata = () => {
-      console.log(`[playback] audio load: ${Math.round(performance.now() - tLoad)}ms`);
-      setDuration(audio.duration || 0);
-    };
-    audio.onended = () => handleComplete();
-    audio.onerror = () => { setStatus('error'); setError('Audio playback failed'); };
-    try {
-      await audio.play();
-      console.log(`[playback] total play-to-audio: ${Math.round(performance.now() - t0)}ms`);
-      setStatus('playing');
-      startTick();
-    } catch {
-      setStatus('error');
-      setError('Playback failed — try tapping play again');
+    // Keep audio session alive on mobile with a silent loop
+    if (!keepAliveRef.current) {
+      keepAliveRef.current = new Audio();
+      keepAliveRef.current.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+      keepAliveRef.current.loop = true;
+      keepAliveRef.current.volume = 0;
     }
+    keepAliveRef.current.play().catch(() => {});
+
+    scheduleClips(0);
+    setStatus('playing');
+    startTick();
   }
 
   function handlePause() {
     if (status !== 'playing') return;
-    if (audioRef.current) audioRef.current.pause();
+    audioCtxRef.current?.suspend();
+    if (keepAliveRef.current) keepAliveRef.current.pause();
     setStatus('paused');
     stopTick();
   }
 
   function handleSeek(time) {
-    if (audioRef.current) {
-      audioRef.current.currentTime = time;
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+
+    const wasPlaying = status === 'playing';
+
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(() => {
+        scheduleClips(time);
+        setElapsed(time);
+        updateScriptDisplay(time);
+        if (!wasPlaying) ctx.suspend();
+      });
+    } else {
+      scheduleClips(time);
       setElapsed(time);
       updateScriptDisplay(time);
     }
   }
 
   function handleBack() {
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    stopAllSources();
+    audioCtxRef.current?.suspend();
+    if (keepAliveRef.current) { keepAliveRef.current.pause(); keepAliveRef.current = null; }
     stopTick();
     navigate(-1);
   }
@@ -315,20 +327,143 @@ export default function ExercisePlayer() {
 
   return (
     <div className="player">
-      {showByb && (
-        <div className="modal-overlay" onClick={() => setShowByb(false)}>
-          <div className="modal byb-modal" onClick={e => e.stopPropagation()}>
-            <div className="byb-modal-header">
-              <h3>Before You Begin</h3>
-              <button className="modal-close" onClick={() => setShowByb(false)}>×</button>
+      {showByb && (() => {
+        const block = bybBlocks[bybStep];
+        const isLast = bybStep >= bybBlocks.length - 1;
+        const canAdvance = !block || block.type === 'text' || (
+          block.variable && bybResponses[block.variable] != null && bybResponses[block.variable] !== ''
+        );
+
+        return (
+        <div className="modal-overlay">
+          <div className="modal byb-modal byb-wizard" onClick={e => e.stopPropagation()}>
+            {bybBlocks.length > 1 && (
+              <div className="byb-wizard-progress">
+                {bybBlocks.map((_, i) => (
+                  <div key={i} className={`byb-progress-dot${i === bybStep ? ' active' : i < bybStep ? ' done' : ''}`} />
+                ))}
+              </div>
+            )}
+
+            <div className="byb-wizard-content">
+              {block?.type === 'text' && (
+                <div className="byb-wizard-text">
+                  <ReactMarkdown>{block.content || ''}</ReactMarkdown>
+                </div>
+              )}
+              {block?.type === 'prompt' && (() => {
+                const varDef = bybVarDefs[block.variable] || {};
+                const val = bybResponses[block.variable] ?? '';
+                const options = varDef.options || [];
+                const isCustom = varDef.allowCustom && !options.includes(val);
+                const label = block.label || varDef.displayName || block.variable;
+                const validation = bybValidation[block.variable];
+
+                function handleCustomChange(newVal) {
+                  setBybResponses(r => ({ ...r, [block.variable]: newVal }));
+                  setBybValidation(v => ({ ...v, [block.variable]: null }));
+                  if (bybValidationTimer.current) clearTimeout(bybValidationTimer.current);
+                  if (newVal.trim().length > 1) {
+                    bybValidationTimer.current = setTimeout(() => {
+                      setBybValidating(true);
+                      validatePrompt({
+                        text: newVal,
+                        label,
+                        options,
+                        context: varDef.displayName || '',
+                      }).then(result => {
+                        setBybValidation(v => ({ ...v, [block.variable]: result }));
+                      }).finally(() => setBybValidating(false));
+                    }, 800);
+                  }
+                }
+
+                function applySuggestion() {
+                  if (validation?.suggestion) {
+                    setBybResponses(r => ({ ...r, [block.variable]: validation.suggestion }));
+                    setBybValidation(v => ({ ...v, [block.variable]: { status: 'ok' } }));
+                  }
+                }
+
+                return (
+                  <div className="byb-wizard-choice">
+                    <h3 className="byb-wizard-label">{label}</h3>
+                    {options.length > 0 ? (
+                      <div className="byb-prompt-options">
+                        {options.map(opt => (
+                          <button key={opt}
+                            className={`byb-option${val === opt ? ' byb-option-selected' : ''}`}
+                            onClick={() => {
+                              setBybResponses(r => ({ ...r, [block.variable]: opt }));
+                              setBybValidation(v => ({ ...v, [block.variable]: null }));
+                            }}>
+                            {opt}
+                          </button>
+                        ))}
+                        {varDef.allowCustom && (
+                          <>
+                            <button
+                              className={`byb-option${isCustom ? ' byb-option-selected' : ''}`}
+                              onClick={() => {
+                                setBybResponses(r => ({ ...r, [block.variable]: '' }));
+                                setBybValidation(v => ({ ...v, [block.variable]: null }));
+                              }}>
+                              Choose your own
+                            </button>
+                            {isCustom && (
+                              <input type="text" className="byb-custom-input"
+                                placeholder="Type your own..."
+                                value={val}
+                                autoFocus
+                                onChange={e => handleCustomChange(e.target.value)} />
+                            )}
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <input type="text" className="byb-text-input"
+                        placeholder="Type here..."
+                        value={val}
+                        onChange={e => handleCustomChange(e.target.value)} />
+                    )}
+                    {bybValidating && isCustom && (
+                      <div className="byb-validation byb-validation-checking">Checking...</div>
+                    )}
+                    {validation && validation.status === 'spelling' && (
+                      <div className="byb-validation byb-validation-spelling">
+                        {validation.message}
+                        {validation.suggestion && (
+                          <button className="byb-validation-fix" onClick={applySuggestion}>
+                            Use "{validation.suggestion}"
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {validation && validation.status === 'inappropriate' && (
+                      <div className="byb-validation byb-validation-warning">
+                        {validation.message}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
-            <div className="byb-modal-body">
-              <ReactMarkdown>{beforeYouBegin}</ReactMarkdown>
+
+            <div className="byb-wizard-nav">
+              {bybStep > 0 && (
+                <button className="byb-wizard-back" onClick={() => setBybStep(s => s - 1)}>Back</button>
+              )}
+              <div className="byb-wizard-spacer" />
+              {isLast ? (
+                <button className="byb-modal-ready" onClick={() => setShowByb(false)} disabled={!canAdvance}>Ready</button>
+              ) : (
+                <button className="byb-modal-ready" onClick={() => setBybStep(s => s + 1)} disabled={!canAdvance}>Next</button>
+              )}
             </div>
-            <button className="byb-modal-ready" onClick={() => setShowByb(false)}>Ready</button>
           </div>
         </div>
-      )}
+        );
+      })()}
       <button className="ep-back" onClick={handleBack}>&#x2190; Back</button>
 
       <div className="player-card">
@@ -339,6 +474,7 @@ export default function ExercisePlayer() {
 
         <PlaybackCard
           status={status}
+          bufferProgress={status === 'loading' ? bufferProgress : null}
           elapsed={elapsed}
           duration={duration}
           activeEntry={activeEntry}

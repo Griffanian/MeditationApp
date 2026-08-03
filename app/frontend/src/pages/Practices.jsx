@@ -199,7 +199,6 @@ export default function Practices() {
                     {openMenu === prac.name && (
                       <div className="med-kebab-menu" onClick={e => e.stopPropagation()}>
                         {editable && <button onClick={() => { setOpenMenu(null); navigate(`/practice/${prac.name}?week=${getNextDay(prac).week}`); }}>Edit</button>}
-                        <button onClick={() => { setOpenMenu(null); navigate(`/play/${prac.name}?autoplay=1`); }}>Play</button>
                         {auth.canCreate && (
                           <button onClick={() => { setOpenMenu(null); handleClone(prac); }}>
                             {editable ? 'Duplicate' : 'Make your own copy'}

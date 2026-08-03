@@ -84,6 +84,9 @@ urlpatterns = [
 
     # Cached outputs check
     path("api/check-cached-outputs", assembly.CheckCachedOutputsView.as_view()),
+
+    # Batched BYB blocks + variables for the setup wizard
+    path("api/stage-info-batch", stages.StageInfoBatchView.as_view()),
     path("api/debug/cache-log", assembly.CacheDebugLogView.as_view()),
 
     # Prompt validation
@@ -118,6 +121,9 @@ urlpatterns = [
     path("api/meditations/<str:name>/stages/<str:stage_id>/upload-variable-audio/<str:seg_id>", components.UploadVariableAudioView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/variable-recordings/<str:seg_id>/delete/<str:variable_key>", components.DeleteVariableRecordingView.as_view()),
     path("api/meditations/<str:name>/stages/<str:stage_id>/variable-recordings/<str:seg_id>/trim/<str:variable_key>", trim.VariableRecordingTrimView.as_view()),
+
+    # Stage playback clips (client-side assembly)
+    path("api/meditations/<str:name>/stages/<str:stage_id>/playback-clips", components.StagePlaybackClipsView.as_view()),
 
     # Stage assembly
     path("api/meditations/<str:name>/stages/<str:stage_id>/assemble", assembly.StageAssembleView.as_view()),

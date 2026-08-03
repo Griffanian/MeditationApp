@@ -404,7 +404,11 @@ export default function Dashboard() {
         {med.stages && med.stages.length > 0 && (
           <div className="med-card-stages">
             {med.stages.map(stage => {
-              const vars = Object.entries(stage.variables || {}).filter(([k]) => !k.startsWith('_'));
+              const vars = Object.entries(stage.variables || {}).filter(([k, v]) => {
+                if (k.startsWith('_')) return false;
+                const val = typeof v === 'object' ? v.value : v;
+                return val !== '' && !isNaN(Number(val));
+              });
               const hasAssignments = med.assigned_stages?.length > 0;
               const isAssigned = hasAssignments && med.assigned_stages.includes(stage.id);
               const isDimmed = !auth.canCreate && hasAssignments && !isAssigned;

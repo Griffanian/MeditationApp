@@ -59,13 +59,13 @@ function AppHeader({ auth }) {
         )}
       </nav>
       <div className="app-header-user-chip">
-        <div className="app-header-avatar">
+        <NavLink to="/account" className="app-header-avatar">
           {auth.profilePhoto ? (
             <img src={auth.profilePhoto} alt="" className="app-header-avatar-img" />
           ) : (
             <span>{(auth.displayName || auth.username || '?')[0].toUpperCase()}</span>
           )}
-        </div>
+        </NavLink>
         <div className="app-header-user-info">
           <NavLink to="/account" className="app-header-name">{auth.displayName || auth.username}</NavLink>
           <button className="app-header-signout" onClick={() => { logoutUser(); window.location.href = '/'; }}>Sign out</button>

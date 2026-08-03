@@ -524,6 +524,136 @@ class DeleteVariableRecordingView(ComponentMixin, APIView):
         return Response({"status": "ok"})
 
 
+class StagePlaybackClipsView(ComponentMixin, APIView):
+    """Return all clip URLs, trim info, and timestamps for client-side playback.
+
+    GET uses stage default variables; POST accepts {variables: {...}} overrides.
+    Replaces the assembled-output approach: the frontend pre-fetches these clips
+    and schedules them via AudioContext, so no server-side assembly is needed.
+    """
+
+    def get(self, request, name, stage_id):
+        return self._get_clips(request, name, stage_id)
+
+    def post(self, request, name, stage_id):
+        return self._get_clips(request, name, stage_id)
+
+    def _get_clips(self, request, name, stage_id):
+        err = _check_med_perm(request, name)
+        if err:
+            return err
+
+        script, extra_vars, stage_variables = self._get_script_and_vars(name, stage_id)
+        if not script:
+            return Response({"clips": {}, "assets": {}})
+
+        variables = _collect_variables(script)
+        variables.update(extra_vars)
+
+        # Allow variable overrides from POST body
+        if request.method == "POST":
+            body_vars = request.data.get("variables")
+            if body_vars and isinstance(body_vars, dict):
+                variables.update(self._parse_variables(body_vars))
+
+        speech = _collect_speech_segments(script)
+        stage_obj = Stage.objects.filter(
+            meditation_id=name, stage_id=stage_id,
+        ).first()
+
+        # Bulk-load all SSA and VR rows (2 queries)
+        ssa_map = {
+            ssa.seg_id: ssa
+            for ssa in SpeechSegmentAudio.objects.filter(
+                meditation_id=name, stage=stage_obj,
+            ).select_related("audio_clip", "user_clip")
+        }
+        vr_map = {}
+        for vr in VariableRecording.objects.filter(
+            meditation_id=name, stage=stage_obj,
+        ).select_related("audio_clip", "user_clip"):
+            vr_map[(vr.seg_id, vr.variable_key)] = vr
+
+        clips = {}
+        for seg_id, seg_info in speech.items():
+            raw_text = seg_info["text"]
+            var_refs = _get_stage_var_refs(raw_text, stage_variables)
+
+            if var_refs:
+                var_vals = {}
+                for var_name in var_refs:
+                    raw = variables.get(var_name)
+                    val = raw.get("value", raw) if isinstance(raw, dict) else raw
+                    if val is not None:
+                        var_vals[var_name] = str(val)
+                variable_key = _make_variable_key(var_vals)
+
+                rec = vr_map.get((seg_id, variable_key))
+                if not rec or (not rec.audio_clip and not rec.user_clip):
+                    clips[seg_id] = {"status": "missing", "duration": 0}
+                    continue
+
+                clip = rec.user_clip or rec.audio_clip
+                ts = rec.audio_clip.timestamps if rec.audio_clip else []
+                trim_s = rec.trim_start
+                trim_e = rec.trim_end
+                dur = (trim_e - trim_s) if trim_s is not None and trim_e is not None else clip.duration
+
+                clips[seg_id] = {
+                    "url": storage.file_url(clip.audio_file.name),
+                    "trimStart": trim_s or 0,
+                    "trimEnd": trim_e or clip.duration,
+                    "duration": dur,
+                    "timestamps": ts,
+                }
+            else:
+                ssa = ssa_map.get(seg_id)
+                if not ssa or (not ssa.audio_clip and not ssa.user_clip):
+                    clips[seg_id] = {"status": "missing", "duration": 0}
+                    continue
+
+                clip = ssa.user_clip or ssa.audio_clip
+                ts = ssa.audio_clip.timestamps if ssa.audio_clip else []
+                trim_s = ssa.trim_start
+                trim_e = ssa.trim_end
+                dur = (trim_e - trim_s) if trim_s is not None and trim_e is not None else clip.duration
+
+                clips[seg_id] = {
+                    "url": storage.file_url(clip.audio_file.name),
+                    "trimStart": trim_s or 0,
+                    "trimEnd": trim_e or clip.duration,
+                    "duration": dur,
+                    "timestamps": ts,
+                }
+
+        # Collect and resolve asset segments
+        asset_files = set()
+
+        def _walk_assets(segs):
+            for s in segs:
+                if s["type"] == "asset":
+                    asset_files.add(s["file"])
+                elif s["type"] == "loop":
+                    _walk_assets(s.get("segments", []))
+
+        _walk_assets(script)
+
+        assets = {}
+        if asset_files:
+            from ..models import Asset
+
+            for asset_obj in Asset.objects.filter(filename__in=asset_files):
+                trim = asset_obj.trim_meta or {}
+                assets[asset_obj.filename] = {
+                    "url": storage.file_url(asset_obj.audio_file.name),
+                    "trimStart": trim.get("start", 0),
+                    "trimEnd": trim.get("end"),
+                    "duration": (trim["end"] - trim["start"]) if "start" in trim and "end" in trim else None,
+                }
+
+        return Response({"clips": clips, "assets": assets})
+
+
 # --- Root-level views ---
 
 class RootComponentListView(ComponentMixin, APIView):
