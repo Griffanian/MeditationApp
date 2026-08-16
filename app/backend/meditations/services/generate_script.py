@@ -24,6 +24,7 @@ Guidelines:
 - Start with a brief welcome and setup instruction (posture, eyes closed, etc.)
 - Give clear instructions for the technique before beginning
 - Use pauses generously — meditation is mostly silence
+- Pauses work in beats: one beat is 4 seconds. After a spoken line, leave one beat (4 seconds) for it to land; where the practitioner needs longer, use multiples of a beat (8, 12 seconds, ...). Guidelines, not hard rules — but default to beat multiples rather than arbitrary durations.
 - Keep spoken segments short and calm
 - End with a gentle closing (return awareness, open eyes)
 - Output ONLY the JSON array, no other text

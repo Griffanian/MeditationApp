@@ -51,7 +51,8 @@ Guidelines:
 - Start with a brief setup instruction
 - Give clear instructions for the technique before beginning
 - Intersperse speech guidance throughout the practice — do not leave long stretches of silence. The practitioner should receive periodic verbal cues, encouragement, and awareness prompts during the practice, not just at the start and end.
-- Use short pauses (3-10 seconds) between speech segments to let instructions settle, and longer pauses (15-30 seconds) only where the practitioner needs extended time to focus.
+- Pauses work in beats: one beat is 4 seconds. After a spoken line, leave one beat (4 seconds) for it to land; where the practitioner needs longer, use multiples of a beat (8, 12 seconds, ...). These are guidelines, not hard rules — this is a creative process and leeway is fine, but default to beat multiples rather than arbitrary durations.
+- One script must serve the stage's ENTIRE progression. Progression happens through variables, so the spoken text must remain correct at both the minimum and maximum variable values. The stage at its minimum settings should be immediately doable by the expected audience — including someone arriving fresh from the end of the previous stage — and then progress gradually from there.
 - Keep individual spoken segments short and calm, but include many of them throughout the timeline
 - End with a gentle closing
 - Output ONLY the JSON object, no other text
