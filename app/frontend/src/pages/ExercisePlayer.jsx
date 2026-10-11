@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { fetchMeta, fetchInstructions, fetchStageScript, fetchStageVariables, fetchBeforeYouBeginBlocks, logSession, validatePrompt, fetchPlaybackClips, BASE } from '../api';
 import ReactMarkdown from 'react-markdown';
-import { computeFixedDuration, formatDuration } from '../playback';
+import { formatDuration } from '../playback';
 import { buildTimeline, buildComponentsMap, loadClipBuffers, scheduleTimeline } from '../clipEngine';
 import PlaybackCard from '../components/PlaybackCard';
 
@@ -105,7 +105,7 @@ export default function ExercisePlayer() {
 
         const tl = buildTimeline(script, variables, components);
         timelineRef.current = tl;
-        setDuration(computeFixedDuration(script, variables, components));
+        setDuration(tl.length ? tl[tl.length - 1].end : 0);
 
         // Create AudioContext and pre-fetch all clip audio
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
