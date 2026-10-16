@@ -669,6 +669,12 @@ export default function Player() {
 
     scheduleStage(idx, 0);
     setBufferProgress(null);
+    if (audioCtxRef.current?.state !== 'running') {
+      // Browser blocked audio (e.g. autoplay with no user gesture) — show as paused so
+      // the Play button resumes the context instead of a silent "playing" state
+      setStatus('paused');
+      return;
+    }
     setStatus('playing');
     startTick();
 
@@ -689,11 +695,12 @@ export default function Player() {
       playedStagesRef.current = new Set();
     }
 
-    // Resume AudioContext inside the user gesture (required on iOS/mobile)
+    // Resume AudioContext inside the user gesture (required on iOS/mobile).
+    // Always resume, even if state still reads 'running': handleStop() above may have
+    // just called suspend(), which is async — skipping resume here would let that
+    // suspend land after scheduling and leave the session silent.
     const ctx = ensureCtx();
-    if (ctx.state === 'suspended') {
-      try { await ctx.resume(); } catch {}
-    }
+    try { await ctx.resume(); } catch {}
 
     // Silent looping <audio> keeps the mobile audio session alive
     if (!keepAliveRef.current) {

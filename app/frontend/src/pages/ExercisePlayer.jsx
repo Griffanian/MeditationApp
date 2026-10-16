@@ -257,10 +257,10 @@ export default function ExercisePlayer() {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
 
-    // Resume AudioContext (required for user gesture on iOS/mobile)
-    if (ctx.state === 'suspended') {
-      await ctx.resume();
-    }
+    // Resume AudioContext (required for user gesture on iOS/mobile).
+    // Always resume: handleStop() above may have just called suspend(), which is async,
+    // so state can still read 'running' here and the suspend would land after scheduling.
+    await ctx.resume().catch(() => {});
 
     // Keep audio session alive on mobile with a silent loop
     if (!keepAliveRef.current) {
@@ -272,6 +272,10 @@ export default function ExercisePlayer() {
     keepAliveRef.current.play().catch(() => {});
 
     scheduleClips(0);
+    if (ctx.state !== 'running') {
+      setStatus('paused');
+      return;
+    }
     setStatus('playing');
     startTick();
   }
