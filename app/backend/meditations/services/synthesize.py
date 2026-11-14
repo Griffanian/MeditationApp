@@ -151,9 +151,18 @@ def _collect_speech_segments(segments: list[dict]) -> dict:
     speech = {}
     for seg in segments:
         if seg["type"] == "speech":
+            # `pronounce` is a list of [written, spoken] pairs applied to the text for
+            # the voice only (e.g. ["Chesed", "חֶסֶד"]); the screen still shows `text`,
+            # so edits to the text are picked up. Keep replacements one word for one
+            # word, since the highlighted word is matched by position.
+            spoken = seg["text"]
+            for written, said in seg.get("pronounce", []):
+                spoken = spoken.replace(written, said)
             speech[seg["id"]] = {
-                "text": seg["text"],
+                "text": spoken,
                 "direction": seg.get("direction", ""),
+                # optional ElevenLabs model for this line, e.g. "eleven_v3" for Hebrew words
+                "model": seg.get("tts_model"),
             }
         elif seg["type"] == "loop":
             speech.update(_collect_speech_segments(seg["segments"]))
@@ -186,20 +195,25 @@ def _clip_duration(audio_clip, user_clip, trim_start, trim_end) -> float:
     return clip.duration if hasattr(clip, "duration") else 0
 
 
-def _tts_hash(text: str, direction: str, voice_id: str) -> str:
-    return hashlib.md5((text + "|" + direction + "|" + voice_id).encode()).hexdigest()[:16]
+def _tts_hash(text: str, direction: str, voice_id: str, model: str = None) -> str:
+    key = text + "|" + direction + "|" + voice_id
+    if model:  # only added when set, so existing clips keep their hashes
+        key += "|" + model
+    return hashlib.md5(key.encode()).hexdigest()[:16]
 
 
-def _generate_tts_clip(client, text: str, direction: str, voice_id: str) -> tuple:
+def _generate_tts_clip(client, text: str, direction: str, voice_id: str, model: str = None) -> tuple:
     """Call ElevenLabs and return (audio_bytes, words). Retries on rate limits."""
     synth_text = text if text.rstrip().endswith((".", "!", "?")) else text.rstrip() + "."
     tts_kwargs = dict(
         text=synth_text,
         voice_id=voice_id,
-        model_id="eleven_multilingual_v2",
+        model_id=model or "eleven_multilingual_v2",
         output_format="mp3_44100_128",
-        language_code="en",
     )
+    if not model:
+        # a fixed language would stop another model reading Hebrew words as Hebrew
+        tts_kwargs["language_code"] = "en"
     if direction:
         tts_kwargs["previous_text"] = direction
 
@@ -271,7 +285,7 @@ def generate_components(
         direction = seg_info["direction"]
         var_refs = _get_stage_var_refs(text_template, stage_variables)
         text = _substitute_variables(text_template, variables)
-        text_hash = _tts_hash(text, direction, voice_id)
+        text_hash = _tts_hash(text, direction, voice_id, seg_info.get("model"))
         seg_data.append((seg_id, seg_info, text, direction, text_hash, var_refs))
         text_hashes_needed.add(text_hash)
         seg_ids_needed.add(seg_id)
@@ -305,19 +319,21 @@ def generate_components(
                 client, meditation, stage, seg_id, text, direction,
                 text_hash, voice_id, voice_obj, var_refs, variables,
                 i, total, existing_clip=existing_clip, vr_map=vr_map,
+                model=seg_info.get("model"),
             )
         else:
             _generate_fixed_segment(
                 client, meditation, stage, seg_id, text, direction,
                 text_hash, voice_id, voice_obj, i, total,
                 existing_clip=existing_clip, existing_ssa=ssa_map.get(seg_id),
+                model=seg_info.get("model"),
             )
 
 
 def _generate_fixed_segment(
     client, meditation, stage, seg_id, text, direction,
     text_hash, voice_id, voice_obj, i, total,
-    existing_clip=None, existing_ssa=None,
+    existing_clip=None, existing_ssa=None, model=None,
 ):
     from meditations.models import GeneratedVoiceClip, SpeechSegmentAudio
 
@@ -338,7 +354,7 @@ def _generate_fixed_segment(
     if client is None:
         from elevenlabs import ElevenLabs
         client = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
-    audio_bytes, words = _generate_tts_clip(client, text, direction, voice_id)
+    audio_bytes, words = _generate_tts_clip(client, text, direction, voice_id, model)
 
     audio = AudioSegment.from_mp3(io.BytesIO(audio_bytes))
     buf = io.BytesIO()
@@ -364,7 +380,7 @@ def _generate_fixed_segment(
 def _generate_variable_segment(
     client, meditation, stage, seg_id, text, direction,
     text_hash, voice_id, voice_obj, var_refs, variables,
-    i, total, existing_clip=None, vr_map=None,
+    i, total, existing_clip=None, vr_map=None, model=None,
 ):
     from meditations.models import GeneratedVoiceClip, VariableRecording
 
@@ -373,7 +389,7 @@ def _generate_variable_segment(
         if client is None:
             from elevenlabs import ElevenLabs
             client = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
-        audio_bytes, words = _generate_tts_clip(client, text, direction, voice_id)
+        audio_bytes, words = _generate_tts_clip(client, text, direction, voice_id, model)
 
         audio = AudioSegment.from_mp3(io.BytesIO(audio_bytes))
         buf = io.BytesIO()

@@ -9,6 +9,7 @@ Each vowel section carries an `image` (a diagram in frontend/public/images/vowel
 which the player shows while that section plays.
 """
 
+
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 
@@ -29,14 +30,14 @@ FIVE_VOWELS_INSTRUCTIONS = {
             "id": "five-vowels",
             "name": "Five Vowels",
             "description": (
-                "OH up (Ein Sof, Keter), AH right (south, Mikha'el, Chesed), "
-                "EH left (north, Gavri'el, Gevurah), EE down (the Shekhinah, "
-                "Malkhut; Refa'el behind in the west), OO forward (east, "
-                "Uri'el, Tiferet). The diagrams use the Ramak's colours for "
+                "OH up (Ein Sof, Keser), AH right (south, Micha'el, Chesed), "
+                "EH left (north, Gavri'el, Gevurah), EE down (the Shechinah, "
+                "Malchus; Refa'el behind in the west), OO forward (east, "
+                "Uri'el, Tiferes). The diagrams use the Ramak's colours for "
                 "each sefirah (Pardes Rimonim, gate 10)."
             ),
             "directions": (
-                "Face east, or imagine east in front of you. Sit comfortably. "
+                "Face east. Sit comfortably. "
                 "Chant one vowel on each easy outbreath, make the movement, "
                 "and return to centre after each sound."
             ),
@@ -49,13 +50,38 @@ FIVE_VOWELS_INSTRUCTIONS = {
 }
 
 
+# How the voice should say words it gets wrong, one word for one word (the
+# highlighted word on screen is matched by position, so counts must stay equal).
+# Stored on each line as `pronounce` and applied when the voice is generated, so
+# editing a line's text in the app keeps these fixes.
+SAY = [
+    ("Keser", "Kesser"), ("Chesed", "חֶסֶד"), ("Gevurah", "G'voo-rah"),
+    ("Tiferes", "Tif-eh-res"), ("Shechinah", "שְׁכִינָה"), ("Ein Sof", "Ayne Sof"),
+    ("Micha'el", "מִיכָאֵל"), ("Gavri'el", "Gahv-ree-el"),
+    ("Refa'el", "Reh-fah-el"), ("Uri'el", "Oo-ree-el"),
+    # in the opening list, a pause after each vowel so they don't run together
+    ("oh, ah, eh, ee, oo.", "ohh... ahh... eh... eee... ooo..."),
+    # the chanted vowels, drawn out so they aren't read as the letter E and so on
+    ("chant Oh.", "chant Ohh."), ("chant Ah.", "chant Ahh."),
+    ("chant Ee.", "chant Eee."), ("chant Oo.", "chant Ooo."),
+]
+
+
+def speech(seg_id, text):
+    # v3 is ElevenLabs' model that knows Hebrew, so the Hebrew spellings sound right
+    seg = {"type": "speech", "id": seg_id, "text": text, "tts_model": "eleven_v3"}
+    rules = [[w, s] for w, s in SAY if w in text]
+    if rules:
+        seg["pronounce"] = rules
+    return seg
+
+
 def vowel(key, label, cue):
     return {
         "type": "loop", "repeat": 1, "label": label, "image": IMG.format(key),
         "segments": [
-            {"type": "speech", "id": f"{key}_cue", "text": cue},
+            speech(f"{key}_cue", cue),
             {"type": "pause", "duration_seconds": "{chantLength}"},
-            {"type": "pause", "duration_seconds": 3},
         ],
     }
 
@@ -67,7 +93,7 @@ FIVE_VOWELS_SCRIPT = [
             {
                 "type": "speech", "id": "welcome",
                 "text": (
-                    "Face east, or imagine east in front of you. South is on "
+                    "Face east. South is on "
                     "your right, north on your left, and west behind you. "
                     "Sit comfortably, and take a few quiet breaths."
                 ),
@@ -77,8 +103,9 @@ FIVE_VOWELS_SCRIPT = [
                 "type": "speech", "id": "explain",
                 "text": (
                     "We will chant five vowels: oh, ah, eh, ee, oo. One vowel "
-                    "on each easy outbreath, with a gentle movement of the "
-                    "head, returning to centre after each sound."
+                    "on each easy out-breath, with a gentle movement of the "
+                    "head and an intention to hold throughout, returning to "
+                    "centre after each sound."
                 ),
             },
             {"type": "pause", "duration_seconds": 4},
@@ -88,28 +115,37 @@ FIVE_VOWELS_SCRIPT = [
         "type": "loop", "variable": "rounds", "repeat": 1, "label": "Five Vowels",
         "segments": [
             vowel("oh", "Oh: up", (
-                "Oh. Raise your head as you chant, then return. "
-                "Receive from Ein Sof, the Infinite, through Keter, the Crown."
+                "Now you will begin to chant Oh. As you chant, raise your "
+                "head, then return to centre. In your mind, receive from "
+                "Ein Sof, the Infinite, through Keser, the Crown."
             )),
             vowel("ah", "Ah: right", (
-                "Ah. Turn your head to the right, toward the south, and return. "
-                "Mikha'el stands at your right. Warmth and expansion: "
-                "Chesed, the right pillar."
+                "Now you will begin to chant Ah. As you chant, turn your head "
+                "to the right, toward the south, then return to centre. In "
+                "your mind, be aware of Micha'el, the great prince who protects Israel, guarding "
+                "your right side, and receive Chesed, warmth and expansion, "
+                "the right pillar."
             )),
             vowel("eh", "Eh: left", (
-                "Eh. Turn your head to the left, toward the north, and return. "
-                "Gavri'el stands at your left. Coolness and containment: "
-                "Gevurah, the left pillar."
+                "Now you will begin to chant Eh. As you chant, turn your head "
+                "to the left, toward the north, then return to centre. In "
+                "your mind, be aware of Gavri'el, the prince of fire, guarding "
+                "your left side, and receive Gevurah, fire and restraint, "
+                "the left pillar."
             )),
             vowel("ee", "Ee: down", (
-                "Ee. Lower your head toward the earth, and return. "
-                "Refa'el stands behind you, in the west. Settle into the body, "
-                "and meet the Shekhinah here."
+                "Now you will begin to chant Ee. As you chant, lower your head "
+                "toward the earth, then return to centre. In your mind, "
+                "be aware of Refa'el, who came to heal Avraham, guarding behind you, "
+                "in the west, and receive the Shechinah, settling into the "
+                "body, here below."
             )),
             vowel("oo", "Oo: forward", (
-                "Oo. Draw your head forward, toward the east, and return. "
-                "Uri'el stands before you. Gather everything at the centre: "
-                "Tiferet, the Temple, where heaven and earth meet."
+                "Now you will begin to chant Oo. As you chant, draw your head "
+                "forward, toward the east, then return to centre. In your "
+                "mind, be aware of Uri'el, the light of God, guarding before "
+                "you, in the east, and receive Tiferes, the Temple at the "
+                "centre, where heaven and earth meet."
             )),
         ],
     },
@@ -128,6 +164,20 @@ FIVE_VOWELS_SCRIPT = [
         ],
     },
 ]
+
+
+
+def _add_say(segments):
+    for seg in segments:
+        if seg["type"] == "speech":
+            seg.update(speech(seg["id"], seg["text"]))
+        elif seg["type"] == "loop":
+            _add_say(seg["segments"])
+
+
+_add_say(FIVE_VOWELS_SCRIPT)
+
+BEFORE_YOU_BEGIN = "## Before you Begin\n\nFigure out which direction is east."
 
 
 FIVE_VOWELS_VARS = {
@@ -178,6 +228,8 @@ class Command(BaseCommand):
             defaults={
                 "script": FIVE_VOWELS_SCRIPT,
                 "variables": FIVE_VOWELS_VARS,
+                "before_you_begin": BEFORE_YOU_BEGIN,
+                "before_you_begin_blocks": [{"type": "text", "content": BEFORE_YOU_BEGIN}],
             },
         )
         self.stdout.write(f"    stage: {stage}")

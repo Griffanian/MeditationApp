@@ -96,7 +96,7 @@ class ComponentMixin:
                 # Check staleness: if generated, compare text_hash
                 if rec.audio_clip:
                     text = _substitute_variables(raw_text, variables)
-                    expected_hash = _tts_hash(text, direction, rec.audio_clip.voice_id)
+                    expected_hash = _tts_hash(text, direction, rec.audio_clip.voice_id, seg_info.get("model"))
                     status = "current" if rec.audio_clip.text_hash == expected_hash else "stale"
                 else:
                     status = "current"  # user-uploaded: always current
@@ -117,7 +117,7 @@ class ComponentMixin:
                 # Check staleness
                 if ssa.audio_clip:
                     text = _substitute_variables(raw_text, variables)
-                    expected_hash = _tts_hash(text, direction, ssa.audio_clip.voice_id)
+                    expected_hash = _tts_hash(text, direction, ssa.audio_clip.voice_id, seg_info.get("model"))
                     status = "current" if ssa.audio_clip.text_hash == expected_hash else "stale"
                 else:
                     status = "current"
@@ -312,7 +312,7 @@ class VariableRecordingsView(ComponentMixin, APIView):
                     except (ValueError, TypeError):
                         merged[k] = v
                 text = _substitute_variables(seg_info["text"], merged)
-                expected_hash = _tts_hash(text, seg_info["direction"], clip.voice_id)
+                expected_hash = _tts_hash(text, seg_info["direction"], clip.voice_id, seg_info.get("model"))
                 status = "current" if clip.text_hash == expected_hash else "stale"
             else:
                 status = "current"
@@ -386,7 +386,7 @@ class VariableRecordingsView(ComponentMixin, APIView):
                 if rec.user_clip:
                     result["status"] = "current"
                 elif rec.audio_clip:
-                    expected_hash = _tts_hash(substituted, direction, rec.audio_clip.voice_id)
+                    expected_hash = _tts_hash(substituted, direction, rec.audio_clip.voice_id, seg_info.get("model"))
                     result["status"] = "current" if rec.audio_clip.text_hash == expected_hash else "stale"
                 result["source"] = rec.source or "unknown"
                 result["text_hash"] = rec.audio_clip.text_hash if rec.audio_clip else None

@@ -252,24 +252,40 @@ export default function ExercisePlayer() {
       return;
     }
 
-    handleStop();
-
     const ctx = audioCtxRef.current;
     if (!ctx) return;
 
-    // Resume AudioContext (required for user gesture on iOS/mobile).
-    // Always resume: handleStop() above may have just called suspend(), which is async,
-    // so state can still read 'running' here and the suspend would land after scheduling.
-    await ctx.resume().catch(() => {});
-
-    // Keep audio session alive on mobile with a silent loop
+    // Phones only let a page start sound during the tap itself, so unlock audio
+    // here, before anything that waits: an `await` ends the tap, which is why the
+    // first press used to come up silent and need a second one.
     if (!keepAliveRef.current) {
+      // Keep the audio session alive on mobile with a silent loop
       keepAliveRef.current = new Audio();
       keepAliveRef.current.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
       keepAliveRef.current.loop = true;
       keepAliveRef.current.volume = 0;
     }
     keepAliveRef.current.play().catch(() => {});
+    const resumed = ctx.resume().catch(() => {});
+    try {
+      // a one-sample silent sound through the context unlocks it on iOS
+      const unlock = ctx.createBufferSource();
+      unlock.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+      unlock.connect(ctx.destination);
+      unlock.start(0);
+    } catch { /* not needed elsewhere */ }
+
+    handleStop();
+    // Always resume again: handleStop() may have just called suspend(), which is async,
+    // so state can still read 'running' here and the suspend would land after scheduling.
+    await resumed;
+    await ctx.resume().catch(() => {});
+    keepAliveRef.current.play().catch(() => {});
+
+    // iOS can take a moment to report 'running' after resume
+    for (let i = 0; i < 10 && ctx.state !== 'running'; i++) {
+      await new Promise(r => setTimeout(r, 50));
+    }
 
     scheduleClips(0);
     if (ctx.state !== 'running') {
