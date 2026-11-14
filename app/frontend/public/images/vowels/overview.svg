@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 760" width="600" height="760">
+<rect x="0" y="0" width="600" height="760" rx="24" fill="#12131F"/>
+<text x="300" y="34" text-anchor="middle" fill="#8A88A0" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;letter-spacing:1px">FACING EAST  ·  YOUR RIGHT IS SOUTH</text>
+<g>
+<polygon points="300.0,105.0 342.0,195.0 300.0,174.0 258.0,195.0" fill="#FFFFFF"/>
+<text x="300.0" y="237.0" text-anchor="middle" dominant-baseline="central" fill="#EDEBE6" style="font-family:'SBL Hebrew','Times New Roman',serif;font-size:56px">אֹ</text>
+<circle cx="360.0" cy="127.5" r="15" fill="#FFFFFF"/>
+<text x="360.0" y="128.5" text-anchor="middle" dominant-baseline="central" fill="#12131F" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;font-weight:600">1</text>
+<text x="300.0" y="78.0" text-anchor="middle" fill="#A6A4B4" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px">Above · Ein Sof · Keter</text>
+</g>
+<g>
+<polygon points="525.0,330.0 435.0,288.0 456.0,330.0 435.0,372.0" fill="#B9C8DA"/>
+<text x="390.0" y="330.0" text-anchor="middle" dominant-baseline="central" fill="#EDEBE6" style="font-family:'SBL Hebrew','Times New Roman',serif;font-size:56px">אַ</text>
+<circle cx="487.5" cy="262.5" r="15" fill="#B9C8DA"/>
+<text x="487.5" y="263.5" text-anchor="middle" dominant-baseline="central" fill="#12131F" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;font-weight:600">2</text>
+<text x="525.0" y="402.0" text-anchor="end" fill="#A6A4B4" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px">South · Mikha'el</text>
+<text x="525.0" y="420.0" text-anchor="end" fill="#A6A4B4" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px">Chesed</text>
+</g>
+<g>
+<polygon points="75.0,330.0 165.0,288.0 144.0,330.0 165.0,372.0" fill="#D63B3B"/>
+<text x="210.0" y="330.0" text-anchor="middle" dominant-baseline="central" fill="#EDEBE6" style="font-family:'SBL Hebrew','Times New Roman',serif;font-size:56px">אֶ</text>
+<circle cx="112.5" cy="262.5" r="15" fill="#D63B3B"/>
+<text x="112.5" y="263.5" text-anchor="middle" dominant-baseline="central" fill="#FFFFFF" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;font-weight:600">3</text>
+<text x="75.0" y="402.0" text-anchor="start" fill="#A6A4B4" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px">North · Gavri'el</text>
+<text x="75.0" y="420.0" text-anchor="start" fill="#A6A4B4" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px">Gevurah</text>
+</g>
+<g>
+<polygon points="300.0,555.0 342.0,465.0 300.0,486.0 258.0,465.0" fill="#2E4593"/>
+<text x="300.0" y="432.0" text-anchor="middle" dominant-baseline="central" fill="#EDEBE6" style="font-family:'SBL Hebrew','Times New Roman',serif;font-size:56px">אִ</text>
+<circle cx="360.0" cy="532.5" r="15" fill="#2E4593"/>
+<text x="360.0" y="533.5" text-anchor="middle" dominant-baseline="central" fill="#FFFFFF" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;font-weight:600">4</text>
+<text x="300.0" y="597.0" text-anchor="middle" fill="#A6A4B4" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px">Below · Shekhinah · Malkhut</text>
+</g>
+<g>
+<circle cx="300" cy="330" r="30" fill="#F2A23C"/>
+<text x="300" y="332" text-anchor="middle" dominant-baseline="central" fill="#3A2205" style="font-family:'SBL Hebrew','Times New Roman',serif;font-size:38px">וּ</text>
+<circle cx="339.0" cy="294.0" r="15" fill="#F2A23C"/>
+<text x="339.0" y="295.0" text-anchor="middle" dominant-baseline="central" fill="#3A2205" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;font-weight:600">5</text>
+<text x="300.0" y="384.0" text-anchor="middle" fill="#A6A4B4" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px">East · Uri'el · Tiferet</text>
+</g>
+<text x="300" y="676" text-anchor="middle" fill="#EDEBE6" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:20px;font-weight:600">OH → AH → EH → EE → OO</text>
+<text x="300" y="708" text-anchor="middle" fill="#A6A4B4" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px">One vowel per easy outbreath · return to centre after each</text>
+<text x="300" y="736" text-anchor="middle" fill="#6E6C82" style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px">Colours after the Ramak, Pardes Rimonim, gate 10</text>
+</svg>

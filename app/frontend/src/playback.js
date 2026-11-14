@@ -494,11 +494,12 @@ export function flattenScript(segments, variables = {}, components = {}) {
       const iterDuration = computeFixedDuration(seg.segments, variables, components);
       for (let r = 0; r < repeat; r++) {
         flattenScript(seg.segments, variables, components).forEach(f => {
-          flat.push({ ...f, loopId: seg.id, loopIteration: r + 1, loopTotal: Number(repeat), loopIterDuration: iterDuration });
+          // The innermost image wins, so a section's image covers everything inside it
+          flat.push({ ...f, image: f.image || seg.image || null, loopId: seg.id, loopIteration: r + 1, loopTotal: Number(repeat), loopIterDuration: iterDuration });
         });
       }
     } else {
-      flat.push({ seg });
+      flat.push({ seg, image: seg.image || null });
     }
   }
   return flat;

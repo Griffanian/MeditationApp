@@ -16,6 +16,8 @@ export default function Section({ seg, playingId, isPaused, onPlay, onWordClick,
   const [editLabel, setEditLabel] = useState(seg.label || '');
   const [editRepeat, setEditRepeat] = useState(seg.variable ? `{${seg.variable}}` : seg.repeat);
   const [editTargetDuration, setEditTargetDuration] = useState(seg.targetDuration ?? '');
+  const [imageCollapsed, setImageCollapsed] = useLocalState(`collapse:image:${seg.id}`, false);
+  const [editImage, setEditImage] = useState(seg.image ?? '');
 
   const [now, setNow] = useState(Date.now());
   const tickRef = useRef(null);
@@ -24,6 +26,7 @@ export default function Section({ seg, playingId, isPaused, onPlay, onWordClick,
   useEffect(() => { setEditLabel(seg.label || ''); }, [seg.label]);
   useEffect(() => { setEditRepeat(seg.variable ? `{${seg.variable}}` : seg.repeat); }, [seg.variable, seg.repeat]);
   useEffect(() => { setEditTargetDuration(seg.targetDuration ?? ''); }, [seg.targetDuration]);
+  useEffect(() => { setEditImage(seg.image ?? ''); }, [seg.image]);
 
   const lc = loopCounters[seg.id];
   const isLoopPlaying = lc && lc.iterDuration != null;
@@ -168,6 +171,12 @@ export default function Section({ seg, playingId, isPaused, onPlay, onWordClick,
                 className="target-duration-add"
                 onClick={e => { e.stopPropagation(); onUpdate(seg.id, { targetDuration: '300' }); }}
               >+ Target</button>
+            )}
+            {!readOnly && seg.image == null && (
+              <button
+                className="target-duration-add"
+                onClick={e => { e.stopPropagation(); onUpdate(seg.id, { image: '' }); }}
+              >+ Image</button>
             )}
             {readOnly && seg.targetDuration != null && (
               <span className="target-duration-field">
@@ -327,6 +336,42 @@ export default function Section({ seg, playingId, isPaused, onPlay, onWordClick,
           />}
         </span>
       </div>
+      {!collapsed && seg.image != null && (
+        <div className="section-image">
+          <div className="section-image-bar">
+            <span
+              className={`chevron ${imageCollapsed ? 'collapsed' : ''}`}
+              onClick={() => setImageCollapsed(!imageCollapsed)}
+            >
+              ▼
+            </span>
+            <span className="section-image-title">Image</span>
+            {readOnly ? (
+              <span className="section-image-path">{seg.image}</span>
+            ) : (
+              <>
+                <input
+                  className="section-image-input"
+                  type="text"
+                  placeholder="/images/…"
+                  value={editImage}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => setEditImage(e.target.value)}
+                  onBlur={() => { if (editImage !== seg.image) onUpdate(seg.id, { image: editImage }); }}
+                  onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                />
+                <button
+                  className="target-duration-remove"
+                  onClick={e => { e.stopPropagation(); onUpdate(seg.id, { image: undefined }); }}
+                >✕</button>
+              </>
+            )}
+          </div>
+          {!imageCollapsed && seg.image && (
+            <img className="section-image-thumb" src={seg.image} alt="" />
+          )}
+        </div>
+      )}
       {!collapsed && (
         <div className="loop-bracket">
           {seg.segments.length === 0 ? (

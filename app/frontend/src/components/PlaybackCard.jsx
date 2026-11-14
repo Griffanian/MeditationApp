@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { BASE } from '../api';
 
 const AMBIENT_VOLUME = 0.3;
@@ -24,6 +25,29 @@ export default function PlaybackCard({
   const measuredRef = useRef(false);
   const ambientRef = useRef(null); // { ctx, gainNode, source }
   const ambientLoadingRef = useRef(false);
+  const [imageFull, setImageFull] = useState(false);
+  const fullRef = useRef(null);
+  // Keep the last image on screen through gaps between sections that have none
+  const [shownImage, setShownImage] = useState(null);
+  useEffect(() => { if (activeEntry?.image) setShownImage(activeEntry.image); }, [activeEntry?.image]);
+
+  function openImageFull() {
+    setImageFull(true);
+  }
+
+  function closeImageFull() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    setImageFull(false);
+  }
+
+  // Enter browser full screen once the overlay is mounted; leaving it (e.g. Esc) closes the overlay
+  useEffect(() => {
+    if (!imageFull) return;
+    fullRef.current?.requestFullscreen?.().catch(() => {});
+    const onChange = () => { if (!document.fullscreenElement) setImageFull(false); };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, [imageFull]);
 
   function startAmbient() {
     if (ambientRef.current || ambientLoadingRef.current) return;
@@ -142,6 +166,30 @@ export default function PlaybackCard({
         </div>
       )}
 
+      {/* Section image (e.g. a diagram of the current movement) sits beside the script */}
+      <div className={`ep-stage${isActive && activeEntry?.image ? ' has-image' : ''}`}>
+      {isActive && activeEntry?.image && (
+        <div className="ep-script-image-wrap">
+          <img className="ep-script-image" src={activeEntry.image} alt="" />
+          <button className="ep-image-full-btn" onClick={openImageFull} aria-label="Show image full screen">&#x26F6;</button>
+        </div>
+      )}
+      {/* Portalled to <body> so no ancestor layout, stacking or click handler can get in its way */}
+      {imageFull && shownImage && createPortal(
+        <div className="ep-image-full" ref={fullRef} onClick={closeImageFull}>
+          <img src={activeEntry?.image || shownImage} alt="" />
+          <div className="ep-image-full-controls" onClick={e => e.stopPropagation()}>
+            {status === 'playing' ? (
+              <button className="ep-play-btn" onClick={onPause}><span className="ep-play-icon ep-pause-icon" /></button>
+            ) : (
+              <button className="ep-play-btn" onClick={onPlay}><span className="ep-play-icon">&#x25B6;</span></button>
+            )}
+            <button className="ep-image-full-close" onClick={closeImageFull} aria-label="Exit full screen">&#x2715;</button>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* Script display */}
       {isActive && activeEntry && activeEntry.type === 'speech' ? (
         <div className="ep-script-box">
@@ -192,6 +240,7 @@ export default function PlaybackCard({
           )}
         </div>
       )}
+      </div>
 
       {/* Seek bar */}
       {isActive && (

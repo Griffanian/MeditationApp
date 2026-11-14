@@ -2423,6 +2423,43 @@ h1 {
   background: var(--loop-hover, #E8E0F0);
 }
 
+.section-image {
+  border-left: 3px solid var(--loop-accent, var(--accent));
+  margin-left: 12px;
+  padding: 4px 0 8px 12px;
+}
+
+.section-image-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.section-image-title {
+  font-weight: 600;
+}
+
+.section-image-input {
+  flex: 1;
+  max-width: 280px;
+  background: var(--overlay-3);
+  border: 1px solid var(--border-medium);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.section-image-thumb {
+  display: block;
+  width: 180px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
 .loop-bracket {
   border-left: 3px solid var(--loop-accent, var(--accent));
   border-bottom: 3px solid var(--loop-accent, var(--accent));
@@ -5594,6 +5631,118 @@ table.var-rec-table {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+
+.ep-stage {
+  width: 100%;
+}
+
+// Diagram beside the words, capped to the window so play, image and text fit together
+.ep-stage.has-image {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+
+  .ep-script-image-wrap {
+    flex: 0 0 auto;
+  }
+
+  .ep-script-image {
+    height: min(46vh, 380px);
+    width: auto;
+  }
+
+  .ep-script-box {
+    flex: 1;
+    min-width: 0;
+    height: auto;
+    min-height: 130px;
+    align-self: stretch;
+  }
+}
+
+.ep-script-image {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.ep-script-image-wrap {
+  position: relative;
+}
+
+.ep-image-full-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ep-image-full-btn:hover {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+// Full-screen diagram; follows the playback, so the next section's image replaces it
+.ep-image-full {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: #0c0c14;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 24px 100px;
+
+  img {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 18px;
+  }
+}
+
+.ep-image-full-controls {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.ep-image-full-close {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .ep-stage.has-image {
+    flex-direction: column;
+    gap: 10px;
+
+    .ep-script-image {
+      height: min(36vh, 300px);
+    }
+
+    .ep-script-box {
+      width: 100%;
+      min-height: 110px;
+    }
+  }
 }
 
 

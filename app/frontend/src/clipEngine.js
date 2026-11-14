@@ -71,6 +71,7 @@ export function buildTimeline(script, variables, components) {
         type: seg.type,
         segId: seg.id,
         file: seg.file,
+        image: item.image || null,
         words: rawWords.map(w => resolveWordVars(w, variables)),
         loopLabel: loopSeg?.label || '',
         loopIteration: item.loopIteration || null,
